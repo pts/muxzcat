@@ -2,6 +2,15 @@
  *
  * Based on https://github.com/pts/pts-tiny-7z-sfx/commit/b9a101b076672879f861d472665afaa6caa6fec1
  *
+ * Limitations of this decompressor:
+ *
+ * * It keeps both the compressed and uncompressed stream in memory.
+ * * It supports only LZMA2 (no other filters).
+ * * It doesn't verify checksums.
+ * * It extracts the first stream only, and ignores the index.
+ * * !! Split DecodeLzma2 to per-chunk, thus limiting the compressed memory usage to 64 KiB.
+ * * !! 32-bit sizes? Make it optional.
+ *
  * Can use: -DCONFIG_DEBUG
  * Can use: -DCONFIG_NO_INT64
  * Can use: -DCONFIG_NO_SIZE_T
@@ -9,6 +18,7 @@
  * Can use: -DCONFIG_SIZE_OPT  (!!How much smaller does the code become?)
  *
  * $ xtiny gcc -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c && ls -l muxzcat
+ * -rwxr-xr-x 1 pts pts 9672 Jan 30 20:05 muxzcat
  */
 
 #ifdef __XTINY__
@@ -25,7 +35,7 @@ typedef uint32_t UInt32;
 
 #include <stddef.h>  /* size_t */
 #include <string.h>  /* memcpy() */
-#include <unistd.h>  /* read() */
+#include <unistd.h>  /* read(), write() */
 
 #ifdef _WIN32
 #include <windows.h>
@@ -61,6 +71,7 @@ typedef uint32_t UInt32;
 #endif  /* USE_MINIINC1 */
 
 #ifdef CONFIG_DEBUG
+/* This is guaranteed to work with Linux and gcc only. */
 #undef NDEBUG
 #include <assert.h>
 #include <stdio.h>
@@ -1280,7 +1291,7 @@ static UInt64 readFileOfs = 0;
 
 /* Return the number of bytes read from stdin. */
 static UInt64 Tell() {
-  return readFileOfs + (readCur - readBuf);
+  return readFileOfs - (readEnd - readCur);
 }
 
 static int GetByte() {
@@ -1304,7 +1315,7 @@ static Byte decompressBuf[1 << 30];
 #define VARINT_EOF ((UInt64)-1)
 
 /* !! Get rid of Int64 everywhere -- LZMA decoder doesn't need it. */
-static UInt64 GetVarInt(void) {
+static UInt64 GetVarint(void) {
   UInt64 result;
   int i = 0;
   int b;
@@ -1328,12 +1339,38 @@ static SRes IgnoreFewBytes(UInt32 c) {
 
 #define SZ_ERROR_BAD_MAGIC 51
 #define SZ_ERROR_BAD_STREAM_FLAGS 52
+#define SZ_ERROR_UNSUPPORTED_FILTER_COUNT 53
+#define SZ_ERROR_BAD_BLOCK_FLAGS 54
+#define SZ_ERROR_UNSUPPORTED_FILTER_ID 55
+#define SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE 56
+#define SZ_ERROR_BAD_PADDING 57
+#define SZ_ERROR_BLOCK_HEADER_TOO_LONG 58
+#define SZ_ERROR_BAD_CHUNK_CONTROL_BYTE 59
+#define SZ_ERROR_BAD_CHECKSUM_TYPE 60
+
+static SRes IgnoreZeroBytes(UInt32 c) {
+  int i;
+  while (c > 0) {
+    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+    if (i != 0) return SZ_ERROR_BAD_PADDING;
+    c--;
+  }
+  return SZ_OK;
+}
+
+static SRes IgnorePadding4() {
+  return IgnoreZeroBytes(-(Byte)Tell() & 3);
+}
+
+#define FILTER_ID_LZMA2 0x21
 
 /* Reads from stdin, writes to stdout, uses decompressBuf.
- * Doesn't check CRC etc.
+ * Based on https://tukaani.org/xz/xz-file-format-1.0.4.txt
  */
 static SRes DecompressXz(void) {
   SRes res = SZ_OK;
+  int i;
+  Byte checksumSize;
   if (GET_BYTE() != 0xFD) return SZ_ERROR_BAD_MAGIC;
   if (GET_BYTE() != '7') return SZ_ERROR_BAD_MAGIC;
   if (GET_BYTE() != 'z') return SZ_ERROR_BAD_MAGIC;
@@ -1342,22 +1379,124 @@ static SRes DecompressXz(void) {
   if (GET_BYTE() != 0x00) return SZ_ERROR_BAD_MAGIC;
   if (GET_BYTE() != 0x00) return SZ_ERROR_BAD_STREAM_FLAGS;
   /* Checksum algorithm. CRC32 is 1, CRC64 is 4. */
-  if (GET_BYTE() < 0) return SZ_ERROR_BAD_STREAM_FLAGS;
+  if ((i = GET_BYTE()) < 0 ) return SZ_ERROR_INPUT_EOF;
+  checksumSize = i == 0 ? 0 : i == 1 ? 4 /* CRC32 */ : i == 4 ? 8 /* CRC64 */ : 0xff;
+  if (checksumSize == 0xff) return SZ_ERROR_BAD_CHECKSUM_TYPE;
   RINOK(IgnoreFewBytes(4));  /* CRC32 */
-  if (0) {
-    Byte outBuf[10000];
-    const size_t outSize = sizeof(outBuf);
-    const Byte dicSizeProp = 0x90;
-    const size_t inSize = 777;
-    DEBUGF("HI\n");
-    DecodeLzma2(dicSizeProp, decompressBuf, inSize, outBuf, outSize);
-    (void)Tell;
-    (void)GetVarInt;
+  for (;;) {
+    UInt64 ii;
+    UInt32 bhs, bhs2; /* Block header size */
+    UInt32 bhf;  /* Block header flags */
+    UInt64 bo;  /* Block offset */
+    Byte dicSizeProp;
+    bo = Tell();
+    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+    if (i == 0) break;  /* Last block, index follows. */
+    bhs = (i + 1) << 2;
+    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+    bhf = i;
+    if ((bhf & 2) != 0) return SZ_ERROR_UNSUPPORTED_FILTER_COUNT;
+    DEBUGF("filter count=%d\n", (bhf & 2) + 1);
+    if ((bhf & 20) != 0) return SZ_ERROR_BAD_BLOCK_FLAGS;
+    if (bhf & 64) {  /* Compressed size present. */
+      /* Usually not present, just ignore. */
+      if ((ii = GetVarint()) == VARINT_EOF) return SZ_ERROR_INPUT_EOF;
+    }
+    if (bhf & 128) {  /* Uncompressed size present. */
+      /* Usually not present, just ignore. */
+      if ((ii = GetVarint()) == VARINT_EOF) return SZ_ERROR_INPUT_EOF;
+    }
+    /* !! TODO(pts): Simplify it with GET_BYTE. */
+    if ((ii = GetVarint()) == VARINT_EOF) return SZ_ERROR_INPUT_EOF;
+    if (ii != FILTER_ID_LZMA2) return SZ_ERROR_UNSUPPORTED_FILTER_ID;
+    if ((ii = GetVarint()) == VARINT_EOF) return SZ_ERROR_INPUT_EOF;
+    if (ii != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
+    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+    /* TODO(pts): Check earlier than DecodeLzma2 for valid values. */
+    dicSizeProp = i;
+    DEBUGF("dicSizeProp=0x%02x\n", dicSizeProp);
+    bhs2 = (UInt32)(Tell() - bo) + 4;  /* Won't overflow. */
+    if (bhs2 > bhs) return SZ_ERROR_BLOCK_HEADER_TOO_LONG;
+    RINOK(IgnoreZeroBytes(bhs - bhs2));
+    RINOK(IgnoreFewBytes(4));  /* CRC32 */
+    /* !! Typically it's offset 24. */
+    DEBUGF("LZMA2 at %d\n", (UInt32)Tell());
+    { /* Parse LZMA2 stream. */
+      /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
+      UInt64 tus = 0;  /* total uncompressed size */
+      UInt64 tcs = 0;
+      UInt32 cs;
+      Byte *p = decompressBuf, *q;
+      for (;;) {
+        if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+        DEBUGF("CONTROL 0x%02x at=%d\n", i, (UInt32)Tell());
+        *p++ = i;
+        if (i == 0) {
+          break;
+        } else if (i < 3) {  /* Uncompressed chunk. */
+          /* !! Remove redundancy. */
+          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+          *p++ = i;
+          cs = i << 8;
+          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+          *p++ = i;
+          cs += i + 1;
+          tus += cs;
+        } else if (i < 0x80) {
+          return SZ_ERROR_BAD_CHUNK_CONTROL_BYTE;
+        } else {  /* LZMA chunk. */
+          Bool isProp;
+          UInt32 us;
+          us = (i & 31) << 16;
+          isProp = (i & 64) != 0;
+          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+          *p++ = i;
+          us += i << 8;
+          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+          *p++ = i;
+          us += i + 1;
+          tus += us;
+          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+          *p++ = i;
+          cs = i << 8;
+          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+          *p++ = i;
+          cs += i + 1;
+          if (isProp) {
+            if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+            /* TODO(pts): Check earlier than DecodeLzma2 for valid values. */
+            *p++ = i;
+          }
+        }
+        for (; cs > 0; --cs) {
+          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+          *p++ = i;
+        }
+      }
+      tcs = p - decompressBuf;
+      /* !! Why is it so small? */
+      DEBUGF("tus=%lld tcs=%lld\n", (long long)tus, (long long)tcs);
+      /* !! Make it fail if we specify tus+1 instead of tus. */
+      RINOK(DecodeLzma2(dicSizeProp, decompressBuf, tcs, p, tus));
+      q = p + tus;
+      while (p != q) {
+        ssize_t got = write(1, p, q - p);
+        if (got <= 0) return SZ_ERROR_WRITE;
+        p += got;
+      }
+    }
+    DEBUGF("ALTELL %d\n", (UInt32)Tell());
+    RINOK(IgnorePadding4());  /* Block padding. */
+    DEBUGF("AMTELL %d\n", (UInt32)Tell());
+    RINOK(IgnoreFewBytes(checksumSize));
+    DEBUGF("TELL %d\n", (UInt32)Tell());
   }
+  /* The .xz input file follows with the index, which we ignore from here. */
   return res;
 }
 
 int main(int argc, char **argv) {
   (void)argc; (void)argv;
+  /* !! setmode(0, O_BINARY); setmode(1, O_BINARY); for WIN32 */
   return DecompressXz();
 }
