@@ -4,10 +4,15 @@
  *
  * Limitations of this decompressor:
  *
- * * It keeps both the compressed and uncompressed stream in memory.
+ * * It keeps both the compressed and uncompressed data in memory.
+ * * It doesn't support decompressed data larger than 1610612736 (~1.61 GB).
+ *   FYI linux-4.20.5.tar is about half as much, 854855680 bytes.
  * * It supports only LZMA2 (no other filters).
  * * It doesn't verify checksums.
  * * It extracts the first stream only, and ignores the index.
+ * * It doesn't support dictionary sizes larger than 1610612736 bytes (~1.61 GB).
+ *   (This is not a problem in practice, because even `xz -9e' generates
+ *   only 64 MiB dictionary size.)
  * * !! Split DecodeLzma2 to per-chunk, thus limiting the compressed memory usage to 64 KiB.
  * * !! 32-bit sizes? Make it optional.
  *
@@ -19,6 +24,11 @@
  *
  * $ xtiny gcc -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c && ls -l muxzcat
  * -rwxr-xr-x 1 pts pts 9672 Jan 30 20:05 muxzcat
+ *
+ * Examples:
+ *
+ *   # Smallest possible dictionary:
+ *   $ xz --lzma2=preset=8,dict=4096 <ta8.tar >ta4k.tar.xz
  */
 
 #ifdef __XTINY__
@@ -1045,7 +1055,8 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 #define LZMA2_GET_LZMA_MODE(p) (((p)->control >> 5) & 3)
 #define LZMA2_IS_THERE_PROP(mode) ((mode) >= 2)
 
-#define LZMA2_DIC_SIZE_FROM_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
+/* Works if p <= 39. */
+#define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
 typedef enum
 {
@@ -1248,38 +1259,22 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
   return SZ_OK;
 }
 
-/* !! Replace with real inplementation */
-static SRes DecodeLzma2(Byte dicSizeProp, const Byte *inBuf, size_t inSize, Byte *outBuf, size_t outSize) {
-  CLzma2Dec state;
+/* !! Inline and remove. */
+static SRes DecodeLzma2(CLzma2Dec *state, const Byte *inBuf, size_t inSize, Byte *outBuf, size_t outSize) {
   SRes res = SZ_OK;
   const Byte * const inBufEnd = inBuf + inSize;
-  if (dicSizeProp > 40) return SZ_ERROR_UNSUPPORTED;
-  state.decoder.prop.dicSize = (dicSizeProp == 40) ? 0xFFFFFFFF : LZMA2_DIC_SIZE_FROM_PROP(dicSizeProp);
-  ASSERT(state.decoder.prop.dicSize >= LZMA_DIC_MIN);
-  state.decoder.prop.lc = 0;  /* needinitprop will initialize it */
-  state.decoder.prop.pb = 0;
-  state.decoder.prop.lp = 0;
-  state.decoder.numProbs = Lzma2Props_GetMaxNumProbs();
-  state.decoder.probs = state.probs;
-  state.decoder.dic = outBuf;
-  state.decoder.dicBufSize = outSize;
-  state.state = LZMA2_STATE_CONTROL;
-  state.needInitDic = True;
-  state.needInitState = True;
-  state.needInitProp = True;
-  state.decoder.dicPos = 0;
-  LzmaDec_InitDicAndState(&state.decoder, True, True);
-
+  state->decoder.dic = outBuf;
+  state->decoder.dicBufSize = outSize;
   for (;;) {
     size_t inProcessed = inBufEnd - inBuf;
-    size_t dicPos = state.decoder.dicPos;
+    size_t dicPos = state->decoder.dicPos;
     ELzmaStatus status;
-    res = Lzma2Dec_DecodeToDic(&state, outSize, inBuf, &inProcessed, LZMA_FINISH_END, &status);
+    res = Lzma2Dec_DecodeToDic(state, outSize, inBuf, &inProcessed, LZMA_FINISH_END, &status);
     if (res != SZ_OK)
       break;
     inBuf += inProcessed;
-    if (state.decoder.dicPos == state.decoder.dicBufSize || (inProcessed == 0 && dicPos == state.decoder.dicPos)) {
-      if (state.decoder.dicBufSize != outSize || inBufEnd != inBuf ||
+    if (state->decoder.dicPos == state->decoder.dicBufSize || (inProcessed == 0 && dicPos == state->decoder.dicPos)) {
+      if (state->decoder.dicBufSize != outSize || inBufEnd != inBuf ||
           status != LZMA_STATUS_FINISHED_WITH_MARK)
         res = SZ_ERROR_DATA;
       break;
@@ -1313,8 +1308,11 @@ static int GetByte() {
 /* !! #define GET_BYTE() GetByte() if CONFIG_SIZE_OPT. */
 #define GET_BYTE() (readCur == readEnd ? GetByte() : *readCur++)
 
-/* !! Check size. */
-static Byte decompressBuf[1 << 30];
+/* We rely on virtual memory so that if we don't use the end of array for
+ * small files, then the operating system won't take the entire array away
+ * from other processes.
+ */
+static Byte decompressBuf[1610612736 + 100000];
 
 #define VARINT_EOF ((UInt64)-1)
 
@@ -1351,6 +1349,8 @@ static SRes IgnoreFewBytes(UInt32 c) {
 #define SZ_ERROR_BLOCK_HEADER_TOO_LONG 58
 #define SZ_ERROR_BAD_CHUNK_CONTROL_BYTE 59
 #define SZ_ERROR_BAD_CHECKSUM_TYPE 60
+#define SZ_ERROR_BAD_DICTIONARY_SIZE 61
+#define SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE 62
 
 static SRes IgnoreZeroBytes(UInt32 c) {
   int i;
@@ -1393,6 +1393,7 @@ static SRes DecompressXz(void) {
     UInt32 bhf;  /* Block header flags */
     UInt64 bo;  /* Block offset */
     Byte dicSizeProp;
+    UInt32 dicSize;
     bo = Tell();
     if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
     if (i == 0) break;  /* Last block, index follows. */
@@ -1416,9 +1417,27 @@ static SRes DecompressXz(void) {
     if ((ii = GetVarint()) == VARINT_EOF) return SZ_ERROR_INPUT_EOF;
     if (ii != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
     if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-    /* TODO(pts): Check earlier than DecodeLzma2 for valid values. */
     dicSizeProp = i;
+    /* Typical large dictionary sizes:
+     *
+     *  * 35: 805306368 bytes == 768 MiB
+     *  * 36: 1073741824 bytes == 1 GiB
+     *  * 37: 1610612736 bytes, largest supported by .xz
+     *  * 38: 2147483648 bytes == 2 GiB
+     *  * 39: 3221225472 bytes == 3 GiB
+     *  * 40: 4294967295 bytes, largest supported by .xz
+     */
     DEBUGF("dicSizeProp=0x%02x\n", dicSizeProp);
+    if (dicSizeProp > 40) return SZ_ERROR_BAD_DICTIONARY_SIZE;
+    if (dicSizeProp > 37) return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE;
+    /* !! LZMA2 supports dicSizeProp 40 as well, but we don't */
+    dicSize = LZMA2_DIC_SIZE_FROM_SMALL_PROP(dicSizeProp);
+    ASSERT(dicSize >= LZMA_DIC_MIN);
+    DEBUGF("dicSize39=%u\n", LZMA2_DIC_SIZE_FROM_PROP(39));
+    DEBUGF("dicSize38=%u\n", LZMA2_DIC_SIZE_FROM_PROP(38));
+    DEBUGF("dicSize37=%u\n", LZMA2_DIC_SIZE_FROM_PROP(37));
+    DEBUGF("dicSize36=%u\n", LZMA2_DIC_SIZE_FROM_PROP(36));
+    DEBUGF("dicSize35=%u\n", LZMA2_DIC_SIZE_FROM_PROP(35));
     bhs2 = (UInt32)(Tell() - bo) + 4;  /* Won't overflow. */
     if (bhs2 > bhs) return SZ_ERROR_BLOCK_HEADER_TOO_LONG;
     RINOK(IgnoreZeroBytes(bhs - bhs2));
@@ -1431,6 +1450,23 @@ static SRes DecompressXz(void) {
       UInt64 tcs = 0;
       UInt32 cs;
       Byte *p = decompressBuf, *q;
+      CLzma2Dec state;
+
+      state.decoder.prop.dicSize = dicSize;
+      state.decoder.prop.lc = 0;  /* needinitprop will initialize it */
+      state.decoder.prop.pb = 0;
+      state.decoder.prop.lp = 0;
+      state.decoder.numProbs = Lzma2Props_GetMaxNumProbs();
+      state.decoder.probs = state.probs;  /* Copies pointer only. */
+      /* state.decoder.dic will be set later. */
+      /* state.decoder.dicBufSize will be set later. */
+      state.state = LZMA2_STATE_CONTROL;
+      state.needInitDic = True;
+      state.needInitState = True;
+      state.needInitProp = True;
+      state.decoder.dicPos = 0;
+      LzmaDec_InitDicAndState(&state.decoder, True, True);
+
       for (;;) {
         if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
         DEBUGF("CONTROL 0x%02x at=%d\n", i, (UInt32)Tell());
@@ -1478,10 +1514,10 @@ static SRes DecompressXz(void) {
         }
       }
       tcs = p - decompressBuf;
-      /* !! Why is it so small? */
+      /* !! Check earlier that tcs fits into decompressBuf. */
       DEBUGF("tus=%lld tcs=%lld\n", (long long)tus, (long long)tcs);
       /* !! Make it fail if we specify tus+1 instead of tus. */
-      RINOK(DecodeLzma2(dicSizeProp, decompressBuf, tcs, p, tus));
+      RINOK(DecodeLzma2(&state, decompressBuf, tcs, p, tus));
       q = p + tus;
       while (p != q) {
         ssize_t got = write(1, p, q - p);
