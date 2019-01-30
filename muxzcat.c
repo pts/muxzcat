@@ -8,6 +8,7 @@
  * Can use: -DCONFIG_SIZE_OPT  (!!How much smaller does the code become?)
  *
  * $ xtiny gcc -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c && ls -l muxzcat
+ * -rwxr-xr-x 1 pts pts 5707 Jan 30 17:31 muxzcat
  */
 
 #ifdef __XTINY__
@@ -108,30 +109,6 @@ typedef Int64 ssize_t;
 typedef char Bool;
 #define True 1
 #define False 0
-
-#define LookToRead_BUF_SIZE (1 << 14)
-
-typedef struct
-{
-  int fd;
-  size_t pos;
-  size_t size;
-  Byte buf[LookToRead_BUF_SIZE];
-} CLookToRead;
-
-/* static void LookToRead_Init(CLookToRead *p) */
-#define LOOKTOREAD_INIT(p) do { (p)->pos = (p)->size = 0; } while (0)
-/* 1. If less than *size bytes are already in the input buffer, then fills the
- *    rest of the input buffer from disk.
- * 2. Sets *size to the number of bytes now in the input buffer. Can be more or
- *    less or equal to the original *size. Detect EOF by calling
- *    LOOKTOREAD_SKIP(*size), calling LookToRead_Look again, and then checking
- *    *size == 0.
- */
-static SRes LookToRead_Look(CLookToRead *p, const void **buf, size_t *size);
-/* offset must be <= output(*size) of Look */
-/* static SRes LookToRead_Skip(CLookToRead *p, size_t offset) */
-#define LOOKTOREAD_SKIP(p, offset) do { (p)->pos += (offset); } while (0)
 
 #define LZMA_REQUIRED_INPUT_MAX 20
 
@@ -1247,9 +1224,10 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
 }
 
 /* !! Replace with real inplementation */
-static SRes SzDecodeLzma2(Byte dicSizeProp, UInt64 inSize, CLookToRead *inStream, Byte *outBuffer, size_t outSize) {
+static SRes SzDecodeLzma2(Byte dicSizeProp, const Byte *inBuf, size_t inSize, Byte *outBuf, size_t outSize) {
   CLzma2Dec state;
   SRes res = SZ_OK;
+  const Byte * const inBufEnd = inBuf + inSize;
   if (dicSizeProp > 40) return SZ_ERROR_UNSUPPORTED;
   state.decoder.prop.dicSize = (dicSizeProp == 40) ? 0xFFFFFFFF : LZMA2_DIC_SIZE_FROM_PROP(dicSizeProp);
   ASSERT(state.decoder.prop.dicSize >= LZMA_DIC_MIN);
@@ -1258,7 +1236,7 @@ static SRes SzDecodeLzma2(Byte dicSizeProp, UInt64 inSize, CLookToRead *inStream
   state.decoder.prop.lp = 0;
   state.decoder.numProbs = Lzma2Props_GetMaxNumProbs();
   state.decoder.probs = state.probs;
-  state.decoder.dic = outBuffer;
+  state.decoder.dic = outBuf;
   state.decoder.dicBufSize = outSize;
   state.state = LZMA2_STATE_CONTROL;
   state.needInitDic = True;
@@ -1267,50 +1245,31 @@ static SRes SzDecodeLzma2(Byte dicSizeProp, UInt64 inSize, CLookToRead *inStream
   state.decoder.dicPos = 0;
   LzmaDec_InitDicAndState(&state.decoder, True, True);
 
-  for (;;)
-  {
-    Byte *inBuf = NULL;
-    size_t inProcessed = inSize > LookToRead_BUF_SIZE ?
-        LookToRead_BUF_SIZE : inSize;
-    res = LookToRead_Look(inStream, (const void **)&inBuf, &inProcessed);
+  for (;;) {
+    size_t inProcessed = inBufEnd - inBuf;
+    size_t dicPos = state.decoder.dicPos;
+    ELzmaStatus status;
+    res = Lzma2Dec_DecodeToDic(&state, outSize, inBuf, &inProcessed, LZMA_FINISH_END, &status);
     if (res != SZ_OK)
       break;
-
-    {
-      size_t dicPos = state.decoder.dicPos;
-      ELzmaStatus status;
-      res = Lzma2Dec_DecodeToDic(&state, outSize, inBuf, &inProcessed, LZMA_FINISH_END, &status);
-      inSize -= inProcessed;
-      if (res != SZ_OK)
-        break;
-      if (state.decoder.dicPos == state.decoder.dicBufSize || (inProcessed == 0 && dicPos == state.decoder.dicPos))
-      {
-        if (state.decoder.dicBufSize != outSize || inSize != 0 ||
-            (status != LZMA_STATUS_FINISHED_WITH_MARK))
-          res = SZ_ERROR_DATA;
-        break;
-      }
-      LOOKTOREAD_SKIP(inStream, inProcessed);
+    inBuf += inProcessed;
+    if (state.decoder.dicPos == state.decoder.dicBufSize || (inProcessed == 0 && dicPos == state.decoder.dicPos)) {
+      if (state.decoder.dicBufSize != outSize || inBufEnd != inBuf ||
+          status != LZMA_STATUS_FINISHED_WITH_MARK)
+        res = SZ_ERROR_DATA;
+      break;
     }
   }
   return res;
 }
 
-/* !! Replace with real implementation */
-static SRes LookToRead_Look(CLookToRead *p, const void **buf, size_t *size) {
-  (void)p;
-  (void)buf;
-  *size += 42;
-  return SZ_OK;
-}
-
+Byte inBuf[1000];
 int main(int argc, char **argv) {
   (void)argc; (void)argv;
-  const UInt64 inSize = 2000;
-  CLookToRead inStream;
-  Byte outBuffer[10000];
-  const size_t outSize = sizeof(outBuffer);
+  Byte outBuf[10000];
+  const size_t outSize = sizeof(outBuf);
   const Byte dicSizeProp = 0x90;
-  SzDecodeLzma2(dicSizeProp, inSize, &inStream, outBuffer, outSize);
+  const size_t inSize = 777;
+  SzDecodeLzma2(dicSizeProp, inBuf, inSize, outBuf, outSize);
   return 0;
 }
