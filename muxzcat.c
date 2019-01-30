@@ -5,7 +5,7 @@
  * Can use: -DCONFIG_NO_INT64
  * Can use: -DCONFIG_NO_SIZE_T
  * Can use: -DCONFIG_PROB32
- * Can use: -DCONFIG_SIZE_OPT  (How much smaller does the code become?)
+ * Can use: -DCONFIG_SIZE_OPT  (!!How much smaller does the code become?)
  *
  * $ xtiny gcc -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c && ls -l muxzcat
  */
@@ -19,12 +19,10 @@ typedef uint64_t UInt64;
 typedef int32_t Int32;
 typedef uint32_t UInt32;
 #define UINT64_CONST(n) n ## ULL
-/* !! malloc, free */
 
 #else
 
 #include <stddef.h>  /* size_t */
-#include <stdlib.h>  /* malloc(), free() */
 #include <string.h>  /* memcpy() */
 
 #ifdef _WIN32
@@ -62,28 +60,6 @@ typedef uint32_t UInt32;
 
 /* Just check that it compiles. */
 #define ASSERT(condition) do {} while (0 && (condition))
-
-/* --- Memory allocation */
-
-#ifdef __XTINY__
-
-static char malloc_buf[1000000], *malloc_next = malloc_buf;
-
-/* !! get rid of SzAlloc */
-static void *SzAlloc(size_t size) {
-  char *result = malloc_next;
-  malloc_next += size;
-  return result;
-}
-
-static void SzFree(void *address) {
-  (void)address;
-}
-
-#else
-#define SzAlloc(size) malloc(size)
-#define SzFree(address) free(address)
-#endif
 
 /* --- */
 
@@ -157,17 +133,7 @@ static SRes LookToRead_Look(CLookToRead *p, const void **buf, size_t *size);
 /* static SRes LookToRead_Skip(CLookToRead *p, size_t offset) */
 #define LOOKTOREAD_SKIP(p, offset) do { (p)->pos += (offset); } while (0)
 
-/* CONFIG_PROB32 can increase the speed on some CPUs,
-   but memory usage for CLzmaDec::probs will be doubled in that case
-   !! how much is it typically?
-   */
-#ifdef CONFIG_PROB32
-#define CLzmaProb UInt32
-#else
-#define CLzmaProb UInt16
-#endif
-
-#define LZMA_PROPS_SIZE 5
+#define LZMA_REQUIRED_INPUT_MAX 20
 
 typedef struct _CLzmaProps
 {
@@ -175,7 +141,15 @@ typedef struct _CLzmaProps
   UInt32 dicSize;
 } CLzmaProps;
 
-#define LZMA_REQUIRED_INPUT_MAX 20
+/* CONFIG_PROB32 can increase the speed on some CPUs,
+   but memory usage for CLzmaDec::probs will be doubled in that case
+   CONFIG_PROB32 increases memory usage by 28268 bytes.
+   */
+#ifdef CONFIG_PROB32
+#define CLzmaProb UInt32
+#else
+#define CLzmaProb UInt16
+#endif
 
 typedef struct
 {
@@ -219,6 +193,21 @@ typedef enum
 static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit,
     const Byte *src, size_t *srcLen, ELzmaFinishMode finishMode, ELzmaStatus *status);
 
+#define LZMA_BASE_SIZE 1846
+#define LZMA_LIT_SIZE 768
+#define LZMA2_LCLP_MAX 4
+
+/* For LZMA streams, lc + lp <= 8 + 4 <= 12.
+ * For LZMA2 streams, lc + lp <= 4.
+ * Minimum value: 1846.
+ * Maximum value for LZMA streams: 1846 + (768 << (8 + 4)) == 3147574.
+ * Maximum value for LZMA2 streams: 1846 + (768 << 4) == 14134.
+ * Memory usage of prob: sizeof(CLzmaProb) * value == (2 or 4) * value bytes.
+ */
+#define LzmaProps_GetNumProbs(p) ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp)))
+/* 14134 */
+#define Lzma2Props_GetMaxNumProbs() ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << LZMA2_LCLP_MAX))
+
 typedef struct
 {
   CLzmaDec decoder;
@@ -229,6 +218,7 @@ typedef struct
   Bool needInitDic;
   Bool needInitState;
   Bool needInitProp;
+  CLzmaProb probs[Lzma2Props_GetMaxNumProbs()];
 } CLzma2Dec;
 
 static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
@@ -333,20 +323,8 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
 #define RepLenCoder (LenCoder + kNumLenProbs)
 #define Literal (RepLenCoder + kNumLenProbs)
 
-#define LZMA_BASE_SIZE 1846
-#define LZMA_LIT_SIZE 768
-
-/* For LZMA streams, lc + lp <= 8 + 4 <= 12.
- * For LZMA2 streams, lc + lp <= 4.
- * Minimum value: 1846.
- * Maximum value for LZMA streams: 1846 + (768 << (8 + 4)) == 3147574.
- * Maximum value for LZMA2 streams: 1846 + (768 << 4) == 14134.
- * Memory usage of prob: sizeof(CLzmaProb) * value == (2 or 4) * value bytes.
- */
-#define LzmaProps_GetNumProbs(p) ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp)))
-
 #if Literal != LZMA_BASE_SIZE
-StopCompilingDueBUG
+#error StopCompilingDueBUG
 #endif
 
 #define LZMA_DIC_MIN (1 << 12)
@@ -1065,7 +1043,6 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 #define LZMA2_GET_LZMA_MODE(p) (((p)->control >> 5) & 3)
 #define LZMA2_IS_THERE_PROP(mode) ((mode) >= 2)
 
-#define LZMA2_LCLP_MAX 4
 #define LZMA2_DIC_SIZE_FROM_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
 typedef enum
@@ -1147,8 +1124,6 @@ static void LzmaDec_UpdateWithUncompressed(CLzmaDec *p, const Byte *src, size_t 
     p->checkDicSize = p->prop.dicSize;
   p->processedPos += (UInt32)size;
 }
-
-static void LzmaDec_InitDicAndState(CLzmaDec *p, Bool initDic, Bool initState);
 
 static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
     const Byte *src, size_t *srcLen, ELzmaFinishMode finishMode, ELzmaStatus *status)
@@ -1272,27 +1247,17 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
 }
 
 /* !! Replace with real inplementation */
-static SRes SzDecodeLzma2(Byte dicSizeProp, Byte lclppbProp, UInt64 inSize, CLookToRead *inStream,
-    Byte *outBuffer, size_t outSize)
-{
+static SRes SzDecodeLzma2(Byte dicSizeProp, UInt64 inSize, CLookToRead *inStream, Byte *outBuffer, size_t outSize) {
   CLzma2Dec state;
   SRes res = SZ_OK;
   if (dicSizeProp > 40) return SZ_ERROR_UNSUPPORTED;
   state.decoder.prop.dicSize = (dicSizeProp == 40) ? 0xFFFFFFFF : LZMA2_DIC_SIZE_FROM_PROP(dicSizeProp);
   ASSERT(state.decoder.prop.dicSize >= LZMA_DIC_MIN);
-  {
-    Byte d = lclppbProp;
-    if (d >= (9 * 5 * 5)) return SZ_ERROR_UNSUPPORTED;
-    state.decoder.prop.lc = d % 9;
-    d /= 9;
-    state.decoder.prop.pb = d / 5;
-    state.decoder.prop.lp = d % 5;
-  }
-  {
-    state.decoder.numProbs = LzmaProps_GetNumProbs(&state.decoder.prop);  /* !! precompute */
-    state.decoder.probs = (CLzmaProb *)SzAlloc(state.decoder.numProbs * sizeof(CLzmaProb));  /* !! remove */
-    if (state.decoder.probs == 0) return SZ_ERROR_MEM;
-  }
+  state.decoder.prop.lc = 0;  /* needinitprop will initialize it */
+  state.decoder.prop.pb = 0;
+  state.decoder.prop.lp = 0;
+  state.decoder.numProbs = Lzma2Props_GetMaxNumProbs();
+  state.decoder.probs = state.probs;
   state.decoder.dic = outBuffer;
   state.decoder.dicBufSize = outSize;
   state.state = LZMA2_STATE_CONTROL;
@@ -1328,8 +1293,6 @@ static SRes SzDecodeLzma2(Byte dicSizeProp, Byte lclppbProp, UInt64 inSize, CLoo
       LOOKTOREAD_SKIP(inStream, inProcessed);
     }
   }
-
-  SzFree(state.decoder.probs);  /* !! remove */
   return res;
 }
 
@@ -1348,7 +1311,6 @@ int main(int argc, char **argv) {
   Byte outBuffer[10000];
   const size_t outSize = sizeof(outBuffer);
   const Byte dicSizeProp = 0x90;
-  const Byte lclppbProp = LZMA2_LCLP_MAX;
-  SzDecodeLzma2(dicSizeProp, lclppbProp, inSize, &inStream, outBuffer, outSize);
+  SzDecodeLzma2(dicSizeProp, inSize, &inStream, outBuffer, outSize);
   return 0;
 }
