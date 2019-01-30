@@ -198,8 +198,6 @@ typedef struct
   Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
 } CLzmaDec;
 
-static void LzmaDec_Init(CLzmaDec *p);
-
 /* There are two types of LZMA streams:
      0) Stream with end mark. That end mark adds about 6 bytes to compressed size.
      1) Stream without end mark. You must know exact uncompressed size to decompress such stream. */
@@ -232,8 +230,6 @@ typedef struct
   Bool needInitState;
   Bool needInitProp;
 } CLzma2Dec;
-
-static void Lzma2Dec_Init(CLzma2Dec *p);
 
 static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
     const Byte *src, size_t *srcLen, ELzmaFinishMode finishMode, ELzmaStatus *status);
@@ -340,6 +336,13 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
 #define LZMA_BASE_SIZE 1846
 #define LZMA_LIT_SIZE 768
 
+/* For LZMA streams, lc + lp <= 8 + 4 <= 12.
+ * For LZMA2 streams, lc + lp <= 4.
+ * Minimum value: 1846.
+ * Maximum value for LZMA streams: 1846 + (768 << (8 + 4)) == 3147574.
+ * Maximum value for LZMA2 streams: 1846 + (768 << 4) == 14134.
+ * Memory usage of prob: sizeof(CLzmaProb) * value == (2 or 4) * value bytes.
+ */
 #define LzmaProps_GetNumProbs(p) ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp)))
 
 #if Literal != LZMA_BASE_SIZE
@@ -919,12 +922,6 @@ static void LzmaDec_InitDicAndState(CLzmaDec *p, Bool initDic, Bool initState)
     p->needInitState = 1;
 }
 
-static void LzmaDec_Init(CLzmaDec *p)
-{
-  p->dicPos = 0;
-  LzmaDec_InitDicAndState(p, True, True);
-}
-
 static void LzmaDec_InitStateReal(CLzmaDec *p)
 {
   UInt32 numProbs = Literal + ((UInt32)LZMA_LIT_SIZE << (p->prop.lc + p->prop.lp));
@@ -1084,15 +1081,6 @@ typedef enum
   LZMA2_STATE_FINISHED,
   LZMA2_STATE_ERROR
 } ELzma2State;
-
-static void Lzma2Dec_Init(CLzma2Dec *p)
-{
-  p->state = LZMA2_STATE_CONTROL;
-  p->needInitDic = True;
-  p->needInitState = True;
-  p->needInitProp = True;
-  LzmaDec_Init(&p->decoder);
-}
 
 static ELzma2State Lzma2Dec_UpdateState(CLzma2Dec *p, Byte b)
 {
@@ -1284,18 +1272,16 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
 }
 
 /* !! Replace with real inplementation */
-static SRes SzDecodeLzma2(Byte dicSizeProp, Byte lclppb, UInt64 inSize, CLookToRead *inStream,
+static SRes SzDecodeLzma2(Byte dicSizeProp, Byte lclppbProp, UInt64 inSize, CLookToRead *inStream,
     Byte *outBuffer, size_t outSize)
 {
   CLzma2Dec state;
   SRes res = SZ_OK;
   if (dicSizeProp > 40) return SZ_ERROR_UNSUPPORTED;
-  state.decoder.dic = 0;
-  state.decoder.probs = 0;
   state.decoder.prop.dicSize = (dicSizeProp == 40) ? 0xFFFFFFFF : LZMA2_DIC_SIZE_FROM_PROP(dicSizeProp);
   ASSERT(state.decoder.prop.dicSize >= LZMA_DIC_MIN);
   {
-    Byte d = lclppb;
+    Byte d = lclppbProp;
     if (d >= (9 * 5 * 5)) return SZ_ERROR_UNSUPPORTED;
     state.decoder.prop.lc = d % 9;
     d /= 9;
@@ -1303,16 +1289,18 @@ static SRes SzDecodeLzma2(Byte dicSizeProp, Byte lclppb, UInt64 inSize, CLookToR
     state.decoder.prop.lp = d % 5;
   }
   {
-    CLzmaDec *p = &state.decoder;
-    const CLzmaProps *propNew = &state.decoder.prop;
-    UInt32 numProbs = LzmaProps_GetNumProbs(propNew);  /* !! precompute */
-    p->probs = (CLzmaProb *)SzAlloc(numProbs * sizeof(CLzmaProb));
-    p->numProbs = numProbs;
-    if (p->probs == 0) return SZ_ERROR_MEM;
+    state.decoder.numProbs = LzmaProps_GetNumProbs(&state.decoder.prop);  /* !! precompute */
+    state.decoder.probs = (CLzmaProb *)SzAlloc(state.decoder.numProbs * sizeof(CLzmaProb));  /* !! remove */
+    if (state.decoder.probs == 0) return SZ_ERROR_MEM;
   }
   state.decoder.dic = outBuffer;
   state.decoder.dicBufSize = outSize;
-  Lzma2Dec_Init(&state);  /* !! inline */
+  state.state = LZMA2_STATE_CONTROL;
+  state.needInitDic = True;
+  state.needInitState = True;
+  state.needInitProp = True;
+  state.decoder.dicPos = 0;
+  LzmaDec_InitDicAndState(&state.decoder, True, True);
 
   for (;;)
   {
@@ -1341,7 +1329,7 @@ static SRes SzDecodeLzma2(Byte dicSizeProp, Byte lclppb, UInt64 inSize, CLookToR
     }
   }
 
-  SzFree(state.decoder.probs);
+  SzFree(state.decoder.probs);  /* !! remove */
   return res;
 }
 
@@ -1360,7 +1348,7 @@ int main(int argc, char **argv) {
   Byte outBuffer[10000];
   const size_t outSize = sizeof(outBuffer);
   const Byte dicSizeProp = 0x90;
-  const Byte lclppb = LZMA2_LCLP_MAX;
-  SzDecodeLzma2(dicSizeProp, lclppb, inSize, &inStream, outBuffer, outSize);
+  const Byte lclppbProp = LZMA2_LCLP_MAX;
+  SzDecodeLzma2(dicSizeProp, lclppbProp, inSize, &inStream, outBuffer, outSize);
   return 0;
 }
