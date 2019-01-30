@@ -4,7 +4,10 @@
  *
  * Limitations of this decompressor:
  *
- * * It keeps both the compressed and uncompressed data in memory.
+ * * It keeps both uncompressed data in memory, and it needs 120 KiB of
+ *   memory on top of it: readBuf is about 64 KiB, CLzma2Dec.prob is about
+ *   14 KiB, the rest decompressBuf (containing the entire uncompressed
+ *   data) and a small constant overhead.
  * * It doesn't support decompressed data larger than 1610612736 (~1.61 GB).
  *   FYI linux-4.20.5.tar is about half as much, 854855680 bytes.
  * * It supports only LZMA2 (no other filters).
@@ -41,10 +44,19 @@ typedef int32_t Int32;
 typedef uint32_t UInt32;
 #define UINT64_CONST(n) n ## ULL
 
+/* !! TODO(pts): Replace this with inline assembly: rep movsb. */
+static void MemmoveBackward(void *dest, const void *src, size_t n) {
+  char *destCp = (char*)dest;
+  char *srcCp = (char*)src;
+  for (; n > 0; --n) {
+    *destCp++ = *srcCp++;
+  }
+}
+
 #else
 
 #include <stddef.h>  /* size_t */
-#include <string.h>  /* memcpy() */
+#include <string.h>  /* memcpy(), memmove() */
 #include <unistd.h>  /* read(), write() */
 
 #ifdef _WIN32
@@ -54,6 +66,8 @@ typedef uint32_t UInt32;
 #if defined(MSDOS) || defined(_WIN32)
 #include <fcntl.h>  /* setmode() */
 #endif
+
+#define MemmoveBackward(dest, src, n) memmove(dest, src, n)
 
 #ifdef CONFIG_NO_INT64
 
@@ -113,18 +127,6 @@ typedef uint32_t UInt32;
 #define SZ_ERROR_PROGRESS 10
 #define SZ_ERROR_FAIL 11
 #define SZ_ERROR_THREAD 12
-#define SZ_ERROR_BAD_FILENAME 13
-#define SZ_ERROR_UNSAFE_FILENAME 14
-
-#define SZ_ERROR_ARCHIVE 16
-#define SZ_ERROR_NO_ARCHIVE 17
-
-#define SZ_ERROR_OVERWRITE 21
-#define SZ_ERROR_WRITE_OPEN 22
-#define SZ_ERROR_WRITE_CHMOD 23
-#define SZ_ERROR_WRITE_MKDIR 24
-#define SZ_ERROR_WRITE_MKDIR_CHMOD 25
-#define SZ_ERROR_WRITE_SYMLINK 26
 
 typedef int SRes;
 
@@ -202,9 +204,6 @@ typedef enum
   LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK  /* there is probability that stream was finished without end mark */
 } ELzmaStatus;
 
-static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit,
-    const Byte *src, size_t *srcLen, ELzmaFinishMode finishMode, ELzmaStatus *status);
-
 #define LZMA_BASE_SIZE 1846
 #define LZMA_LIT_SIZE 768
 #define LZMA2_LCLP_MAX 4
@@ -232,9 +231,6 @@ typedef struct
   Bool needInitProp;
   CLzmaProb probs[Lzma2Props_GetMaxNumProbs()];
 } CLzma2Dec;
-
-static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
-    const Byte *src, size_t *srcLen, ELzmaFinishMode finishMode, ELzmaStatus *status);
 
 /* --- */
 
@@ -1259,34 +1255,41 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
   return SZ_OK;
 }
 
-/* !! Inline and remove. */
-static SRes DecodeLzma2(CLzma2Dec *state, const Byte *inBuf, size_t inSize, Byte *outBuf, size_t outSize) {
-  SRes res = SZ_OK;
-  const Byte * const inBufEnd = inBuf + inSize;
-  state->decoder.dic = outBuf;
-  state->decoder.dicBufSize = outSize;
-  for (;;) {
-    size_t inProcessed = inBufEnd - inBuf;
-    size_t dicPos = state->decoder.dicPos;
-    ELzmaStatus status;
-    res = Lzma2Dec_DecodeToDic(state, outSize, inBuf, &inProcessed, LZMA_FINISH_END, &status);
-    if (res != SZ_OK)
-      break;
-    inBuf += inProcessed;
-    if (state->decoder.dicPos == state->decoder.dicBufSize || (inProcessed == 0 && dicPos == state->decoder.dicPos)) {
-      if (state->decoder.dicBufSize != outSize || inBufEnd != inBuf ||
-          status != LZMA_STATUS_FINISHED_WITH_MARK)
-        res = SZ_ERROR_DATA;
-      break;
+/* !! Read at least 65536 bytes in the beginning to decompressBuf, no need for input buffering? */
+static Byte readBuf[65535 + 6], *readCur = readBuf, *readEnd = readBuf;
+static UInt64 readFileOfs = 0;
+
+/* Try to preread r bytes to the read buffer. Returns the number of bytes
+ * available in the read buffer. If smaller than r, that indicates EOF.
+ *
+ * Doesn't try to preread more than absolutely necessary, to avoid copies in
+ * the future.
+ *
+ * Works only if r <= sizeof(readBuf).
+ */
+static UInt32 Preread(UInt32 r) {
+  UInt32 p = readEnd - readCur;
+  ASSERT(r <= sizeof(readBuf));
+  if (p < r) {  /* Not enough pending available. */
+    if (readBuf + sizeof(readBuf) - readCur + 0U < r) {
+      /* If no room for r bytes to the end, discard bytes from the beginning. */
+      MemmoveBackward(readBuf, readCur, p);
+      readEnd = readBuf + p;
+      readCur = readBuf;
+    }
+    while (p < r) {
+      /* Instead of (r - p) we could use (readBuf + sizeof(readBuf) -
+       * readEnd) to read as much as the buffer has room for.
+       */
+      ssize_t got = read(0, readEnd, r - p);
+      if (got <= 0) break;  /* EOF on input. */
+      readEnd += got;
+      p += got;
+      readFileOfs += got;
     }
   }
-  return res;
+  return p;
 }
-
-/* !! Reuse the beginning of decompressBuf? */
-/* !! Read at least 65536 bytes in the beginning to decompressBuf, no need for input buffering? */
-static Byte readBuf[65536], *readCur = readBuf, *readEnd = readBuf;
-static UInt64 readFileOfs = 0;
 
 /* Return the number of bytes read from stdin. */
 static UInt64 Tell() {
@@ -1308,11 +1311,13 @@ static int GetByte() {
 /* !! #define GET_BYTE() GetByte() if CONFIG_SIZE_OPT. */
 #define GET_BYTE() (readCur == readEnd ? GetByte() : *readCur++)
 
-/* We rely on virtual memory so that if we don't use the end of array for
+/* Contains the uncompressed data.
+ *
+ * We rely on virtual memory so that if we don't use the end of array for
  * small files, then the operating system won't take the entire array away
  * from other processes.
  */
-static Byte decompressBuf[1610612736 + 100000];
+static Byte decompressBuf[1610612736];
 
 #define VARINT_EOF ((UInt64)-1)
 
@@ -1351,6 +1356,10 @@ static SRes IgnoreFewBytes(UInt32 c) {
 #define SZ_ERROR_BAD_CHECKSUM_TYPE 60
 #define SZ_ERROR_BAD_DICTIONARY_SIZE 61
 #define SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE 62
+#define SZ_ERROR_FEED_CHUNK 63
+#define SZ_ERROR_NOT_FINISHED_WITH_MARK 64
+#define SZ_ERROR_BAD_DICPOS 65
+#define SZ_ERROR_FINISHED_TOO_EARLY 66
 
 static SRes IgnoreZeroBytes(UInt32 c) {
   int i;
@@ -1433,11 +1442,11 @@ static SRes DecompressXz(void) {
     /* !! LZMA2 supports dicSizeProp 40 as well, but we don't */
     dicSize = LZMA2_DIC_SIZE_FROM_SMALL_PROP(dicSizeProp);
     ASSERT(dicSize >= LZMA_DIC_MIN);
-    DEBUGF("dicSize39=%u\n", LZMA2_DIC_SIZE_FROM_PROP(39));
-    DEBUGF("dicSize38=%u\n", LZMA2_DIC_SIZE_FROM_PROP(38));
-    DEBUGF("dicSize37=%u\n", LZMA2_DIC_SIZE_FROM_PROP(37));
-    DEBUGF("dicSize36=%u\n", LZMA2_DIC_SIZE_FROM_PROP(36));
-    DEBUGF("dicSize35=%u\n", LZMA2_DIC_SIZE_FROM_PROP(35));
+    DEBUGF("dicSize39=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(39));
+    DEBUGF("dicSize38=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(38));
+    DEBUGF("dicSize37=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(37));
+    DEBUGF("dicSize36=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(36));
+    DEBUGF("dicSize35=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(35));
     bhs2 = (UInt32)(Tell() - bo) + 4;  /* Won't overflow. */
     if (bhs2 > bhs) return SZ_ERROR_BLOCK_HEADER_TOO_LONG;
     RINOK(IgnoreZeroBytes(bhs - bhs2));
@@ -1446,10 +1455,9 @@ static SRes DecompressXz(void) {
     DEBUGF("LZMA2 at %d\n", (UInt32)Tell());
     { /* Parse LZMA2 stream. */
       /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
-      UInt64 tus = 0;  /* total uncompressed size */
-      UInt64 tcs = 0;
-      UInt32 cs;
-      Byte *p = decompressBuf, *q;
+      UInt32 tus = 0;  /* Total uncompressed size so far. */
+      UInt32 us;
+      UInt32 feedSize;
       CLzma2Dec state;
 
       state.decoder.prop.dicSize = dicSize;
@@ -1458,8 +1466,8 @@ static SRes DecompressXz(void) {
       state.decoder.prop.lp = 0;
       state.decoder.numProbs = Lzma2Props_GetMaxNumProbs();
       state.decoder.probs = state.probs;  /* Copies pointer only. */
-      /* state.decoder.dic will be set later. */
-      /* state.decoder.dicBufSize will be set later. */
+      state.decoder.dic = decompressBuf;
+      state.decoder.dicBufSize = 0;  /* We'll increment it later. */
       state.state = LZMA2_STATE_CONTROL;
       state.needInitDic = True;
       state.needInitState = True;
@@ -1468,61 +1476,68 @@ static SRes DecompressXz(void) {
       LzmaDec_InitDicAndState(&state.decoder, True, True);
 
       for (;;) {
-        if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+        /* Actually 2 bytes is enough to get to the index if everything is
+         * aligned and there is no block checksum.
+         */
+        if (Preread(5) < 5) return SZ_ERROR_INPUT_EOF;
+        i = readCur[0];
         DEBUGF("CONTROL 0x%02x at=%d\n", i, (UInt32)Tell());
-        *p++ = i;
         if (i == 0) {
           break;
-        } else if (i < 3) {  /* Uncompressed chunk. */
-          /* !! Remove redundancy. */
-          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-          *p++ = i;
-          cs = i << 8;
-          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-          *p++ = i;
-          cs += i + 1;
-          tus += cs;
-        } else if (i < 0x80) {
+        } else if (i >= 3 && i < 0x80) {
           return SZ_ERROR_BAD_CHUNK_CONTROL_BYTE;
+        }
+        /* !! Remove redundancy. */
+        us = (readCur[1] << 8) + readCur[2] + 1;
+        if (i < 3) {  /* Uncompressed chunk. */
+          feedSize = 3 + us;
         } else {  /* LZMA chunk. */
-          Bool isProp;
-          UInt32 us;
-          us = (i & 31) << 16;
-          isProp = (i & 64) != 0;
-          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-          *p++ = i;
-          us += i << 8;
-          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-          *p++ = i;
-          us += i + 1;
-          tus += us;
-          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-          *p++ = i;
-          cs = i << 8;
-          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-          *p++ = i;
-          cs += i + 1;
-          if (isProp) {
-            if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-            /* TODO(pts): Check earlier than DecodeLzma2 for valid values. */
-            *p++ = i;
+          const Bool isProp = (i & 64) != 0;
+          us += (i & 31) << 16;
+          feedSize = (readCur[3] << 8) + readCur[4] + 1 + 5 + isProp;
+        }
+        /* Decompressed data too long, won't fit to decompressBuf. */
+        if (tus + us > sizeof(decompressBuf)) return SZ_ERROR_MEM;
+        state.decoder.dicBufSize = tus + us;
+        if (Preread(feedSize) < feedSize) return SZ_ERROR_INPUT_EOF;
+        {
+          size_t inProcessed = feedSize;
+          ELzmaStatus status;
+          DEBUGF("FEED us=%d feedSize=%d dicPos=%d\n", us, feedSize, (int)state.decoder.dicPos);
+          /* !! Get rid of Lzma2Dec_DecodeToDic, use LzmaDec_DecodeToDic directly. */
+          RINOK(Lzma2Dec_DecodeToDic(&state, state.decoder.dicBufSize, readCur, &inProcessed, LZMA_FINISH_END, &status));
+          DEBUGF("FED  status=%d inProcessed=%d dicPos=%d\n", status, (int)inProcessed, (int)state.decoder.dicPos);
+          if (status == LZMA_STATUS_FINISHED_WITH_MARK) return SZ_ERROR_FINISHED_TOO_EARLY;
+          if (inProcessed != feedSize) return SZ_ERROR_FEED_CHUNK;
+          if (state.decoder.dicPos != tus + us) return SZ_ERROR_BAD_DICPOS;
+          ASSERT(state.decoder.dicBufSize == tus + us);
+        }
+        {
+          const Byte *p = decompressBuf + tus, *q = p + us;
+          while (p != q) {
+            ssize_t got = write(1, p, q - p);
+            if (got <= 0) return SZ_ERROR_WRITE;
+            p += got;
           }
         }
-        for (; cs > 0; --cs) {
-          if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-          *p++ = i;
-        }
+        readCur += feedSize;
+        tus += us;
+        /* We can't discard decompressbuf[:tus] now, because we need it a
+         * dictionary in which subsequent calls to Lzma2Dec_DecodeToDic will
+         * look up backreferences.
+         */
       }
-      tcs = p - decompressBuf;
-      /* !! Check earlier that tcs fits into decompressBuf. */
-      DEBUGF("tus=%lld tcs=%lld\n", (long long)tus, (long long)tcs);
-      /* !! Make it fail if we specify tus+1 instead of tus. */
-      RINOK(DecodeLzma2(&state, decompressBuf, tcs, p, tus));
-      q = p + tus;
-      while (p != q) {
-        ssize_t got = write(1, p, q - p);
-        if (got <= 0) return SZ_ERROR_WRITE;
-        p += got;
+      {
+        size_t inProcessed = 1;  /* End-of-stream byte. */
+        ELzmaStatus status;
+        DEBUGF("LASTFEED tus=%d feedSize=%d\n", tus, feedSize);
+        RINOK(Lzma2Dec_DecodeToDic(&state, state.decoder.dicBufSize, readCur, &inProcessed, LZMA_FINISH_END, &status));
+        DEBUGF("LASTFED  status=%d inProcessed=%d\n", status, (int)inProcessed);
+        ASSERT(inProcessed == 1);
+        if (status != LZMA_STATUS_FINISHED_WITH_MARK) return SZ_ERROR_NOT_FINISHED_WITH_MARK;
+        if (state.decoder.dicPos != tus) return SZ_ERROR_BAD_DICPOS;
+        ASSERT(state.decoder.dicBufSize == tus);
+        ++readCur;
       }
     }
     DEBUGF("ALTELL %d\n", (UInt32)Tell());
