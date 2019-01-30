@@ -8,7 +8,6 @@
  * Can use: -DCONFIG_SIZE_OPT  (How much smaller does the code become?)
  *
  * $ xtiny gcc -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c && ls -l muxzcat
- * -rwxr-xr-x 1 pts pts 5707 Jan 30 16:06 muxzcat
  */
 
 #ifdef __XTINY__
@@ -155,15 +154,6 @@ static SRes LookToRead_Look(CLookToRead *p, const void **buf, size_t *size);
 /* static SRes LookToRead_Skip(CLookToRead *p, size_t offset) */
 #define LOOKTOREAD_SKIP(p, offset) do { (p)->pos += (offset); } while (0)
 
-typedef struct
-{
-  UInt32 NumInStreams;
-  UInt32 NumOutStreams;
-  UInt64 MethodID;
-  Byte *Props;
-  size_t PropsSize;
-} CSzCoderInfo;
-
 /* CONFIG_PROB32 can increase the speed on some CPUs,
    but memory usage for CLzmaDec::probs will be doubled in that case
    !! how much is it typically?
@@ -251,7 +241,6 @@ typedef struct
 #define Lzma2Dec_FreeProbs(p) LzmaDec_FreeProbs(&(p)->decoder);
 #define Lzma2Dec_Free(p) LzmaDec_Free(&(p)->decoder);
 
-static SRes Lzma2Dec_AllocateProbs(CLzma2Dec *p, Byte prop);
 static void Lzma2Dec_Init(CLzma2Dec *p);
 
 static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
@@ -1109,6 +1098,7 @@ static SRes LzmaProps_Decode(CLzmaProps *p, const Byte *data, unsigned size)
   return SZ_OK;
 }
 
+/* !! Merge with LzmaDec_AllocateProbs */
 static SRes LzmaDec_AllocateProbs2(CLzmaDec *p, const CLzmaProps *propNew)
 {
   UInt32 numProbs = LzmaProps_GetNumProbs(propNew);
@@ -1171,13 +1161,6 @@ static SRes Lzma2Dec_GetOldProps(Byte prop, Byte *props)
   props[3] = (Byte)(dicSize >> 16);
   props[4] = (Byte)(dicSize >> 24);
   return SZ_OK;
-}
-
-static SRes Lzma2Dec_AllocateProbs(CLzma2Dec *p, Byte prop)
-{
-  Byte props[LZMA_PROPS_SIZE];
-  RINOK(Lzma2Dec_GetOldProps(prop, props));
-  return LzmaDec_AllocateProbs(&p->decoder, props, LZMA_PROPS_SIZE);
 }
 
 static void Lzma2Dec_Init(CLzma2Dec *p)
@@ -1379,16 +1362,18 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
 }
 
 /* !! Replace with real inplementation */
-static SRes SzDecodeLzma2(CSzCoderInfo *coder, UInt64 inSize, CLookToRead *inStream,
+static SRes SzDecodeLzma2(Byte prop, UInt64 inSize, CLookToRead *inStream,
     Byte *outBuffer, size_t outSize)
 {
   CLzma2Dec state;
   SRes res = SZ_OK;
 
   Lzma2Dec_Construct(&state);
-  if (coder->PropsSize != 1)
-    return SZ_ERROR_DATA;
-  RINOK(Lzma2Dec_AllocateProbs(&state, coder->Props[0]));
+  {
+    Byte props[LZMA_PROPS_SIZE];
+    RINOK(Lzma2Dec_GetOldProps(prop, props));
+    RINOK(LzmaDec_AllocateProbs(&state.decoder, props, LZMA_PROPS_SIZE));
+  }
   state.decoder.dic = outBuffer;
   state.decoder.dicBufSize = outSize;
   Lzma2Dec_Init(&state);
@@ -1434,13 +1419,11 @@ static SRes LookToRead_Look(CLookToRead *p, const void **buf, size_t *size) {
 
 int main(int argc, char **argv) {
   (void)argc; (void)argv;
-  CSzCoderInfo coder;
   const UInt64 inSize = 2000;
   CLookToRead inStream;
   Byte outBuffer[10000];
   const size_t outSize = sizeof(outBuffer);
-  coder.PropsSize = 1;
-  coder.Props = (Byte*)"\x90";
-  SzDecodeLzma2(&coder, inSize, &inStream, outBuffer, outSize);
+  const Byte prop = 0x90;
+  SzDecodeLzma2(prop, inSize, &inStream, outBuffer, outSize);
   return 0;
 }
