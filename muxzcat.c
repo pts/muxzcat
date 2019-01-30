@@ -41,6 +41,10 @@ typedef uint32_t UInt32;
 #include <windows.h>
 #endif
 
+#if defined(MSDOS) || defined(_WIN32)
+#include <fcntl.h>  /* setmode() */
+#endif
+
 #ifdef CONFIG_NO_INT64
 
 typedef long Int64;
@@ -1497,6 +1501,9 @@ static SRes DecompressXz(void) {
 
 int main(int argc, char **argv) {
   (void)argc; (void)argv;
-  /* !! setmode(0, O_BINARY); setmode(1, O_BINARY); for WIN32 */
+#if defined(MSDOS) || defined(_WIN32)
+  setmode(0, O_BINARY);
+  setmode(1, O_BINARY);
+#endif
   return DecompressXz();
 }
