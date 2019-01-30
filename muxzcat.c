@@ -60,6 +60,9 @@ typedef uint32_t UInt32;
 
 #endif  /* USE_MINIINC1 */
 
+/* Just check that it compiles. */
+#define ASSERT(condition) do {} while (0 && (condition))
+
 /* --- Memory allocation */
 
 #ifdef __XTINY__
@@ -171,8 +174,6 @@ typedef struct _CLzmaProps
   unsigned lc, lp, pb;
   UInt32 dicSize;
 } CLzmaProps;
-
-static SRes LzmaProps_Decode(CLzmaProps *p, const Byte *data, unsigned size);
 
 #define LZMA_REQUIRED_INPUT_MAX 20
 
@@ -1065,36 +1066,11 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
   return (p->code == 0) ? SZ_OK : SZ_ERROR_DATA;
 }
 
+/* !! */
 static void LzmaDec_FreeProbs(CLzmaDec *p)
 {
   SzFree(p->probs);
   p->probs = 0;
-}
-
-static SRes LzmaProps_Decode(CLzmaProps *p, const Byte *data, unsigned size)
-{
-  UInt32 dicSize;
-  Byte d;
-
-  if (size < LZMA_PROPS_SIZE)
-    return SZ_ERROR_UNSUPPORTED;
-  else
-    dicSize = data[1] | ((UInt32)data[2] << 8) | ((UInt32)data[3] << 16) | ((UInt32)data[4] << 24);
-
-  if (dicSize < LZMA_DIC_MIN)
-    dicSize = LZMA_DIC_MIN;
-  p->dicSize = dicSize;
-
-  d = data[0];
-  if (d >= (9 * 5 * 5))
-    return SZ_ERROR_UNSUPPORTED;
-
-  p->lc = d % 9;
-  d /= 9;
-  p->pb = d / 5;
-  p->lp = d % 5;
-
-  return SZ_OK;
 }
 
 /* !! Merge with LzmaDec_AllocateProbs */
@@ -1338,33 +1314,29 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
 }
 
 /* !! Replace with real inplementation */
-static SRes SzDecodeLzma2(Byte prop, UInt64 inSize, CLookToRead *inStream,
+static SRes SzDecodeLzma2(Byte dicSizeProp, Byte lclppb, UInt64 inSize, CLookToRead *inStream,
     Byte *outBuffer, size_t outSize)
 {
   CLzma2Dec state;
   SRes res = SZ_OK;
-
+  if (dicSizeProp > 40) return SZ_ERROR_UNSUPPORTED;
   Lzma2Dec_Construct(&state);
+  state.decoder.prop.dicSize = (dicSizeProp == 40) ? 0xFFFFFFFF : LZMA2_DIC_SIZE_FROM_PROP(dicSizeProp);
+  ASSERT(state.decoder.prop.dicSize >= LZMA_DIC_MIN);
   {
-    Byte props[LZMA_PROPS_SIZE];
     {
-      UInt32 dicSize;
-      if (prop > 40) return SZ_ERROR_UNSUPPORTED;
-      dicSize = (prop == 40) ? 0xFFFFFFFF : LZMA2_DIC_SIZE_FROM_PROP(prop);
-      props[0] = (Byte)LZMA2_LCLP_MAX;
-      props[1] = (Byte)(dicSize);
-      props[2] = (Byte)(dicSize >> 8);
-      props[3] = (Byte)(dicSize >> 16);
-      props[4] = (Byte)(dicSize >> 24);
-    }
-    {
-      RINOK(LzmaProps_Decode(&state.decoder.prop, props, LZMA_PROPS_SIZE));
+      Byte d = lclppb;
+      if (d >= (9 * 5 * 5)) return SZ_ERROR_UNSUPPORTED;
+      state.decoder.prop.lc = d % 9;
+      d /= 9;
+      state.decoder.prop.pb = d / 5;
+      state.decoder.prop.lp = d % 5;
       RINOK(LzmaDec_AllocateProbs2(&state.decoder, &state.decoder.prop));
     }
   }
   state.decoder.dic = outBuffer;
   state.decoder.dicBufSize = outSize;
-  Lzma2Dec_Init(&state);
+  Lzma2Dec_Init(&state);  /* !! inline */
 
   for (;;)
   {
@@ -1411,7 +1383,8 @@ int main(int argc, char **argv) {
   CLookToRead inStream;
   Byte outBuffer[10000];
   const size_t outSize = sizeof(outBuffer);
-  const Byte prop = 0x90;
-  SzDecodeLzma2(prop, inSize, &inStream, outBuffer, outSize);
+  const Byte dicSizeProp = 0x90;
+  const Byte lclppb = LZMA2_LCLP_MAX;
+  SzDecodeLzma2(dicSizeProp, lclppb, inSize, &inStream, outBuffer, outSize);
   return 0;
 }
