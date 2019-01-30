@@ -1068,64 +1068,7 @@ typedef enum
   LZMA2_STATE_ERROR
 } ELzma2State;
 
-static ELzma2State Lzma2Dec_UpdateState(CLzma2Dec *p, Byte b)
-{
-  switch(p->state)
-  {
-    case LZMA2_STATE_CONTROL:
-      p->control = b;
-      if (p->control == 0)
-        return LZMA2_STATE_FINISHED;
-      if (LZMA2_IS_UNCOMPRESSED_STATE(p))
-      {
-        if ((p->control & 0x7F) > 2)
-          return LZMA2_STATE_ERROR;
-        p->unpackSize = 0;
-      }
-      else
-        p->unpackSize = (UInt32)(p->control & 0x1F) << 16;
-      return LZMA2_STATE_UNPACK0;
-
-    case LZMA2_STATE_UNPACK0:
-      p->unpackSize |= (UInt32)b << 8;
-      return LZMA2_STATE_UNPACK1;
-
-    case LZMA2_STATE_UNPACK1:
-      p->unpackSize |= (UInt32)b;
-      p->unpackSize++;
-      return (LZMA2_IS_UNCOMPRESSED_STATE(p)) ? LZMA2_STATE_DATA : LZMA2_STATE_PACK0;
-
-    case LZMA2_STATE_PACK0:
-      p->packSize = (UInt32)b << 8;
-      return LZMA2_STATE_PACK1;
-
-    case LZMA2_STATE_PACK1:
-      p->packSize |= (UInt32)b;
-      p->packSize++;
-      return LZMA2_IS_THERE_PROP(LZMA2_GET_LZMA_MODE(p)) ? LZMA2_STATE_PROP:
-        (p->needInitProp ? LZMA2_STATE_ERROR : LZMA2_STATE_DATA);
-
-    case LZMA2_STATE_PROP:
-    {
-      int lc, lp;
-      if (b >= (9 * 5 * 5))
-        return LZMA2_STATE_ERROR;
-      lc = b % 9;
-      b /= 9;
-      p->decoder.prop.pb = b / 5;
-      lp = b % 5;
-      if (lc + lp > LZMA2_LCLP_MAX)
-        return LZMA2_STATE_ERROR;
-      p->decoder.prop.lc = lc;
-      p->decoder.prop.lp = lp;
-      p->needInitProp = False;
-      return LZMA2_STATE_DATA;
-    }
-  }
-  return LZMA2_STATE_ERROR;
-}
-
-/* !! Inline call. */
+/* !! Inline single call. */
 static void LzmaDec_UpdateWithUncompressed(CLzmaDec *p, const Byte *src, size_t size)
 {
   memcpy(p->dic + p->dicPos, src, size);
@@ -1136,6 +1079,7 @@ static void LzmaDec_UpdateWithUncompressed(CLzmaDec *p, const Byte *src, size_t 
 }
 
 static SRes Lzma2Dec_DecodeControl(CLzma2Dec *p, const Byte *src, size_t *srcLen) {
+  Byte b;
   size_t inSize = *srcLen;
   *srcLen = 0;
 
@@ -1143,32 +1087,69 @@ static SRes Lzma2Dec_DecodeControl(CLzma2Dec *p, const Byte *src, size_t *srcLen
   ASSERT(p->state == LZMA2_STATE_CONTROL);
   ASSERT(*srcLen < inSize);
   (*srcLen)++;
-  p->state = Lzma2Dec_UpdateState(p, *src++);
+  b = *src++;
+  ASSERT(b != 0);
+  p->control = b;
+  if (LZMA2_IS_UNCOMPRESSED_STATE(p)) {
+    if ((p->control & 0x7F) > 2) {
+      p->state = LZMA2_STATE_ERROR;
+      return SZ_ERROR_DATA;
+    }
+    p->unpackSize = 0;
+  } else {
+    p->unpackSize = (UInt32)(p->control & 0x1F) << 16;
+  }
+  p->state = LZMA2_STATE_UNPACK0;
   if (p->state == LZMA2_STATE_UNPACK0) {
     ASSERT(*srcLen < inSize);
     (*srcLen)++;
-    p->state = Lzma2Dec_UpdateState(p, *src++);
+    b = *src++;
+    p->unpackSize |= (UInt32)b << 8;
+    p->state = LZMA2_STATE_UNPACK1;
   }
   if (p->state == LZMA2_STATE_UNPACK1) {
     ASSERT(*srcLen < inSize);
     (*srcLen)++;
-    p->state = Lzma2Dec_UpdateState(p, *src++);
+    b = *src++;
+    p->unpackSize |= (UInt32)b;
+    p->unpackSize++;
+    p->state = (LZMA2_IS_UNCOMPRESSED_STATE(p)) ? LZMA2_STATE_DATA : LZMA2_STATE_PACK0;
   }
   if (p->state == LZMA2_STATE_PACK0) {
     ASSERT(*srcLen < inSize);
     (*srcLen)++;
-    p->state = Lzma2Dec_UpdateState(p, *src++);
+    b = *src++;
+    p->packSize = (UInt32)b << 8;
+    p->state = LZMA2_STATE_PACK1;
   }
   if (p->state == LZMA2_STATE_PACK1) {
     ASSERT(*srcLen < inSize);
     (*srcLen)++;
-    p->state = Lzma2Dec_UpdateState(p, *src++);
+    b = *src++;
+    p->packSize |= (UInt32)b;
+    p->packSize++;
+    p->state = LZMA2_IS_THERE_PROP(LZMA2_GET_LZMA_MODE(p)) ? LZMA2_STATE_PROP :
+      (p->needInitProp ? LZMA2_STATE_ERROR : LZMA2_STATE_DATA);
   }
   if (p->state == LZMA2_STATE_PROP) {
     ASSERT(*srcLen < inSize);
     (*srcLen)++;
-    p->state = Lzma2Dec_UpdateState(p, *src++);
+    b = *src++;
+    int lc, lp;
+    if (b >= (9 * 5 * 5))
+      return LZMA2_STATE_ERROR;
+    lc = b % 9;
+    b /= 9;
+    p->decoder.prop.pb = b / 5;
+    lp = b % 5;
+    if (lc + lp > LZMA2_LCLP_MAX)
+      return LZMA2_STATE_ERROR;
+    p->decoder.prop.lc = lc;
+    p->decoder.prop.lp = lp;
+    p->needInitProp = False;
+    p->state = LZMA2_STATE_DATA;
   }
+  DEBUGF("DECODE control state=%d\n", p->state);
   if (p->state == LZMA2_STATE_ERROR) return SZ_ERROR_DATA;
   ASSERT(p->state == LZMA2_STATE_DATA);
   return SZ_OK;
