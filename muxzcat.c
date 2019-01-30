@@ -2,13 +2,13 @@
  *
  * Based on https://github.com/pts/pts-tiny-7z-sfx/commit/b9a101b076672879f861d472665afaa6caa6fec1
  *
+ * Can use: -DCONFIG_DEBUG
  * Can use: -DCONFIG_NO_INT64
  * Can use: -DCONFIG_NO_SIZE_T
  * Can use: -DCONFIG_PROB32
  * Can use: -DCONFIG_SIZE_OPT  (!!How much smaller does the code become?)
  *
  * $ xtiny gcc -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c && ls -l muxzcat
- * -rwxr-xr-x 1 pts pts 5707 Jan 30 17:31 muxzcat
  */
 
 #ifdef __XTINY__
@@ -25,6 +25,7 @@ typedef uint32_t UInt32;
 
 #include <stddef.h>  /* size_t */
 #include <string.h>  /* memcpy() */
+#include <unistd.h>  /* read() */
 
 #ifdef _WIN32
 #include <windows.h>
@@ -59,8 +60,17 @@ typedef uint32_t UInt32;
 
 #endif  /* USE_MINIINC1 */
 
+#ifdef CONFIG_DEBUG
+#undef NDEBUG
+#include <assert.h>
+#include <stdio.h>
+#define DEBUGF(...) fprintf(stderr, "DEBUG: " __VA_ARGS__)
+#define ASSERT(condition) assert(condition)
+#else
+#define DEBUGF(...)
 /* Just check that it compiles. */
 #define ASSERT(condition) do {} while (0 && (condition))
+#endif
 
 /* --- */
 
@@ -1224,7 +1234,7 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, size_t dicLimit,
 }
 
 /* !! Replace with real inplementation */
-static SRes SzDecodeLzma2(Byte dicSizeProp, const Byte *inBuf, size_t inSize, Byte *outBuf, size_t outSize) {
+static SRes DecodeLzma2(Byte dicSizeProp, const Byte *inBuf, size_t inSize, Byte *outBuf, size_t outSize) {
   CLzma2Dec state;
   SRes res = SZ_OK;
   const Byte * const inBufEnd = inBuf + inSize;
@@ -1263,13 +1273,91 @@ static SRes SzDecodeLzma2(Byte dicSizeProp, const Byte *inBuf, size_t inSize, By
   return res;
 }
 
-Byte inBuf[1000];
+/* !! Reuse the beginning of decompressBuf? */
+/* !! Read at least 65536 bytes in the beginning to decompressBuf, no need for input buffering? */
+static Byte readBuf[65536], *readCur = readBuf, *readEnd = readBuf;
+static UInt64 readFileOfs = 0;
+
+/* Return the number of bytes read from stdin. */
+static UInt64 Tell() {
+  return readFileOfs + (readCur - readBuf);
+}
+
+static int GetByte() {
+  if (readCur == readEnd) {
+    ssize_t got = read(0, readBuf, sizeof(readBuf));
+    if (got <= 0) return -1;
+    readCur = readBuf;
+    readEnd = readBuf + got;
+    readFileOfs += got;
+  }
+  return *readCur++;
+}
+
+/* Like GetByte(), but faster. */
+/* !! #define GET_BYTE() GetByte() if CONFIG_SIZE_OPT. */
+#define GET_BYTE() (readCur == readEnd ? GetByte() : *readCur++)
+
+/* !! Check size. */
+static Byte decompressBuf[1 << 30];
+
+#define VARINT_EOF ((UInt64)-1)
+
+/* !! Get rid of Int64 everywhere -- LZMA decoder doesn't need it. */
+static UInt64 GetVarInt(void) {
+  UInt64 result;
+  int i = 0;
+  int b;
+  if ((b = GET_BYTE()) < 0) return VARINT_EOF;
+  result = b & 0x7F;
+  while (b & 0x80) {
+    if ((b = GET_BYTE()) < 0) return VARINT_EOF;
+    result |= ((UInt64)(b & 0x7F)) << i;
+    i += 7;
+  }
+  return result;
+}
+
+static SRes IgnoreFewBytes(UInt32 c) {
+  while (c > 0) {
+    if (GET_BYTE() < 0) return SZ_ERROR_INPUT_EOF;
+    c--;
+  }
+  return SZ_OK;
+}
+
+#define SZ_ERROR_BAD_MAGIC 51
+#define SZ_ERROR_BAD_STREAM_FLAGS 52
+
+/* Reads from stdin, writes to stdout, uses decompressBuf.
+ * Doesn't check CRC etc.
+ */
+static SRes DecompressXz(void) {
+  SRes res = SZ_OK;
+  if (GET_BYTE() != 0xFD) return SZ_ERROR_BAD_MAGIC;
+  if (GET_BYTE() != '7') return SZ_ERROR_BAD_MAGIC;
+  if (GET_BYTE() != 'z') return SZ_ERROR_BAD_MAGIC;
+  if (GET_BYTE() != 'X') return SZ_ERROR_BAD_MAGIC;
+  if (GET_BYTE() != 'Z') return SZ_ERROR_BAD_MAGIC;
+  if (GET_BYTE() != 0x00) return SZ_ERROR_BAD_MAGIC;
+  if (GET_BYTE() != 0x00) return SZ_ERROR_BAD_STREAM_FLAGS;
+  /* Checksum algorithm. CRC32 is 1, CRC64 is 4. */
+  if (GET_BYTE() < 0) return SZ_ERROR_BAD_STREAM_FLAGS;
+  RINOK(IgnoreFewBytes(4));  /* CRC32 */
+  if (0) {
+    Byte outBuf[10000];
+    const size_t outSize = sizeof(outBuf);
+    const Byte dicSizeProp = 0x90;
+    const size_t inSize = 777;
+    DEBUGF("HI\n");
+    DecodeLzma2(dicSizeProp, decompressBuf, inSize, outBuf, outSize);
+    (void)Tell;
+    (void)GetVarInt;
+  }
+  return res;
+}
+
 int main(int argc, char **argv) {
   (void)argc; (void)argv;
-  Byte outBuf[10000];
-  const size_t outSize = sizeof(outBuf);
-  const Byte dicSizeProp = 0x90;
-  const size_t inSize = 777;
-  SzDecodeLzma2(dicSizeProp, inBuf, inSize, outBuf, outSize);
-  return 0;
+  return DecompressXz();
 }
