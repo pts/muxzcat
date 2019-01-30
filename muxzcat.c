@@ -198,8 +198,6 @@ typedef struct
   Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
 } CLzmaDec;
 
-#define LzmaDec_Construct(p) { (p)->dic = 0; (p)->probs = 0; }
-
 static void LzmaDec_Init(CLzmaDec *p);
 
 /* There are two types of LZMA streams:
@@ -220,8 +218,6 @@ typedef enum
   LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK  /* there is probability that stream was finished without end mark */
 } ELzmaStatus;
 
-static void LzmaDec_FreeProbs(CLzmaDec *p);
-
 static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit,
     const Byte *src, size_t *srcLen, ELzmaFinishMode finishMode, ELzmaStatus *status);
 
@@ -236,10 +232,6 @@ typedef struct
   Bool needInitState;
   Bool needInitProp;
 } CLzma2Dec;
-
-#define Lzma2Dec_Construct(p) LzmaDec_Construct(&(p)->decoder)
-#define Lzma2Dec_FreeProbs(p) LzmaDec_FreeProbs(&(p)->decoder);
-#define Lzma2Dec_Free(p) LzmaDec_Free(&(p)->decoder);
 
 static void Lzma2Dec_Init(CLzma2Dec *p);
 
@@ -1066,28 +1058,6 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
   return (p->code == 0) ? SZ_OK : SZ_ERROR_DATA;
 }
 
-/* !! */
-static void LzmaDec_FreeProbs(CLzmaDec *p)
-{
-  SzFree(p->probs);
-  p->probs = 0;
-}
-
-/* !! Merge with LzmaDec_AllocateProbs */
-static SRes LzmaDec_AllocateProbs2(CLzmaDec *p, const CLzmaProps *propNew)
-{
-  UInt32 numProbs = LzmaProps_GetNumProbs(propNew);
-  if (p->probs == 0 || numProbs != p->numProbs)
-  {
-    LzmaDec_FreeProbs(p);
-    p->probs = (CLzmaProb *)SzAlloc(numProbs * sizeof(CLzmaProb));
-    p->numProbs = numProbs;
-    if (p->probs == 0)
-      return SZ_ERROR_MEM;
-  }
-  return SZ_OK;
-}
-
 #define LZMA2_CONTROL_LZMA (1 << 7)
 #define LZMA2_CONTROL_COPY_NO_RESET 2
 #define LZMA2_CONTROL_COPY_RESET_DIC 1
@@ -1320,19 +1290,25 @@ static SRes SzDecodeLzma2(Byte dicSizeProp, Byte lclppb, UInt64 inSize, CLookToR
   CLzma2Dec state;
   SRes res = SZ_OK;
   if (dicSizeProp > 40) return SZ_ERROR_UNSUPPORTED;
-  Lzma2Dec_Construct(&state);
+  state.decoder.dic = 0;
+  state.decoder.probs = 0;
   state.decoder.prop.dicSize = (dicSizeProp == 40) ? 0xFFFFFFFF : LZMA2_DIC_SIZE_FROM_PROP(dicSizeProp);
   ASSERT(state.decoder.prop.dicSize >= LZMA_DIC_MIN);
   {
-    {
-      Byte d = lclppb;
-      if (d >= (9 * 5 * 5)) return SZ_ERROR_UNSUPPORTED;
-      state.decoder.prop.lc = d % 9;
-      d /= 9;
-      state.decoder.prop.pb = d / 5;
-      state.decoder.prop.lp = d % 5;
-      RINOK(LzmaDec_AllocateProbs2(&state.decoder, &state.decoder.prop));
-    }
+    Byte d = lclppb;
+    if (d >= (9 * 5 * 5)) return SZ_ERROR_UNSUPPORTED;
+    state.decoder.prop.lc = d % 9;
+    d /= 9;
+    state.decoder.prop.pb = d / 5;
+    state.decoder.prop.lp = d % 5;
+  }
+  {
+    CLzmaDec *p = &state.decoder;
+    const CLzmaProps *propNew = &state.decoder.prop;
+    UInt32 numProbs = LzmaProps_GetNumProbs(propNew);  /* !! precompute */
+    p->probs = (CLzmaProb *)SzAlloc(numProbs * sizeof(CLzmaProb));
+    p->numProbs = numProbs;
+    if (p->probs == 0) return SZ_ERROR_MEM;
   }
   state.decoder.dic = outBuffer;
   state.decoder.dicBufSize = outSize;
@@ -1365,7 +1341,7 @@ static SRes SzDecodeLzma2(Byte dicSizeProp, Byte lclppb, UInt64 inSize, CLookToR
     }
   }
 
-  Lzma2Dec_FreeProbs(&state);
+  SzFree(state.decoder.probs);
   return res;
 }
 
