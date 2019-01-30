@@ -219,7 +219,6 @@ typedef enum
   LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK  /* there is probability that stream was finished without end mark */
 } ELzmaStatus;
 
-static SRes LzmaDec_AllocateProbs(CLzmaDec *p, const Byte *props, unsigned propsSize);
 static void LzmaDec_FreeProbs(CLzmaDec *p);
 
 static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit,
@@ -1113,15 +1112,6 @@ static SRes LzmaDec_AllocateProbs2(CLzmaDec *p, const CLzmaProps *propNew)
   return SZ_OK;
 }
 
-static SRes LzmaDec_AllocateProbs(CLzmaDec *p, const Byte *props, unsigned propsSize)
-{
-  CLzmaProps propNew;
-  RINOK(LzmaProps_Decode(&propNew, props, propsSize));
-  RINOK(LzmaDec_AllocateProbs2(p, &propNew));
-  p->prop = propNew;
-  return SZ_OK;
-}
-
 #define LZMA2_CONTROL_LZMA (1 << 7)
 #define LZMA2_CONTROL_COPY_NO_RESET 2
 #define LZMA2_CONTROL_COPY_RESET_DIC 1
@@ -1148,20 +1138,6 @@ typedef enum
   LZMA2_STATE_FINISHED,
   LZMA2_STATE_ERROR
 } ELzma2State;
-
-static SRes Lzma2Dec_GetOldProps(Byte prop, Byte *props)
-{
-  UInt32 dicSize;
-  if (prop > 40)
-    return SZ_ERROR_UNSUPPORTED;
-  dicSize = (prop == 40) ? 0xFFFFFFFF : LZMA2_DIC_SIZE_FROM_PROP(prop);
-  props[0] = (Byte)LZMA2_LCLP_MAX;
-  props[1] = (Byte)(dicSize);
-  props[2] = (Byte)(dicSize >> 8);
-  props[3] = (Byte)(dicSize >> 16);
-  props[4] = (Byte)(dicSize >> 24);
-  return SZ_OK;
-}
 
 static void Lzma2Dec_Init(CLzma2Dec *p)
 {
@@ -1371,8 +1347,20 @@ static SRes SzDecodeLzma2(Byte prop, UInt64 inSize, CLookToRead *inStream,
   Lzma2Dec_Construct(&state);
   {
     Byte props[LZMA_PROPS_SIZE];
-    RINOK(Lzma2Dec_GetOldProps(prop, props));
-    RINOK(LzmaDec_AllocateProbs(&state.decoder, props, LZMA_PROPS_SIZE));
+    {
+      UInt32 dicSize;
+      if (prop > 40) return SZ_ERROR_UNSUPPORTED;
+      dicSize = (prop == 40) ? 0xFFFFFFFF : LZMA2_DIC_SIZE_FROM_PROP(prop);
+      props[0] = (Byte)LZMA2_LCLP_MAX;
+      props[1] = (Byte)(dicSize);
+      props[2] = (Byte)(dicSize >> 8);
+      props[3] = (Byte)(dicSize >> 16);
+      props[4] = (Byte)(dicSize >> 24);
+    }
+    {
+      RINOK(LzmaProps_Decode(&state.decoder.prop, props, LZMA_PROPS_SIZE));
+      RINOK(LzmaDec_AllocateProbs2(&state.decoder, &state.decoder.prop));
+    }
   }
   state.decoder.dic = outBuffer;
   state.decoder.dicBufSize = outSize;
