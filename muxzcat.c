@@ -1120,21 +1120,10 @@ static int GetByte() {
  */
 static Byte decompressBuf[1610612736];
 
-#define VARINT_EOF ((UInt64)-1)
-
-/* !! Get rid of Int64 everywhere -- LZMA decoder doesn't need it. */
-static UInt64 GetVarint(void) {
-  UInt64 result;
-  int i = 0;
+static SRes IgnoreVarint(void) {
   int b;
-  if ((b = GET_BYTE()) < 0) return VARINT_EOF;
-  result = b & 0x7F;
-  while (b & 0x80) {
-    if ((b = GET_BYTE()) < 0) return VARINT_EOF;
-    result |= ((UInt64)(b & 0x7F)) << i;
-    i += 7;
-  }
-  return result;
+  while ((b = GET_BYTE()) >= 0x80) {}
+  return b < 0 ? SZ_ERROR_INPUT_EOF : SZ_OK;
 }
 
 static SRes IgnoreFewBytes(UInt32 c) {
@@ -1199,7 +1188,6 @@ static SRes DecompressXz(void) {
   if (checksumSize == 0xff) return SZ_ERROR_BAD_CHECKSUM_TYPE;
   RINOK(IgnoreFewBytes(4));  /* CRC32 */
   for (;;) {
-    UInt64 ii;
     UInt32 bhs, bhs2; /* Block header size */
     UInt32 bhf;  /* Block header flags */
     UInt64 bo;  /* Block offset */
@@ -1215,18 +1203,19 @@ static SRes DecompressXz(void) {
     DEBUGF("filter count=%d\n", (bhf & 2) + 1);
     if ((bhf & 20) != 0) return SZ_ERROR_BAD_BLOCK_FLAGS;
     if (bhf & 64) {  /* Compressed size present. */
-      /* Usually not present, just ignore. */
-      if ((ii = GetVarint()) == VARINT_EOF) return SZ_ERROR_INPUT_EOF;
+      /* Usually not present, just ignore it. */
+      RINOK(IgnoreVarint());
     }
     if (bhf & 128) {  /* Uncompressed size present. */
-      /* Usually not present, just ignore. */
-      if ((ii = GetVarint()) == VARINT_EOF) return SZ_ERROR_INPUT_EOF;
+      /* Usually not present, just ignore it. */
+      RINOK(IgnoreVarint());
     }
-    /* !! TODO(pts): Simplify it with GET_BYTE. */
-    if ((ii = GetVarint()) == VARINT_EOF) return SZ_ERROR_INPUT_EOF;
-    if (ii != FILTER_ID_LZMA2) return SZ_ERROR_UNSUPPORTED_FILTER_ID;
-    if ((ii = GetVarint()) == VARINT_EOF) return SZ_ERROR_INPUT_EOF;
-    if (ii != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
+    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+    /* This is actually a varint, but it's shorter to read it as a byte. */
+    if (i != FILTER_ID_LZMA2) return SZ_ERROR_UNSUPPORTED_FILTER_ID;
+    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+    /* This is actually a varint, but it's shorter to read it as a byte. */
+    if (i != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
     if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
     dicSizeProp = i;
     /* Typical large dictionary sizes:
@@ -1240,8 +1229,10 @@ static SRes DecompressXz(void) {
      */
     DEBUGF("dicSizeProp=0x%02x\n", dicSizeProp);
     if (dicSizeProp > 40) return SZ_ERROR_BAD_DICTIONARY_SIZE;
+    /* LZMA2 and .xz support it, we don't (for simpler memory management on
+     * 32-bit systems).
+     */
     if (dicSizeProp > 37) return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE;
-    /* !! LZMA2 supports dicSizeProp 40 as well, but we don't */
     dicSize = LZMA2_DIC_SIZE_FROM_SMALL_PROP(dicSizeProp);
     ASSERT(dicSize >= LZMA_DIC_MIN);
     DEBUGF("dicSize39=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(39));
@@ -1253,7 +1244,7 @@ static SRes DecompressXz(void) {
     if (bhs2 > bhs) return SZ_ERROR_BLOCK_HEADER_TOO_LONG;
     RINOK(IgnoreZeroBytes(bhs - bhs2));
     RINOK(IgnoreFewBytes(4));  /* CRC32 */
-    /* !! Typically it's offset 24. */
+    /* Typically it's offset 24. */
     DEBUGF("LZMA2 at %d\n", (UInt32)Tell());
     { /* Parse LZMA2 stream. */
       /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
@@ -1289,7 +1280,6 @@ static SRes DecompressXz(void) {
         } else if (i >= 3 && i < 0x80) {
           return SZ_ERROR_BAD_CHUNK_CONTROL_BYTE;
         }
-        /* !! Remove redundancy. */
         us = (readCur[1] << 8) + readCur[2] + 1;
         if (i < 3) {  /* Uncompressed chunk. */
           const Bool initDic = (i == 1);
