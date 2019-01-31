@@ -18,11 +18,11 @@
  *   only 64 MiB dictionary size.)
  *
  * Can use: -DCONFIG_DEBUG
- * Can use: -DCONFIG_PROB32
- * Can use: -DCONFIG_SIZE_OPT  (!!How much smaller does the code become?)
+ * Can use: -DCONFIG_PROB32  (Increases memory requirements by 28 KiB, decreases code size by 108 bytes on i386, makes it faster.)
+ * Can use: -DCONFIG_SIZE_OPT  (Decreases code size by 416 bytes on i386, makes execution 0.206% slower.)
  *
- * $ xtiny gcc -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c && ls -l muxzcat
- * -rwxr-xr-x 1 pts pts 9672 Jan 30 20:05 muxzcat
+ * $ xtiny gcc-4.8 -DCONFIG_SIZE_OPT -DCONFIG_PROB32 -ansi -s -Os -W -Wall -Wextra -Werror=implicit-function-declaration -o muxzcat muxzcat.c
+ * -rwxr-xr-x 1 pts pts 7316 Jan 31 18:03 muxzcat
  *
  * Examples:
  *
