@@ -1060,45 +1060,6 @@ static void LzmaDec_UpdateWithUncompressed(CLzmaDec *p, const Byte *src, size_t 
   p->processedPos += (UInt32)size;
 }
 
-/* !! Inline single call. */
-static SRes Lzma2Dec_DecodeControl(const Byte *src, size_t *srcLen) {
-  Byte b, control;
-  size_t inSize = *srcLen;
-  *srcLen = 0;
-
-  DEBUGF("DECODE control call\n");
-  ASSERT(*srcLen < inSize);
-  (*srcLen)++;
-  b = *src++;
-  ASSERT(b != 0);
-  control = b;
-  if (LZMA2_IS_UNCOMPRESSED_STATE(control)) {
-    if ((control & 0x7F) > 2) {
-      return SZ_ERROR_DATA;
-    }
-  }
-  ASSERT(*srcLen < inSize);
-  (*srcLen)++;
-  b = *src++;
-  ASSERT(*srcLen < inSize);
-  (*srcLen)++;
-  b = *src++;
-  if (!LZMA2_IS_UNCOMPRESSED_STATE(control)) {
-    ASSERT(*srcLen < inSize);
-    (*srcLen)++;
-    b = *src++;
-    ASSERT(*srcLen < inSize);
-    (*srcLen)++;
-    b = *src++;
-    if (LZMA2_IS_THERE_PROP(LZMA2_GET_LZMA_MODE(control))) {
-      ASSERT(*srcLen < inSize);
-      (*srcLen)++;
-      b = *src++;
-    }
-  }
-  return SZ_OK;
-}
-
 typedef enum {
   LZMA2_STATE_DATA,
   LZMA2_STATE_DATA_CONT,
@@ -1406,7 +1367,6 @@ static SRes DecompressXz(void) {
       /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
       UInt32 tus = 0;  /* Total uncompressed size so far. */
       UInt32 us, cs;
-      UInt32 feedSize;
       CLzma2Dec state;
 
       state.decoder.prop.dicSize = dicSize;
@@ -1442,12 +1402,12 @@ static SRes DecompressXz(void) {
         /* !! Remove redundancy. */
         us = (readCur[1] << 8) + readCur[2] + 1;
         if (i < 3) {  /* Uncompressed chunk. */
-          feedSize = 3 + (cs = us);
+          cs = us;
+          readCur += 3;
         } else {  /* LZMA chunk. */
           const Bool isProp = (i & 64) != 0;
           us += (i & 31) << 16;
           cs = (readCur[3] << 8) + readCur[4] + 1;
-          feedSize = cs + 5 + isProp;
           if (isProp) {
             Byte b = readCur[5];
             int lc, lp;
@@ -1460,26 +1420,25 @@ static SRes DecompressXz(void) {
             state.decoder.prop.lc = lc;
             state.decoder.prop.lp = lp;
             state.needInitProp = False;
+            ++readCur;
           } else {
             if (state.needInitProp) return SZ_ERROR_MISSING_INITPROP;
           }
+          readCur += 5;
         }
         /* Decompressed data too long, won't fit to decompressBuf. */
         if (tus + us > sizeof(decompressBuf)) return SZ_ERROR_MEM;
         state.decoder.dicBufSize = tus + us;
-        if (Preread(feedSize) < feedSize) return SZ_ERROR_INPUT_EOF;
+        if (Preread(cs) < cs) return SZ_ERROR_INPUT_EOF;
         {
-          size_t inProcessed = feedSize;
+          size_t inProcessed = cs;
           ELzmaStatus status;  /* !! remove this as an argument */
-          DEBUGF("FEED us=%d feedSize=%d dicPos=%d\n", us, feedSize, (int)state.decoder.dicPos);
-          RINOK(Lzma2Dec_DecodeControl(readCur, &inProcessed));
-          readCur += inProcessed;
-          inProcessed = feedSize -= inProcessed;
+          DEBUGF("FEED us=%d cs=%d dicPos=%d\n", us, cs, (int)state.decoder.dicPos);
           /* !! Get rid of Lzma2Dec_DecodeToDic, use LzmaDec_DecodeToDic directly. */
           RINOK(Lzma2Dec_DecodeToDic(&state, i, us, cs, state.decoder.dicBufSize, readCur, &inProcessed, &status));
           DEBUGF("FED  status=%d inProcessed=%d dicPos=%d\n", status, (int)inProcessed, (int)state.decoder.dicPos);
           if (status == LZMA_STATUS_FINISHED_WITH_MARK) return SZ_ERROR_FINISHED_TOO_EARLY;
-          if (inProcessed != feedSize) return SZ_ERROR_FEED_CHUNK;
+          if (inProcessed != cs) return SZ_ERROR_FEED_CHUNK;
           if (state.decoder.dicPos != tus + us) return SZ_ERROR_BAD_DICPOS;
           ASSERT(state.decoder.dicBufSize == tus + us);
         }
@@ -1491,7 +1450,7 @@ static SRes DecompressXz(void) {
             p += got;
           }
         }
-        readCur += feedSize;
+        readCur += cs;
         tus += us;
         /* We can't discard decompressbuf[:tus] now, because we need it a
          * dictionary in which subsequent calls to Lzma2Dec_DecodeToDic will
