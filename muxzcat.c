@@ -843,12 +843,12 @@ static void LzmaDec_InitRc(const Byte *data)
 {
   global.code = ((UInt32)data[1] << 24) | ((UInt32)data[2] << 16) | ((UInt32)data[3] << 8) | ((UInt32)data[4]);
   global.range = 0xFFFFFFFF;
-  global.needFlush = 0;
+  global.needFlush = False;
 }
 
 static void LzmaDec_InitDicAndState(Bool initDic, Bool initState)
 {
-  global.needFlush = 1;
+  global.needFlush = True;
   global.remainLen = 0;
   global.tempBufSize = 0;
 
@@ -886,7 +886,7 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen, ELzmaStatus *st
   {
       Bool checkEndMarkNow;
 
-      if (global.needFlush != 0)
+      if (global.needFlush)
       {
         for (; inSize > 0 && global.tempBufSize < RC_INIT_SIZE; (*srcLen)++, inSize--)
           global.tempBuf[global.tempBufSize++] = *src++;
