@@ -1064,9 +1064,16 @@ static SRes IgnoreZeroBytes(UInt32 c) {
   return SZ_OK;
 }
 
+#if defined(__i386) || defined(_M_IX86) || defined(__i386__) || defined(__amd64) || defined(_M_X64) || defined(_M_AMD64) || defined(__x86_64__)
+/* Shortcut for little endian CPU supporting unaligned access. */
+static __inline__ UInt32 GetLE4(const Byte *p) {
+  return *(const UInt32*)(char*)p;
+}
+#else
 static UInt32 GetLE4(Byte *p) {
   return p[0] | p[1] << 8 | p[2] << 16 | p[3] << 24;
 }
+#endif
 
 /* Expects global.dicSize be set already. Can be called before or after InitProp. */
 static void InitDecode(void) {
