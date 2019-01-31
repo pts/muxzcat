@@ -1039,9 +1039,6 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 /* Works if p <= 39. */
 #define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
-/* !! Use Preread instead of GET_BYTE to read the .xz header to readBuf.
- * Maybe it will make the executable smaller.
- */
 static Byte readBuf[65536 + 12], *readCur = readBuf, *readEnd = readBuf;
 static UInt64 readFileOfs = 0;
 
@@ -1084,21 +1081,6 @@ static UInt64 Tell() {
   return readFileOfs - (readEnd - readCur);
 }
 
-static int GetByte() {
-  if (readCur == readEnd) {
-    ssize_t got = read(0, readBuf, sizeof(readBuf));
-    if (got <= 0) return -1;
-    readCur = readBuf;
-    readEnd = readBuf + got;
-    readFileOfs += got;
-  }
-  return *readCur++;
-}
-
-/* Like GetByte(), but faster. */
-/* !! #define GET_BYTE() GetByte() if CONFIG_SIZE_OPT. */
-#define GET_BYTE() (readCur == readEnd ? GetByte() : *readCur++)
-
 #define SZ_ERROR_BAD_MAGIC 51
 #define SZ_ERROR_BAD_STREAM_FLAGS 52  /* SZ_ERROR_BAD_MAGIC is reported instead. */
 #define SZ_ERROR_UNSUPPORTED_FILTER_COUNT 53
@@ -1128,10 +1110,6 @@ static SRes IgnoreZeroBytes(UInt32 c) {
   return SZ_OK;
 }
 
-/* !! Do it without Tell? */
-static SRes IgnorePadding4() {
-  return IgnoreZeroBytes(-(Byte)Tell() & 3);
-}
 
 #define FILTER_ID_LZMA2 0x21
 
@@ -1150,7 +1128,6 @@ static Byte decompressBuf[1610612736];
  */
 static SRes DecompressXz(void) {
   SRes res = SZ_OK;
-  int i; /* !! */
   Byte checksumSize;
   /* 12 for the stream header + 12 for the first block header + 6 for the
    * first chunk header. empty.xz is 32 bytes.
@@ -1173,6 +1150,7 @@ static SRes DecompressXz(void) {
     Byte dicSizeProp;
     UInt32 dicSize;
     ASSERT(readEnd - readCur >= 12);  /* At least 12 bytes preread. */
+    /* !! Do it without Tell()? */
     bo = Tell();  /* !! Do it without 64-bit calculations. */
     if ((bhs = *readCur++) == 0) break;  /* Last block, index follows. */
     /* Block header size includes the bhs field above and the CRC32 below. */
@@ -1180,8 +1158,7 @@ static SRes DecompressXz(void) {
     DEBUGF("bhs=%d\n", bhs);
     /* Typically the Preread(12 + 12 + 6) above covers it. */
     if (Preread(bhs) < bhs) return SZ_ERROR_INPUT_EOF;
-    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-    bhf = i;
+    bhf = *readCur++;
     if ((bhf & 2) != 0) return SZ_ERROR_UNSUPPORTED_FILTER_COUNT;
     DEBUGF("filter count=%d\n", (bhf & 2) + 1);
     if ((bhf & 20) != 0) return SZ_ERROR_BAD_BLOCK_FLAGS;
@@ -1193,14 +1170,11 @@ static SRes DecompressXz(void) {
       /* Usually not present, just ignore it. */
       IgnoreVarint();
     }
-    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
     /* This is actually a varint, but it's shorter to read it as a byte. */
-    if (i != FILTER_ID_LZMA2) return SZ_ERROR_UNSUPPORTED_FILTER_ID;
-    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
+    if (*readCur++ != FILTER_ID_LZMA2) return SZ_ERROR_UNSUPPORTED_FILTER_ID;
     /* This is actually a varint, but it's shorter to read it as a byte. */
-    if (i != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
-    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-    dicSizeProp = i;
+    if (*readCur++ != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
+    dicSizeProp = *readCur++;
     /* Typical large dictionary sizes:
      *
      *  * 35: 805306368 bytes == 768 MiB
@@ -1223,6 +1197,7 @@ static SRes DecompressXz(void) {
     DEBUGF("dicSize37=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(37));
     DEBUGF("dicSize36=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(36));
     DEBUGF("dicSize35=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(35));
+    /* !! Do it without Tell()? */
     bhs2 = (UInt32)(Tell() - bo) + 4;  /* Won't overflow. */
     DEBUGF("bhs=%d bhs2=%d\n", bhs, bhs2);
     if (bhs2 > bhs) return SZ_ERROR_BLOCK_HEADER_TOO_LONG;
@@ -1250,23 +1225,24 @@ static SRes DecompressXz(void) {
       LzmaDec_InitDicAndState(&state.decoder, True, True);
 
       for (;;) {
+        Byte control;
         ASSERT(state.decoder.dicPos == state.decoder.dicBufSize);
         /* Actually 2 bytes is enough to get to the index if everything is
          * aligned and there is no block checksum.
          */
         if (Preread(6) < 6) return SZ_ERROR_INPUT_EOF;
-        i = readCur[0];
-        DEBUGF("CONTROL 0x%02x at=%d inbuf=%d\n", i, (UInt32)Tell(), (int)(readCur - readBuf));
-        if (i == 0) {
+        control = readCur[0];
+        DEBUGF("CONTROL control=0x%02x at=%d inbuf=%d\n", control, (UInt32)Tell(), (int)(readCur - readBuf));
+        if (control == 0) {
           DEBUGF("LASTFED\n");
           ++readCur;
           break;
-        } else if (i >= 3 && i < 0x80) {
+        } else if ((Byte)(control - 3) < 0x80 - 3U) {
           return SZ_ERROR_BAD_CHUNK_CONTROL_BYTE;
         }
         us = (readCur[1] << 8) + readCur[2] + 1;
-        if (i < 3) {  /* Uncompressed chunk. */
-          const Bool initDic = (i == 1);
+        if (control < 3) {  /* Uncompressed chunk. */
+          const Bool initDic = (control == 1);
           cs = us;
           readCur += 3;
           if (initDic) {
@@ -1277,11 +1253,11 @@ static SRes DecompressXz(void) {
           }
           LzmaDec_InitDicAndState(&state.decoder, initDic, False);
         } else {  /* LZMA chunk. */
-          const Byte mode = LZMA2_GET_LZMA_MODE(i);
+          const Byte mode = LZMA2_GET_LZMA_MODE(control);
           const Bool initDic = (mode == 3);
           const Bool initState = (mode > 0);
-          const Bool isProp = (i & 64) != 0;
-          us += (i & 31) << 16;
+          const Bool isProp = (control & 64) != 0;
+          us += (control & 31) << 16;
           cs = (readCur[3] << 8) + readCur[4] + 1;
           if (isProp) {
             Byte b = readCur[5];
@@ -1314,7 +1290,7 @@ static SRes DecompressXz(void) {
          */
         if (Preread(cs + 6) < cs) return SZ_ERROR_INPUT_EOF;
         DEBUGF("FEED us=%d cs=%d dicPos=%d\n", us, cs, (int)state.decoder.dicPos);
-        if ((Byte)i < 0x80) {  /* Uncompressed chunk. */
+        if (control < 0x80) {  /* Uncompressed chunk. */
           const UInt32 unpackSize = state.decoder.dicBufSize - state.decoder.dicPos;
           DEBUGF("DECODE uncompressed\n");
           memcpy(state.decoder.dic + state.decoder.dicPos, readCur, unpackSize);
@@ -1355,7 +1331,8 @@ static SRes DecompressXz(void) {
      */
     if (Preread(7 + 12 + 6) < 7 + 12 + 6) return SZ_ERROR_INPUT_EOF;
     DEBUGF("ALTELL %d\n", (UInt32)Tell());
-    RINOK(IgnorePadding4());  /* Block padding. */
+    /* !! Do it without Tell()? */
+    RINOK(IgnoreZeroBytes(-(Byte)Tell() & 3));  /* Ignore block padding. */
     DEBUGF("AMTELL %d\n", (UInt32)Tell());
     readCur += checksumSize;  /* CRC32, CRC64 etc. */
   }
