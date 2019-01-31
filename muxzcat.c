@@ -197,15 +197,6 @@ typedef struct
   Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
 } CLzmaDec;
 
-/* There are two types of LZMA streams:
-     0) Stream with end mark. That end mark adds about 6 bytes to compressed size.
-     1) Stream without end mark. You must know exact uncompressed size to decompress such stream. */
-typedef enum
-{
-  LZMA_FINISH_ANY,   /* finish at any point */
-  LZMA_FINISH_END    /* block must be finished at the end */
-} ELzmaFinishMode;
-
 typedef enum
 {
   LZMA_STATUS_NOT_SPECIFIED,               /* use main error code instead */
@@ -928,7 +919,7 @@ static void LzmaDec_InitStateReal(CLzmaDec *p)
 }
 
 static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, size_t *srcLen,
-    ELzmaFinishMode finishMode, ELzmaStatus *status)
+    ELzmaStatus *status)
 {
   size_t inSize = *srcLen;
   (*srcLen) = 0;
@@ -962,11 +953,6 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
         if (p->remainLen == 0 && p->code == 0)
         {
           *status = LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK;
-          return SZ_OK;
-        }
-        if (finishMode == LZMA_FINISH_ANY)
-        {
-          *status = LZMA_STATUS_NOT_FINISHED;
           return SZ_OK;
         }
         if (p->remainLen != 0)
@@ -1342,9 +1328,8 @@ static SRes DecompressXz(void) {
           ELzmaStatus status;
           size_t srcSizeCur = cs;
           DEBUGF("DECODE call\n");
-          /* !! Keep only LZMA_FINISH_END implemented. */
           /* This call doesn't change state.decoder.dicBufSize. */
-          RINOK(LzmaDec_DecodeToDic(&state.decoder, state.decoder.dicBufSize, readCur, &srcSizeCur, LZMA_FINISH_END, &status));
+          RINOK(LzmaDec_DecodeToDic(&state.decoder, state.decoder.dicBufSize, readCur, &srcSizeCur, &status));
           if (srcSizeCur != cs || status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK) {
             return SZ_ERROR_DATA;  /* Compressed or uncompressed chunk size not exactly correct. */
           }
