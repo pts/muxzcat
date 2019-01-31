@@ -44,7 +44,18 @@ typedef int32_t Int32;
 typedef uint32_t UInt32;
 #define UINT64_CONST(n) n ## ULL
 
-/* !! TODO(pts): Replace this with inline assembly: rep movsb. */
+#ifdef __i386  /* Always true, just playing it safe. */
+static __inline__ void MemmoveBackward(void *dest, void *src, size_t n) {
+  __asm__ __volatile__ ("rep movsb\n\t"
+                        : "+D" (dest), "+S" (src), "+c" (n)
+                        :
+                        : "memory" );
+}
+
+#else
+/* gcc-4.8 -Os is smart enough to generate rep movsb for this C
+ * implementation, there is no size difference.
+ */
 static void MemmoveBackward(void *dest, const void *src, size_t n) {
   char *destCp = (char*)dest;
   char *srcCp = (char*)src;
@@ -52,6 +63,7 @@ static void MemmoveBackward(void *dest, const void *src, size_t n) {
     *destCp++ = *srcCp++;
   }
 }
+#endif
 
 #else
 
