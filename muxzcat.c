@@ -170,7 +170,6 @@ typedef struct {
   UInt32 state;
   UInt32 reps[4];
   UInt32 remainLen;
-  UInt32 numProbs;
   UInt32 tempBufSize;
   CLzmaProb probs[Lzma2Props_GetMaxNumProbs()];
   Bool needFlush;
@@ -1167,7 +1166,6 @@ static SRes DecompressXz(void) {
       global.prop.lc = 0;  /* needinitprop will initialize it */
       global.prop.pb = 0;
       global.prop.lp = 0;
-      global.numProbs = Lzma2Props_GetMaxNumProbs();
       global.dicBufSize = 0;  /* We'll increment it later. */
       global.needInitDic = True;
       global.needInitState = True;
