@@ -1068,6 +1068,7 @@ static UInt32 Preread(UInt32 r) {
       /* Instead of (r - p) we could use (readBuf + sizeof(readBuf) -
        * readEnd) to read as much as the buffer has room for.
        */
+      DEBUGF("READ size=%d\n", r - p);
       ssize_t got = read(0, readEnd, r - p);
       if (got <= 0) break;  /* EOF on input. */
       readEnd += got;
@@ -1098,22 +1099,8 @@ static int GetByte() {
 /* !! #define GET_BYTE() GetByte() if CONFIG_SIZE_OPT. */
 #define GET_BYTE() (readCur == readEnd ? GetByte() : *readCur++)
 
-static SRes IgnoreVarint(void) {
-  int b;
-  while ((b = GET_BYTE()) >= 0x80) {}
-  return b < 0 ? SZ_ERROR_INPUT_EOF : SZ_OK;
-}
-
-static SRes IgnoreFewBytes(UInt32 c) {
-  while (c > 0) {
-    if (GET_BYTE() < 0) return SZ_ERROR_INPUT_EOF;
-    c--;
-  }
-  return SZ_OK;
-}
-
 #define SZ_ERROR_BAD_MAGIC 51
-#define SZ_ERROR_BAD_STREAM_FLAGS 52
+#define SZ_ERROR_BAD_STREAM_FLAGS 52  /* SZ_ERROR_BAD_MAGIC is reported instead. */
 #define SZ_ERROR_UNSUPPORTED_FILTER_COUNT 53
 #define SZ_ERROR_BAD_BLOCK_FLAGS 54
 #define SZ_ERROR_UNSUPPORTED_FILTER_ID 55
@@ -1130,16 +1117,18 @@ static SRes IgnoreFewBytes(UInt32 c) {
 #define SZ_ERROR_MISSING_INITPROP 67
 #define SZ_ERROR_BAD_LCLPPB_PROP 68
 
+static void IgnoreVarint(void) {
+  while (*readCur++ >= 0x80) {}
+}
+
 static SRes IgnoreZeroBytes(UInt32 c) {
-  int i;
-  while (c > 0) {
-    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-    if (i != 0) return SZ_ERROR_BAD_PADDING;
-    c--;
+  for (; c > 0; --c) {
+    if (*readCur++ != 0) return SZ_ERROR_BAD_PADDING;
   }
   return SZ_OK;
 }
 
+/* !! Do it without Tell? */
 static SRes IgnorePadding4() {
   return IgnoreZeroBytes(-(Byte)Tell() & 3);
 }
@@ -1155,34 +1144,42 @@ static SRes IgnorePadding4() {
 static Byte decompressBuf[1610612736];
 
 /* Reads from stdin, writes to stdout, uses decompressBuf.
+ * It verifies some aspects of the file format (so it can't be tricked to an
+ * infinite loop etc.), itdoesn't verify checksums (e.g. CRC32).
  * Based on https://tukaani.org/xz/xz-file-format-1.0.4.txt
  */
 static SRes DecompressXz(void) {
   SRes res = SZ_OK;
-  int i;
+  int i; /* !! */
   Byte checksumSize;
-  if (GET_BYTE() != 0xFD) return SZ_ERROR_BAD_MAGIC;
-  if (GET_BYTE() != '7') return SZ_ERROR_BAD_MAGIC;
-  if (GET_BYTE() != 'z') return SZ_ERROR_BAD_MAGIC;
-  if (GET_BYTE() != 'X') return SZ_ERROR_BAD_MAGIC;
-  if (GET_BYTE() != 'Z') return SZ_ERROR_BAD_MAGIC;
-  if (GET_BYTE() != 0x00) return SZ_ERROR_BAD_MAGIC;
-  if (GET_BYTE() != 0x00) return SZ_ERROR_BAD_STREAM_FLAGS;
-  /* Checksum algorithm. CRC32 is 1, CRC64 is 4. */
-  if ((i = GET_BYTE()) < 0 ) return SZ_ERROR_INPUT_EOF;
-  checksumSize = i == 0 ? 0 : i == 1 ? 4 /* CRC32 */ : i == 4 ? 8 /* CRC64 */ : 0xff;
-  if (checksumSize == 0xff) return SZ_ERROR_BAD_CHECKSUM_TYPE;
-  RINOK(IgnoreFewBytes(4));  /* CRC32 */
-  for (;;) {
+  /* 12 for the stream header + 12 for the first block header + 6 for the
+   * first chunk header. empty.xz is 32 bytes.
+   */
+  if (Preread(12 + 12 + 6) < 12 + 12 + 6) return SZ_ERROR_INPUT_EOF;
+  /* readbuf[7] is actually stream flags, should also be 0. */
+  if (0 != memcmp(readCur, "\xFD""7zXZ\0", 7)) return SZ_ERROR_BAD_MAGIC;
+  switch (readCur[7]) {
+   case 0: /* None */ checksumSize = 1; break;
+   case 1: /* CRC32 */ checksumSize = 4; break;
+   case 4: /* CRC64, typical xz output. */ checksumSize = 8; break;
+   default: return SZ_ERROR_BAD_CHECKSUM_TYPE;
+  }
+  /* Also ignore the CRC32 after checksumSize. */
+  readCur += 12;
+  for (;;) {  /* Next block. */
     UInt32 bhs, bhs2; /* Block header size */
     UInt32 bhf;  /* Block header flags */
     UInt64 bo;  /* Block offset */
     Byte dicSizeProp;
     UInt32 dicSize;
-    bo = Tell();
-    if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
-    if (i == 0) break;  /* Last block, index follows. */
-    bhs = (i + 1) << 2;
+    ASSERT(readEnd - readCur >= 12);  /* At least 12 bytes preread. */
+    bo = Tell();  /* !! Do it without 64-bit calculations. */
+    if ((bhs = *readCur++) == 0) break;  /* Last block, index follows. */
+    /* Block header size includes the bhs field above and the CRC32 below. */
+    bhs = (bhs + 1) << 2;
+    DEBUGF("bhs=%d\n", bhs);
+    /* Typically the Preread(12 + 12 + 6) above covers it. */
+    if (Preread(bhs) < bhs) return SZ_ERROR_INPUT_EOF;
     if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
     bhf = i;
     if ((bhf & 2) != 0) return SZ_ERROR_UNSUPPORTED_FILTER_COUNT;
@@ -1190,11 +1187,11 @@ static SRes DecompressXz(void) {
     if ((bhf & 20) != 0) return SZ_ERROR_BAD_BLOCK_FLAGS;
     if (bhf & 64) {  /* Compressed size present. */
       /* Usually not present, just ignore it. */
-      RINOK(IgnoreVarint());
+      IgnoreVarint();
     }
     if (bhf & 128) {  /* Uncompressed size present. */
       /* Usually not present, just ignore it. */
-      RINOK(IgnoreVarint());
+      IgnoreVarint();
     }
     if ((i = GET_BYTE()) < 0) return SZ_ERROR_INPUT_EOF;
     /* This is actually a varint, but it's shorter to read it as a byte. */
@@ -1227,10 +1224,11 @@ static SRes DecompressXz(void) {
     DEBUGF("dicSize36=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(36));
     DEBUGF("dicSize35=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(35));
     bhs2 = (UInt32)(Tell() - bo) + 4;  /* Won't overflow. */
+    DEBUGF("bhs=%d bhs2=%d\n", bhs, bhs2);
     if (bhs2 > bhs) return SZ_ERROR_BLOCK_HEADER_TOO_LONG;
     RINOK(IgnoreZeroBytes(bhs - bhs2));
-    RINOK(IgnoreFewBytes(4));  /* CRC32 */
-    /* Typically it's offset 24. */
+    readCur += 4;  /* CRC32 */
+    /* Typically it's offset 24, xz creates it by default, minimal. */
     DEBUGF("LZMA2 at %d\n", (UInt32)Tell());
     { /* Parse LZMA2 stream. */
       /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
@@ -1349,14 +1347,19 @@ static SRes DecompressXz(void) {
          * Lzma2Dec_DecodeToDic will look up backreferences.
          */
       }
-    }
+    }  /* End of LZMA2 stream. */
+    DEBUGF("TELL %d\n", (UInt32)Tell());
+    /* End of block. */
+    /* 7 for padding4 and CRC32 + 12 for the next block header + 6 for the next
+     * chunk header.
+     */
+    if (Preread(7 + 12 + 6) < 7 + 12 + 6) return SZ_ERROR_INPUT_EOF;
     DEBUGF("ALTELL %d\n", (UInt32)Tell());
     RINOK(IgnorePadding4());  /* Block padding. */
     DEBUGF("AMTELL %d\n", (UInt32)Tell());
-    RINOK(IgnoreFewBytes(checksumSize));
-    DEBUGF("TELL %d\n", (UInt32)Tell());
+    readCur += checksumSize;  /* CRC32, CRC64 etc. */
   }
-  /* The .xz input file follows with the index, which we ignore from here. */
+  /* The .xz input file continues with the index, which we ignore from here. */
   return res;
 }
 
