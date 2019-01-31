@@ -1037,15 +1037,7 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
   return (p->code == 0) ? SZ_OK : SZ_ERROR_DATA;
 }
 
-#define LZMA2_CONTROL_LZMA (1 << 7)
-#define LZMA2_CONTROL_COPY_NO_RESET 2
-#define LZMA2_CONTROL_COPY_RESET_DIC 1
-#define LZMA2_CONTROL_EOF 0
-
-#define LZMA2_IS_UNCOMPRESSED_STATE(pc) (((pc) & LZMA2_CONTROL_LZMA) == 0)
-
 #define LZMA2_GET_LZMA_MODE(pc) (((pc) >> 5) & 3)
-#define LZMA2_IS_THERE_PROP(mode) ((mode) >= 2)
 
 /* Works if p <= 39. */
 #define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
@@ -1289,7 +1281,7 @@ static SRes DecompressXz(void) {
         /* !! Remove redundancy. */
         us = (readCur[1] << 8) + readCur[2] + 1;
         if (i < 3) {  /* Uncompressed chunk. */
-          const Bool initDic = (i == LZMA2_CONTROL_COPY_RESET_DIC);
+          const Bool initDic = (i == 1);
           cs = us;
           readCur += 3;
           if (initDic) {
