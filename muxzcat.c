@@ -1055,11 +1055,11 @@ typedef enum {
   LZMA2_STATE_DATA_CONT,
 } ELzma2State;
 static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 unpackSize, UInt32 packSize, size_t dicLimit,
-    const Byte *src, size_t *srcLen, ELzmaStatus *status) {
+    const Byte *src, size_t *srcLen) {
   Byte state = LZMA2_STATE_DATA;  /* !! remove LZMA2_STATE */
   size_t inSize = *srcLen;
   *srcLen = 0;
-  *status = LZMA_STATUS_NOT_SPECIFIED;
+  ELzmaStatus status;
   DEBUGF("DECODE call\n");
   for (;;) {
     DEBUGF("DECODE state=%d\n", state);
@@ -1098,7 +1098,7 @@ static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 un
         if (srcSizeCur > packSize)
           srcSizeCur = (size_t)packSize;
 
-        res = LzmaDec_DecodeToDic(&p->decoder, dicPos + destSizeCur, src, &srcSizeCur, curFinishMode, status);
+        res = LzmaDec_DecodeToDic(&p->decoder, dicPos + destSizeCur, src, &srcSizeCur, curFinishMode, &status);
 
         src += srcSizeCur;
         *srcLen += srcSizeCur;
@@ -1110,15 +1110,12 @@ static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 un
         RINOK(res);
         if (srcSizeCur == 0 && outSizeProcessed == 0)
         {
-          if (*status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK ||
+          if (status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK ||
               unpackSize != 0 || packSize != 0)
             return SZ_ERROR_DATA;
           ASSERT(*srcLen == inSize);
-          *status = LZMA_STATUS_NEEDS_MORE_INPUT;
           return SZ_OK;
         }
-        if (*status == LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK)
-          *status = LZMA_STATUS_NOT_FINISHED;
       }
     }
   }
@@ -1247,7 +1244,6 @@ static SRes IgnoreFewBytes(UInt32 c) {
 #define SZ_ERROR_FEED_CHUNK 63
 #define SZ_ERROR_NOT_FINISHED_WITH_MARK 64
 #define SZ_ERROR_BAD_DICPOS 65
-#define SZ_ERROR_FINISHED_TOO_EARLY 66
 #define SZ_ERROR_MISSING_INITPROP 67
 #define SZ_ERROR_BAD_LCLPPB_PROP 68
 
@@ -1417,10 +1413,8 @@ static SRes DecompressXz(void) {
             RINOK(Lzma2Dec_DecodeToDicUncompressed(&state, i, us, readCur));
           } else {
             size_t inProcessed = cs;
-            ELzmaStatus status;  /* !! remove this as an argument */
-            RINOK(Lzma2Dec_DecodeToDicCompressed(&state, i, us, cs, state.decoder.dicBufSize, readCur, &inProcessed, &status));
-            DEBUGF("FED  status=%d inProcessed=%d dicPos=%d\n", status, (int)inProcessed, (int)state.decoder.dicPos);
-            if (status == LZMA_STATUS_FINISHED_WITH_MARK) return SZ_ERROR_FINISHED_TOO_EARLY;
+            RINOK(Lzma2Dec_DecodeToDicCompressed(&state, i, us, cs, state.decoder.dicBufSize, readCur, &inProcessed));
+            DEBUGF("FED  inProcessed=%d dicPos=%d\n", (int)inProcessed, (int)state.decoder.dicPos);
             if (inProcessed != cs) return SZ_ERROR_FEED_CHUNK;
           }
           if (state.decoder.dicPos != tus + us) return SZ_ERROR_BAD_DICPOS;
