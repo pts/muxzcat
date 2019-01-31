@@ -102,16 +102,16 @@ static void MemmoveOverlap(void *dest, const void *src, UInt32 n) {
 #define SZ_ERROR_OUTPUT_EOF 7
 #define SZ_ERROR_READ 8
 #define SZ_ERROR_WRITE 9
-#define SZ_ERROR_PROGRESS 10
-#define SZ_ERROR_FAIL 11
-#define SZ_ERROR_THREAD 12
+#define SZ_FINISHED_WITH_MARK 15          /* stream was finished with end mark. */
+#define SZ_NOT_FINISHED 16                /* stream was not finished */
+#define SZ_NEEDS_MORE_INPUT 17            /* you must provide more input bytes */
+/*#define SZ_MAYBE_FINISHED_WITHOUT_MARK SZ_OK*/  /* there is probability that stream was finished without end mark */
 
 typedef UInt32 SRes;
 
 #ifndef RINOK
 #define RINOK(x) { int __result__ = (x); if (__result__ != 0) return __result__; }
 #endif
-
 
 typedef Byte Bool;
 #define True 1
@@ -128,15 +128,6 @@ typedef Byte Bool;
 #else
 #define CLzmaProb UInt16
 #endif
-
-typedef enum
-{
-  LZMA_STATUS_NOT_SPECIFIED,               /* use main error code instead */
-  LZMA_STATUS_FINISHED_WITH_MARK,          /* stream was finished with end mark. */
-  LZMA_STATUS_NOT_FINISHED,                /* stream was not finished */
-  LZMA_STATUS_NEEDS_MORE_INPUT,            /* you must provide more input bytes */
-  LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK  /* there is probability that stream was finished without end mark */
-} ELzmaStatus;
 
 #define LZMA_BASE_SIZE 1846
 #define LZMA_LIT_SIZE 768
@@ -870,13 +861,11 @@ static void LzmaDec_InitStateReal(void)
   global.needInitLzma = False;
 }
 
-static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen, ELzmaStatus *status) {
+static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen) {
   const UInt32 dicLimit = global.dicBufSize;
   UInt32 inSize = *srcLen;
   (*srcLen) = 0;
   LzmaDec_WriteRem(dicLimit);
-
-  *status = LZMA_STATUS_NOT_SPECIFIED;
 
   while (global.remainLen != kMatchSpecLenStart)
   {
@@ -888,8 +877,7 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen, ELzmaStatus *st
           global.tempBuf[global.tempBufSize++] = *src++;
         if (global.tempBufSize < RC_INIT_SIZE)
         {
-          *status = LZMA_STATUS_NEEDS_MORE_INPUT;
-          return SZ_OK;
+          return SZ_NEEDS_MORE_INPUT;
         }
         if (global.tempBuf[0] != 0)
           return SZ_ERROR_DATA;
@@ -903,13 +891,11 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen, ELzmaStatus *st
       {
         if (global.remainLen == 0 && global.code == 0)
         {
-          *status = LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK;
-          return SZ_OK;
+          return SZ_OK /* LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK */;
         }
         if (global.remainLen != 0)
         {
-          *status = LZMA_STATUS_NOT_FINISHED;
-          return SZ_ERROR_DATA;
+          return SZ_NOT_FINISHED;
         }
         checkEndMarkNow = True;
       }
@@ -929,13 +915,11 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen, ELzmaStatus *st
             memcpy(global.tempBuf, src, inSize);
             global.tempBufSize = (UInt32)inSize;
             (*srcLen) += inSize;
-            *status = LZMA_STATUS_NEEDS_MORE_INPUT;
-            return SZ_OK;
+            return SZ_NEEDS_MORE_INPUT;
           }
           if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
           {
-            *status = LZMA_STATUS_NOT_FINISHED;
-            return SZ_ERROR_DATA;
+            return SZ_NOT_FINISHED;
           }
           bufLimit = src;
         }
@@ -961,13 +945,11 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen, ELzmaStatus *st
           if (dummyRes == DUMMY_ERROR)
           {
             (*srcLen) += lookAhead;
-            *status = LZMA_STATUS_NEEDS_MORE_INPUT;
-            return SZ_OK;
+            return SZ_NEEDS_MORE_INPUT;
           }
           if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
           {
-            *status = LZMA_STATUS_NOT_FINISHED;
-            return SZ_ERROR_DATA;
+            return SZ_NOT_FINISHED;
           }
         }
         global.buf = global.tempBuf;
@@ -980,9 +962,8 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen, ELzmaStatus *st
         global.tempBufSize = 0;
       }
   }
-  if (global.code == 0)
-    *status = LZMA_STATUS_FINISHED_WITH_MARK;
-  return (global.code == 0) ? SZ_OK : SZ_ERROR_DATA;
+  if (global.code != 0) return SZ_ERROR_DATA;
+  return SZ_FINISHED_WITH_MARK;
 }
 
 #define LZMA2_GET_LZMA_MODE(pc) (((pc) >> 5) & 3)
@@ -1247,12 +1228,11 @@ static SRes DecompressXz(void) {
             global.checkDicSize = global.dicSize;
           global.processedPos += unpackSize;
         } else {  /* Compressed chunk. */
-          ELzmaStatus status;
           UInt32 srcSizeCur = cs;
           DEBUGF("DECODE call\n");
           /* This call doesn't change global.dicBufSize. */
-          RINOK(LzmaDec_DecodeToDic(readCur, &srcSizeCur, &status));
-          if (srcSizeCur != cs || status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK) {
+          RINOK(LzmaDec_DecodeToDic(readCur, &srcSizeCur));
+          if (srcSizeCur != cs) {  /* !! */
             return SZ_ERROR_DATA;  /* Compressed or uncompressed chunk size not exactly correct. */
           }
         }
