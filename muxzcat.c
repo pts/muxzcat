@@ -1095,6 +1095,18 @@ static SRes InitProp(Byte b) {
 
 #define FILTER_ID_LZMA2 0x21
 
+/* Writes uncompressed data (global.dic[oldDicPos : global.dicPos] to stdout. */
+static SRes WriteFrom(UInt32 oldDicPos) {
+  const Byte *q = global.dic + global.dicPos, *p = global.dic + oldDicPos;
+  DEBUGF("WRITE %d dicPos=%d\n", (int)(q - p), global.dicPos);
+  while (p != q) {
+    const Int32 got = write(1, p, q - p);
+    if (got <= 0) return SZ_ERROR_WRITE;
+    p += got;
+  }
+  return SZ_OK;
+}
+
 /* Reads .xz or .lzma data from stdin, writes uncompressed bytes to stdout,
  * uses CLzmaDec.dic. It verifies some aspects of the file format (so it
  * can't be tricked to an infinite loop etc.), itdoesn't verify checksums
@@ -1141,15 +1153,7 @@ static SRes DecompressXzOrLzma(void) {
       DEBUGF("LZMADEC res=%d\n", res);
       readCur += srcLen;
       if (global.dicPos > us) global.dicPos = us;
-      {
-        const Byte *q = global.dic + global.dicPos, *p = global.dic + oldDicPos;
-        DEBUGF("WRITE %d dicPos=%d\n", (int)(q - p), global.dicPos);
-        while (p != q) {
-          const Int32 got = write(1, p, q - p);
-          if (got <= 0) return SZ_ERROR_WRITE;
-          p += got;
-        }
-      }
+      RINOK(WriteFrom(oldDicPos));
       if (res == SZ_ERROR_FINISHED_WITH_MARK) break;
       if (res != SZ_ERROR_NEEDS_MORE_INPUT && res != SZ_OK) return res;
       if (global.dicPos == us) break;
@@ -1306,14 +1310,7 @@ static SRes DecompressXzOrLzma(void) {
           RINOK(LzmaDec_DecodeToDic(readCur, cs));
         }
         if (global.dicPos != global.dicBufSize) return SZ_ERROR_BAD_DICPOS;
-        {
-          const Byte *q = global.dic + global.dicBufSize, *p = q - us;
-          while (p != q) {
-            const Int32 got = write(1, p, q - p);
-            if (got <= 0) return SZ_ERROR_WRITE;
-            p += got;
-          }
-        }
+        RINOK(WriteFrom(global.dicPos - us));
         readCur += cs;
         blockSizePad -= cs;
         /* We can't discard decompressbuf[:global.dicBufSize] now,
