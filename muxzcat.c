@@ -1066,8 +1066,11 @@ static UInt32 Preread(UInt32 r) {
   UInt32 p = readEnd - readCur;
   ASSERT(r <= sizeof(readBuf));
   if (p < r) {  /* Not enough pending available. */
-    if (readBuf + sizeof(readBuf) - readCur + 0U < r) {
+    if (readCur == readEnd) {
+      readCur = readEnd = readBuf;
+    } else if (readBuf + sizeof(readBuf) - readCur + 0U < r) {
       /* If no room for r bytes to the end, discard bytes from the beginning. */
+      DEBUGF("MEMMOVE size=%d\n", p);
       MemmoveBackward(readBuf, readCur, p);
       readEnd = readBuf + p;
       readCur = readBuf;
@@ -1275,7 +1278,7 @@ static SRes DecompressXz(void) {
          */
         if (Preread(6) < 6) return SZ_ERROR_INPUT_EOF;
         i = readCur[0];
-        DEBUGF("CONTROL 0x%02x at=%d\n", i, (UInt32)Tell());
+        DEBUGF("CONTROL 0x%02x at=%d inbuf=%d\n", i, (UInt32)Tell(), (int)(readCur - readBuf));
         if (i == 0) {
           DEBUGF("LASTFED\n");
           ++readCur;
