@@ -1021,7 +1021,7 @@ static UInt32 Preread(UInt32 r) {
 
 #ifdef CONFIG_DEBUG
 /* Returns the number of bytes read from stdin. */
-static long long GetReadPosForDebug() {
+static long long GetReadPosForDebug(void) {
   return readFileOfs - (readEnd - readCur);
 }
 #endif
