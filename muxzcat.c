@@ -4,9 +4,9 @@
  *
  * Limitations of this decompressor:
  *
- * * It keeps both uncompressed data in memory, and it needs 120 KiB of
+ * * It keeps both uncompressed data in memory, and it needs 130 KiB of
  *   memory on top of it: readBuf is about 64 KiB, CLzma2Dec.prob is about
- *   14 KiB, the rest decompressBuf (containing the entire uncompressed
+ *   28 KiB, the rest decompressBuf (containing the entire uncompressed
  *   data) and a small constant overhead.
  * * It doesn't support decompressed data larger than 1610612736 (~1.61 GB).
  *   FYI linux-4.20.5.tar is about half as much, 854855680 bytes.
