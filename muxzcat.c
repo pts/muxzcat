@@ -1050,49 +1050,6 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 /* Works if p <= 39. */
 #define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
-static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 packSize, const Byte *src) {
-  const Byte mode = LZMA2_GET_LZMA_MODE(control);
-  const Bool initDic = (mode == 3);
-  const Bool initState = (mode > 0);
-  ELzmaStatus status;
-  size_t srcSizeCur;
-  DEBUGF("DECODE call\n");
-  ASSERT(!LZMA2_IS_UNCOMPRESSED_STATE(control));
-  if ((!initDic && p->needInitDic) || (!initState && p->needInitState))
-    return SZ_ERROR_DATA;
-  LzmaDec_InitDicAndState(&p->decoder, initDic, initState);
-  p->needInitDic = False;
-  p->needInitState = False;
-  srcSizeCur = packSize;
-  /* !! Keep only LZMA_FINISH_END,implemented. */
-  RINOK(LzmaDec_DecodeToDic(&p->decoder, p->decoder.dicBufSize, src, &srcSizeCur, LZMA_FINISH_END, &status));
-  if (p->decoder.dicBufSize != p->decoder.dicPos || srcSizeCur != packSize ||
-      status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK) {
-    return SZ_ERROR_DATA;  /* Compressed or uncompressed chunk size not exactly correct. */
-  }
-  return SZ_OK;
-}
-
-static SRes Lzma2Dec_DecodeToDicUncompressed(CLzma2Dec *p, Byte control, const Byte *src) {
-  UInt32 unpackSize = p->decoder.dicBufSize - p->decoder.dicPos;
-  Bool initDic = (control == LZMA2_CONTROL_COPY_RESET_DIC);
-  DEBUGF("DECODE uncompressed\n");
-  ASSERT(LZMA2_IS_UNCOMPRESSED_STATE(control));
-  ASSERT(0 != unpackSize);
-  if (initDic)
-    p->needInitProp = p->needInitState = True;
-  else if (p->needInitDic)
-    return SZ_ERROR_DATA;
-  p->needInitDic = False;
-  LzmaDec_InitDicAndState(&p->decoder, initDic, False);
-  memcpy(p->decoder.dic + p->decoder.dicPos, src, unpackSize);
-  p->decoder.dicPos += unpackSize;
-  if (p->decoder.checkDicSize == 0 && p->decoder.prop.dicSize - p->decoder.processedPos <= unpackSize)
-    p->decoder.checkDicSize = p->decoder.prop.dicSize;
-  p->decoder.processedPos += unpackSize;
-  return SZ_OK;
-}
-
 /* !! Read at least 65536 bytes in the beginning to decompressBuf, no need for input buffering? */
 static Byte readBuf[65535 + 6], *readCur = readBuf, *readEnd = readBuf;
 static UInt64 readFileOfs = 0;
@@ -1329,9 +1286,20 @@ static SRes DecompressXz(void) {
         /* !! Remove redundancy. */
         us = (readCur[1] << 8) + readCur[2] + 1;
         if (i < 3) {  /* Uncompressed chunk. */
+          const Bool initDic = (i == LZMA2_CONTROL_COPY_RESET_DIC);
           cs = us;
           readCur += 3;
+          if (initDic) {
+            state.needInitProp = state.needInitState = True;
+            state.needInitDic = False;
+          } else if (state.needInitDic) {
+            return SZ_ERROR_DATA;
+          }
+          LzmaDec_InitDicAndState(&state.decoder, initDic, False);
         } else {  /* LZMA chunk. */
+          const Byte mode = LZMA2_GET_LZMA_MODE(i);
+          const Bool initDic = (mode == 3);
+          const Bool initState = (mode > 0);
           const Bool isProp = (i & 64) != 0;
           us += (i & 31) << 16;
           cs = (readCur[3] << 8) + readCur[4] + 1;
@@ -1352,22 +1320,37 @@ static SRes DecompressXz(void) {
             if (state.needInitProp) return SZ_ERROR_MISSING_INITPROP;
           }
           readCur += 5;
+          if ((!initDic && state.needInitDic) || (!initState && state.needInitState))
+            return SZ_ERROR_DATA;
+          LzmaDec_InitDicAndState(&state.decoder, initDic, initState);
+          state.needInitDic = False;
+          state.needInitState = False;
         }
         state.decoder.dicBufSize += us;
         /* Decompressed data too long, won't fit to decompressBuf. */
         if (state.decoder.dicBufSize > sizeof(decompressBuf)) return SZ_ERROR_MEM;
         if (Preread(cs) < cs) return SZ_ERROR_INPUT_EOF;
-        {
-          DEBUGF("FEED us=%d cs=%d dicPos=%d\n", us, cs, (int)state.decoder.dicPos);
-          /* !! Get rid of Lzma2Dec_DecodeToDic, use LzmaDec_DecodeToDic directly. */
-          if ((Byte)i < 0x80) {
-            RINOK(Lzma2Dec_DecodeToDicUncompressed(&state, i, readCur));
-          } else {
-            /* This call doesn't chane state.decoder.dicBufSize. */
-            RINOK(Lzma2Dec_DecodeToDicCompressed(&state, i, cs, readCur));
+        DEBUGF("FEED us=%d cs=%d dicPos=%d\n", us, cs, (int)state.decoder.dicPos);
+        if ((Byte)i < 0x80) {  /* Uncompressed chunk. */
+          const UInt32 unpackSize = state.decoder.dicBufSize - state.decoder.dicPos;
+          DEBUGF("DECODE uncompressed\n");
+          memcpy(state.decoder.dic + state.decoder.dicPos, readCur, unpackSize);
+          state.decoder.dicPos += unpackSize;
+          if (state.decoder.checkDicSize == 0 && state.decoder.prop.dicSize - state.decoder.processedPos <= unpackSize)
+            state.decoder.checkDicSize = state.decoder.prop.dicSize;
+          state.decoder.processedPos += unpackSize;
+        } else {  /* Compressed chunk. */
+          ELzmaStatus status;
+          size_t srcSizeCur = cs;
+          DEBUGF("DECODE call\n");
+          /* !! Keep only LZMA_FINISH_END implemented. */
+          /* This call doesn't change state.decoder.dicBufSize. */
+          RINOK(LzmaDec_DecodeToDic(&state.decoder, state.decoder.dicBufSize, readCur, &srcSizeCur, LZMA_FINISH_END, &status));
+          if (srcSizeCur != cs || status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK) {
+            return SZ_ERROR_DATA;  /* Compressed or uncompressed chunk size not exactly correct. */
           }
-          if (state.decoder.dicPos != state.decoder.dicBufSize) return SZ_ERROR_BAD_DICPOS;
         }
+        if (state.decoder.dicPos != state.decoder.dicBufSize) return SZ_ERROR_BAD_DICPOS;
         {
           const Byte *q = decompressBuf + state.decoder.dicBufSize, *p = q - us;
           while (p != q) {
