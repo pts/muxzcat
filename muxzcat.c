@@ -1098,14 +1098,6 @@ static int GetByte() {
 /* !! #define GET_BYTE() GetByte() if CONFIG_SIZE_OPT. */
 #define GET_BYTE() (readCur == readEnd ? GetByte() : *readCur++)
 
-/* Contains the uncompressed data.
- *
- * We rely on virtual memory so that if we don't use the end of array for
- * small files, then the operating system won't take the entire array away
- * from other processes.
- */
-static Byte decompressBuf[1610612736];
-
 static SRes IgnoreVarint(void) {
   int b;
   while ((b = GET_BYTE()) >= 0x80) {}
@@ -1153,6 +1145,14 @@ static SRes IgnorePadding4() {
 }
 
 #define FILTER_ID_LZMA2 0x21
+
+/* Contains the uncompressed data.
+ *
+ * We rely on virtual memory so that if we don't use the end of array for
+ * small files, then the operating system won't take the entire array away
+ * from other processes.
+ */
+static Byte decompressBuf[1610612736];
 
 /* Reads from stdin, writes to stdout, uses decompressBuf.
  * Based on https://tukaani.org/xz/xz-file-format-1.0.4.txt
