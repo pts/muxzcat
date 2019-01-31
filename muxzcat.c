@@ -1040,9 +1040,11 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 #define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
 static Byte readBuf[65536 + 12], *readCur = readBuf, *readEnd = readBuf;
+#ifdef CONFIG_DEBUG
 static UInt64 readFileOfs = 0;
+#endif
 
-/* Try to preread r bytes to the read buffer. Returns the number of bytes
+/* Tries to preread r bytes to the read buffer. Returns the number of bytes
  * available in the read buffer. If smaller than r, that indicates EOF.
  *
  * Doesn't try to preread more than absolutely necessary, to avoid copies in
@@ -1070,16 +1072,20 @@ static UInt32 Preread(UInt32 r) {
       if (got <= 0) break;  /* EOF on input. */
       readEnd += got;
       p += got;
+#ifdef CONFIG_DEBUG
       readFileOfs += got;
+#endif
     }
   }
   return p;
 }
 
-/* Return the number of bytes read from stdin. */
-static UInt64 Tell() {
+#ifdef CONFIG_DEBUG
+/* Returns the number of bytes read from stdin. */
+static UInt64 GetReadPosForDebug() {
   return readFileOfs - (readEnd - readCur);
 }
+#endif
 
 #define SZ_ERROR_BAD_MAGIC 51
 #define SZ_ERROR_BAD_STREAM_FLAGS 52  /* SZ_ERROR_BAD_MAGIC is reported instead. */
@@ -1144,20 +1150,22 @@ static SRes DecompressXz(void) {
   /* Also ignore the CRC32 after checksumSize. */
   readCur += 12;
   for (;;) {  /* Next block. */
+    /* We need it modulo 4, so a Byte is enough. */
+    Byte blockSizePad = 3;
     UInt32 bhs, bhs2; /* Block header size */
     UInt32 bhf;  /* Block header flags */
-    UInt64 bo;  /* Block offset */
     Byte dicSizeProp;
     UInt32 dicSize;
+    Byte* readAtBlock;
     ASSERT(readEnd - readCur >= 12);  /* At least 12 bytes preread. */
-    /* !! Do it without Tell()? */
-    bo = Tell();  /* !! Do it without 64-bit calculations. */
+    readAtBlock = readCur;
     if ((bhs = *readCur++) == 0) break;  /* Last block, index follows. */
     /* Block header size includes the bhs field above and the CRC32 below. */
     bhs = (bhs + 1) << 2;
     DEBUGF("bhs=%d\n", bhs);
     /* Typically the Preread(12 + 12 + 6) above covers it. */
     if (Preread(bhs) < bhs) return SZ_ERROR_INPUT_EOF;
+    readAtBlock = readCur;
     bhf = *readCur++;
     if ((bhf & 2) != 0) return SZ_ERROR_UNSUPPORTED_FILTER_COUNT;
     DEBUGF("filter count=%d\n", (bhf & 2) + 1);
@@ -1197,14 +1205,13 @@ static SRes DecompressXz(void) {
     DEBUGF("dicSize37=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(37));
     DEBUGF("dicSize36=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(36));
     DEBUGF("dicSize35=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(35));
-    /* !! Do it without Tell()? */
-    bhs2 = (UInt32)(Tell() - bo) + 4;  /* Won't overflow. */
+    bhs2 = readCur - readAtBlock + 5;  /* Won't overflow. */
     DEBUGF("bhs=%d bhs2=%d\n", bhs, bhs2);
     if (bhs2 > bhs) return SZ_ERROR_BLOCK_HEADER_TOO_LONG;
     RINOK(IgnoreZeroBytes(bhs - bhs2));
-    readCur += 4;  /* CRC32 */
+    readCur += 4;  /* Ignore CRC32. */
     /* Typically it's offset 24, xz creates it by default, minimal. */
-    DEBUGF("LZMA2 at %d\n", (UInt32)Tell());
+    DEBUGF("LZMA2 at %d\n", (UInt32)GetReadPosForDebug());
     { /* Parse LZMA2 stream. */
       /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
       UInt32 us, cs;  /* Uncompressed and compressed chunk sizes. */
@@ -1232,7 +1239,7 @@ static SRes DecompressXz(void) {
          */
         if (Preread(6) < 6) return SZ_ERROR_INPUT_EOF;
         control = readCur[0];
-        DEBUGF("CONTROL control=0x%02x at=%d inbuf=%d\n", control, (UInt32)Tell(), (int)(readCur - readBuf));
+        DEBUGF("CONTROL control=0x%02x at=%d inbuf=%d\n", control, (UInt32)GetReadPosForDebug(), (int)(readCur - readBuf));
         if (control == 0) {
           DEBUGF("LASTFED\n");
           ++readCur;
@@ -1245,6 +1252,7 @@ static SRes DecompressXz(void) {
           const Bool initDic = (control == 1);
           cs = us;
           readCur += 3;
+          blockSizePad -= 3;
           if (initDic) {
             state.needInitProp = state.needInitState = True;
             state.needInitDic = False;
@@ -1272,10 +1280,12 @@ static SRes DecompressXz(void) {
             state.decoder.prop.lp = lp;
             state.needInitProp = False;
             ++readCur;
+            --blockSizePad;
           } else {
             if (state.needInitProp) return SZ_ERROR_MISSING_INITPROP;
           }
           readCur += 5;
+          blockSizePad -= 5;
           if ((!initDic && state.needInitDic) || (!initState && state.needInitState))
             return SZ_ERROR_DATA;
           LzmaDec_InitDicAndState(&state.decoder, initDic, initState);
@@ -1318,23 +1328,23 @@ static SRes DecompressXz(void) {
           }
         }
         readCur += cs;
+        blockSizePad -= cs;
         /* We can't discard decompressbuf[:state.decoder.dicBufSize] now,
          * because we need it a dictionary in which subsequent calls to
          * Lzma2Dec_DecodeToDic will look up backreferences.
          */
       }
     }  /* End of LZMA2 stream. */
-    DEBUGF("TELL %d\n", (UInt32)Tell());
+    DEBUGF("TELL %d\n", (UInt32)GetReadPosForDebug());
     /* End of block. */
     /* 7 for padding4 and CRC32 + 12 for the next block header + 6 for the next
      * chunk header.
      */
     if (Preread(7 + 12 + 6) < 7 + 12 + 6) return SZ_ERROR_INPUT_EOF;
-    DEBUGF("ALTELL %d\n", (UInt32)Tell());
-    /* !! Do it without Tell()? */
-    RINOK(IgnoreZeroBytes(-(Byte)Tell() & 3));  /* Ignore block padding. */
-    DEBUGF("AMTELL %d\n", (UInt32)Tell());
-    readCur += checksumSize;  /* CRC32, CRC64 etc. */
+    DEBUGF("ALTELL %d blockSizePad=%d\n", (UInt32)GetReadPosForDebug(), blockSizePad & 3);
+    RINOK(IgnoreZeroBytes(blockSizePad & 3));  /* Ignore block padding. */
+    DEBUGF("AMTELL %d\n", (UInt32)GetReadPosForDebug());
+    readCur += checksumSize;  /* Ignore CRC32, CRC64 etc. */
   }
   /* The .xz input file continues with the index, which we ignore from here. */
   return res;
