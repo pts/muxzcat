@@ -1051,12 +1051,11 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 #define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
 static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 packSize, const Byte *src) {
-  UInt32 srcLen = 0;
-  const UInt32 inSize = packSize;
   const Byte mode = LZMA2_GET_LZMA_MODE(control);
   const Bool initDic = (mode == 3);
   const Bool initState = (mode > 0);
   ELzmaStatus status;
+  size_t srcSizeCur;
   DEBUGF("DECODE call\n");
   ASSERT(!LZMA2_IS_UNCOMPRESSED_STATE(control));
   if ((!initDic && p->needInitDic) || (!initState && p->needInitState))
@@ -1064,24 +1063,14 @@ static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 pa
   LzmaDec_InitDicAndState(&p->decoder, initDic, initState);
   p->needInitDic = False;
   p->needInitState = False;
-  for (;;) {
-    size_t dicPos = p->decoder.dicPos;
-    size_t destSizeCur = p->decoder.dicBufSize - dicPos;
-    size_t srcSizeCur = inSize - srcLen;
-    DEBUGF("DECODE\n");  /* !! is the 2nd call necessary? */
-    if (srcSizeCur > packSize) srcSizeCur = (size_t)packSize;
-    /* !! Keep only LZMA_FINISH_END,implemented. */
-    RINOK(LzmaDec_DecodeToDic(&p->decoder, dicPos + destSizeCur, src, &srcSizeCur, LZMA_FINISH_END, &status));
-    src += srcSizeCur;
-    srcLen += srcSizeCur;
-    packSize -= (UInt32)srcSizeCur;
-    if (srcSizeCur == 0 && p->decoder.dicPos == dicPos) {
-      if (status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK ||
-          p->decoder.dicPos != p->decoder.dicBufSize || packSize != 0)
-        return SZ_ERROR_DATA;  /* Output buffer size not exactly correct. */
-      return SZ_OK;
-    }
+  srcSizeCur = packSize;
+  /* !! Keep only LZMA_FINISH_END,implemented. */
+  RINOK(LzmaDec_DecodeToDic(&p->decoder, p->decoder.dicBufSize, src, &srcSizeCur, LZMA_FINISH_END, &status));
+  if (p->decoder.dicBufSize != p->decoder.dicPos || srcSizeCur != packSize ||
+      status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK) {
+    return SZ_ERROR_DATA;  /* Compressed or uncompressed chunk size not exactly correct. */
   }
+  return SZ_OK;
 }
 
 static SRes Lzma2Dec_DecodeToDicUncompressed(CLzma2Dec *p, Byte control, const Byte *src) {
