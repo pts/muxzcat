@@ -42,28 +42,7 @@ typedef int32_t Int32;
 typedef uint32_t UInt32;
 #define UINT64_CONST(n) n ## ULL
 
-#ifdef __i386  /* Always true, just playing it safe. */
-static __inline__ void MemmoveBackward(void *dest, void *src, size_t n) {
-  __asm__ __volatile__ ("rep movsb\n\t"
-                        : "+D" (dest), "+S" (src), "+c" (n)
-                        :
-                        : "memory" );
-}
-
-#else
-/* gcc-4.8 -Os is smart enough to generate rep movsb for this C
- * implementation, there is no size difference.
- */
-static void MemmoveBackward(void *dest, const void *src, size_t n) {
-  char *destCp = (char*)dest;
-  char *srcCp = (char*)src;
-  for (; n > 0; --n) {
-    *destCp++ = *srcCp++;
-  }
-}
-#endif
-
-#else
+#else  /* Not __XTINY__. */
 
 #include <stddef.h>  /* size_t */
 #include <string.h>  /* memcpy(), memmove() */
@@ -76,8 +55,6 @@ static void MemmoveBackward(void *dest, const void *src, size_t n) {
 #if defined(MSDOS) || defined(_WIN32)
 #include <fcntl.h>  /* setmode() */
 #endif
-
-#define MemmoveBackward(dest, src, n) memmove(dest, src, n)
 
 #ifdef CONFIG_NO_INT64
 
@@ -119,6 +96,27 @@ typedef uint32_t UInt32;
 #define DEBUGF(...)
 /* Just check that it compiles. */
 #define ASSERT(condition) do {} while (0 && (condition))
+#endif
+
+#if 0  /* __i386 is is always defined, just playing it safe. */
+static __inline__ void MemmoveOverlap(void *dest, void *src, size_t n) {
+  __asm__ __volatile__ ("rep movsb\n\t"
+                        : "+D" (dest), "+S" (src), "+c" (n)
+                        :
+                        : "memory" );
+}
+#else
+/* gcc-4.8 -Os is smart enough to generate rep movsb for this C
+ * implementation, there is no size difference. In fact, it generates
+ * better code with this than the inline assembly.
+ */
+static void MemmoveOverlap(void *dest, const void *src, size_t n) {
+  char *destCp = (char*)dest;
+  char *srcCp = (char*)src;
+  for (; n > 0; --n) {
+    *destCp++ = *srcCp++;
+  }
+}
 #endif
 
 /* --- */
@@ -593,14 +591,10 @@ static int LzmaDec_DecodeReal(CLzmaDec *p, size_t limit, const Byte *bufLimit)
         len -= curLen;
         if (pos + curLen <= dicBufSize)
         {
-          Byte *dest = dic + dicPos;
-          const UInt32 diff = dicPos - pos;
-          const Byte *lim = dest + curLen;
           ASSERT(dicPos > pos);
+          ASSERT(curLen > 0);
+          MemmoveOverlap(dic + dicPos, dic + pos, curLen);
           dicPos += curLen;
-          do
-            *(dest) = (Byte)*(dest - diff);
-          while (++dest != lim);
         }
         else
         {
@@ -1059,7 +1053,7 @@ static UInt32 Preread(UInt32 r) {
     if (readBuf + sizeof(readBuf) - readCur + 0U < r) {
       /* If no room for r bytes to the end, discard bytes from the beginning. */
       DEBUGF("MEMMOVE size=%d\n", p);
-      MemmoveBackward(readBuf, readCur, p);
+      MemmoveOverlap(readBuf, readCur, p);
       readEnd = readBuf + p;
       readCur = readBuf;
     }
