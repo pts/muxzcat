@@ -119,12 +119,6 @@ typedef Byte Bool;
 
 #define LZMA_REQUIRED_INPUT_MAX 20
 
-typedef struct _CLzmaProps {
-  /* These fields would it into a byte, but i386 code is shorter as UInt32. */
-  UInt32 lc, lp, pb;
-  UInt32 dicSize;
-} CLzmaProps;
-
 /* CONFIG_PROB32 can increase the speed on some CPUs,
    but memory usage for CLzmaDec::probs will be doubled in that case
    CONFIG_PROB32 increases memory usage by 28268 bytes.
@@ -160,7 +154,9 @@ typedef enum
 #define Lzma2Props_GetMaxNumProbs() ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << LZMA2_LCLP_MAX))
 
 typedef struct {
-  CLzmaProps prop;
+  /* These fields would fit into a byte, but i386 code is shorter as UInt32. */
+  UInt32 lc, lp, pb;  /* Configured in prop byte. */
+  UInt32 dicSize;  /* Configured in prop byte. */
   const Byte *buf;
   UInt32 range, code;
   UInt32 dicPos;
@@ -300,9 +296,9 @@ static SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
 
   UInt32 state = global.state;
   UInt32 rep0 = global.reps[0], rep1 = global.reps[1], rep2 = global.reps[2], rep3 = global.reps[3];
-  UInt32 pbMask = ((UInt32)1 << (global.prop.pb)) - 1;
-  UInt32 lpMask = ((UInt32)1 << (global.prop.lp)) - 1;
-  UInt32 lc = global.prop.lc;
+  UInt32 pbMask = ((UInt32)1 << (global.pb)) - 1;
+  UInt32 lpMask = ((UInt32)1 << (global.lp)) - 1;
+  UInt32 lc = global.lc;
 
   Byte *dic = global.dic;
   UInt32 dicBufSize = global.dicBufSize;
@@ -600,8 +596,8 @@ static void LzmaDec_WriteRem(UInt32 limit)
     if (limit - dicPos < len)
       len = (UInt32)(limit - dicPos);
 
-    if (global.checkDicSize == 0 && global.prop.dicSize - global.processedPos <= len)
-      global.checkDicSize = global.prop.dicSize;
+    if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= len)
+      global.checkDicSize = global.dicSize;
 
     global.processedPos += len;
     global.remainLen -= len;
@@ -622,13 +618,13 @@ static SRes LzmaDec_DecodeReal2(UInt32 limit, const Byte *bufLimit)
     UInt32 limit2 = limit;
     if (global.checkDicSize == 0)
     {
-      UInt32 rem = global.prop.dicSize - global.processedPos;
+      UInt32 rem = global.dicSize - global.processedPos;
       if (limit - global.dicPos > rem)
         limit2 = global.dicPos + rem;
     }
     RINOK(LzmaDec_DecodeReal(limit2, bufLimit));
-    if (global.processedPos >= global.prop.dicSize)
-      global.checkDicSize = global.prop.dicSize;
+    if (global.processedPos >= global.dicSize)
+      global.checkDicSize = global.dicSize;
     LzmaDec_WriteRem(limit);
   }
   while (global.dicPos < limit && global.buf < bufLimit && global.remainLen < kMatchSpecLenStart);
@@ -661,7 +657,7 @@ static ELzmaDummy LzmaDec_TryDummy(const Byte *buf, UInt32 inSize)
     const CLzmaProb *prob;
     UInt32 bound;
     UInt32 ttt;
-    UInt32 posState = (global.processedPos) & ((1 << global.prop.pb) - 1);
+    UInt32 posState = (global.processedPos) & ((1 << global.pb) - 1);
 
     prob = probs + IsMatch + (state << kNumPosBitsMax) + posState;
     IF_BIT_0_CHECK(prob)
@@ -673,8 +669,8 @@ static ELzmaDummy LzmaDec_TryDummy(const Byte *buf, UInt32 inSize)
       prob = probs + Literal;
       if (global.checkDicSize != 0 || global.processedPos != 0)
         prob += (LZMA_LIT_SIZE *
-          ((((global.processedPos) & ((1 << (global.prop.lp)) - 1)) << global.prop.lc) +
-          (global.dic[(global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1] >> (8 - global.prop.lc))));
+          ((((global.processedPos) & ((1 << (global.lp)) - 1)) << global.lc) +
+          (global.dic[(global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1] >> (8 - global.lc))));
 
       if (state < kNumLitStates)
       {
@@ -864,7 +860,7 @@ static void LzmaDec_InitDicAndState(Bool initDic, Bool initState)
 
 static void LzmaDec_InitStateReal(void)
 {
-  UInt32 numProbs = Literal + ((UInt32)LZMA_LIT_SIZE << (global.prop.lc + global.prop.lp));
+  UInt32 numProbs = Literal + ((UInt32)LZMA_LIT_SIZE << (global.lc + global.lp));
   UInt32 i;
   CLzmaProb *probs = global.probs;
   for (i = 0; i < numProbs; i++)
@@ -1162,10 +1158,10 @@ static SRes DecompressXz(void) {
       /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
       UInt32 us, cs;  /* Uncompressed and compressed chunk sizes. */
 
-      global.prop.dicSize = dicSize;
-      global.prop.lc = 0;  /* needinitprop will initialize it */
-      global.prop.pb = 0;
-      global.prop.lp = 0;
+      global.dicSize = dicSize;
+      global.lc = 0;  /* needinitprop will initialize it */
+      global.pb = 0;
+      global.lp = 0;
       global.dicBufSize = 0;  /* We'll increment it later. */
       global.needInitDic = True;
       global.needInitState = True;
@@ -1215,11 +1211,11 @@ static SRes DecompressXz(void) {
             if (b >= (9 * 5 * 5)) return SZ_ERROR_BAD_LCLPPB_PROP;
             lc = b % 9;
             b /= 9;
-            global.prop.pb = b / 5;
+            global.pb = b / 5;
             lp = b % 5;
             if (lc + lp > LZMA2_LCLP_MAX) return SZ_ERROR_BAD_LCLPPB_PROP;
-            global.prop.lc = lc;
-            global.prop.lp = lp;
+            global.lc = lc;
+            global.lp = lp;
             global.needInitProp = False;
             ++readCur;
             --blockSizePad;
@@ -1247,8 +1243,8 @@ static SRes DecompressXz(void) {
           DEBUGF("DECODE uncompressed\n");
           memcpy(global.dic + global.dicPos, readCur, unpackSize);
           global.dicPos += unpackSize;
-          if (global.checkDicSize == 0 && global.prop.dicSize - global.processedPos <= unpackSize)
-            global.checkDicSize = global.prop.dicSize;
+          if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= unpackSize)
+            global.checkDicSize = global.dicSize;
           global.processedPos += unpackSize;
         } else {  /* Compressed chunk. */
           ELzmaStatus status;
