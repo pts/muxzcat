@@ -222,7 +222,6 @@ typedef enum
 typedef struct
 {
   CLzmaDec decoder;
-  UInt32 packSize;
   Bool needInitDic;
   Bool needInitState;
   Bool needInitProp;
@@ -1088,12 +1087,9 @@ static SRes Lzma2Dec_DecodeControl(CLzma2Dec *p, const Byte *src, size_t *srcLen
     ASSERT(*srcLen < inSize);
     (*srcLen)++;
     b = *src++;
-    p->packSize = (UInt32)b << 8;
     ASSERT(*srcLen < inSize);
     (*srcLen)++;
     b = *src++;
-    p->packSize |= (UInt32)b;
-    p->packSize++;
     if (!LZMA2_IS_THERE_PROP(LZMA2_GET_LZMA_MODE(control))) {
       if (p->needInitProp) goto on_error;
     } else {
@@ -1119,7 +1115,7 @@ typedef enum {
   LZMA2_STATE_DATA,
   LZMA2_STATE_DATA_CONT,
 } ELzma2State;
-static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, Byte control, UInt32 unpackSize, size_t dicLimit,
+static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, Byte control, UInt32 unpackSize, UInt32 packSize, size_t dicLimit,
     const Byte *src, size_t *srcLen, ELzmaStatus *status) {
   Byte state = LZMA2_STATE_DATA;  /* !! remove LZMA2_STATE */
   size_t inSize = *srcLen;
@@ -1171,7 +1167,7 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, Byte control, UInt32 unpackSize, 
           *status = LZMA_STATUS_NEEDS_MORE_INPUT;
           return SZ_OK;
         }
-        state = LZMA2_STATE_DATA_CONT;  /* !! Do we ever have it? */
+        state = LZMA2_STATE_DATA_CONT;  /* !! Do we ever have it from here? */
       }
       else
       {
@@ -1191,14 +1187,14 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, Byte control, UInt32 unpackSize, 
           p->needInitState = False;
           state = LZMA2_STATE_DATA_CONT;
         }
-        if (srcSizeCur > p->packSize)
-          srcSizeCur = (size_t)p->packSize;
+        if (srcSizeCur > packSize)
+          srcSizeCur = (size_t)packSize;
 
         res = LzmaDec_DecodeToDic(&p->decoder, dicPos + destSizeCur, src, &srcSizeCur, curFinishMode, status);
 
         src += srcSizeCur;
         *srcLen += srcSizeCur;
-        p->packSize -= (UInt32)srcSizeCur;
+        packSize -= (UInt32)srcSizeCur;
 
         outSizeProcessed = p->decoder.dicPos - dicPos;
         unpackSize -= (UInt32)outSizeProcessed;
@@ -1207,7 +1203,7 @@ static SRes Lzma2Dec_DecodeToDic(CLzma2Dec *p, Byte control, UInt32 unpackSize, 
         if (srcSizeCur == 0 && outSizeProcessed == 0)
         {
           if (*status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK ||
-              unpackSize != 0 || p->packSize != 0)
+              unpackSize != 0 || packSize != 0)
             return SZ_ERROR_DATA;
           goto on_end_of_chunk;
         }
@@ -1419,7 +1415,7 @@ static SRes DecompressXz(void) {
     { /* Parse LZMA2 stream. */
       /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
       UInt32 tus = 0;  /* Total uncompressed size so far. */
-      UInt32 us;
+      UInt32 us, cs;
       UInt32 feedSize;
       CLzma2Dec state;
 
@@ -1456,11 +1452,12 @@ static SRes DecompressXz(void) {
         /* !! Remove redundancy. */
         us = (readCur[1] << 8) + readCur[2] + 1;
         if (i < 3) {  /* Uncompressed chunk. */
-          feedSize = 3 + us;
+          feedSize = 3 + (cs = us);
         } else {  /* LZMA chunk. */
           const Bool isProp = (i & 64) != 0;
           us += (i & 31) << 16;
-          feedSize = (readCur[3] << 8) + readCur[4] + 1 + 5 + isProp;
+          cs = (readCur[3] << 8) + readCur[4] + 1;
+          feedSize = cs + 5 + isProp;
         }
         /* Decompressed data too long, won't fit to decompressBuf. */
         if (tus + us > sizeof(decompressBuf)) return SZ_ERROR_MEM;
@@ -1474,7 +1471,7 @@ static SRes DecompressXz(void) {
           readCur += inProcessed;
           inProcessed = feedSize -= inProcessed;
           /* !! Get rid of Lzma2Dec_DecodeToDic, use LzmaDec_DecodeToDic directly. */
-          RINOK(Lzma2Dec_DecodeToDic(&state, i, us, state.decoder.dicBufSize, readCur, &inProcessed, &status));
+          RINOK(Lzma2Dec_DecodeToDic(&state, i, us, cs, state.decoder.dicBufSize, readCur, &inProcessed, &status));
           DEBUGF("FED  status=%d inProcessed=%d dicPos=%d\n", status, (int)inProcessed, (int)state.decoder.dicPos);
           if (status == LZMA_STATUS_FINISHED_WITH_MARK) return SZ_ERROR_FINISHED_TOO_EARLY;
           if (inProcessed != feedSize) return SZ_ERROR_FEED_CHUNK;
