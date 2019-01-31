@@ -86,7 +86,9 @@ typedef uint32_t UInt32;
 #endif  /* USE_MINIINC1 */
 
 #ifdef CONFIG_DEBUG
-/* This is guaranteed to work with Linux and gcc only. */
+/* This is guaranteed to work with Linux and gcc only. For example, %lld in
+ * printf doesn't work with MinGW.
+ */
 #undef NDEBUG
 #include <assert.h>
 #include <stdio.h>
@@ -1035,7 +1037,7 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 
 static Byte readBuf[65536 + 12], *readCur = readBuf, *readEnd = readBuf;
 #ifdef CONFIG_DEBUG
-static UInt64 readFileOfs = 0;
+static long long readFileOfs = 0;
 #endif
 
 /* Tries to preread r bytes to the read buffer. Returns the number of bytes
@@ -1076,7 +1078,7 @@ static UInt32 Preread(UInt32 r) {
 
 #ifdef CONFIG_DEBUG
 /* Returns the number of bytes read from stdin. */
-static UInt64 GetReadPosForDebug() {
+static long long GetReadPosForDebug() {
   return readFileOfs - (readEnd - readCur);
 }
 #endif
@@ -1205,7 +1207,7 @@ static SRes DecompressXz(void) {
     RINOK(IgnoreZeroBytes(bhs - bhs2));
     readCur += 4;  /* Ignore CRC32. */
     /* Typically it's offset 24, xz creates it by default, minimal. */
-    DEBUGF("LZMA2 at %d\n", (UInt32)GetReadPosForDebug());
+    DEBUGF("LZMA2 at %lld\n", GetReadPosForDebug());
     { /* Parse LZMA2 stream. */
       /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
       UInt32 us, cs;  /* Uncompressed and compressed chunk sizes. */
@@ -1233,7 +1235,7 @@ static SRes DecompressXz(void) {
          */
         if (Preread(6) < 6) return SZ_ERROR_INPUT_EOF;
         control = readCur[0];
-        DEBUGF("CONTROL control=0x%02x at=%d inbuf=%d\n", control, (UInt32)GetReadPosForDebug(), (int)(readCur - readBuf));
+        DEBUGF("CONTROL control=0x%02x at=%lld inbuf=%d\n", control, GetReadPosForDebug(), (int)(readCur - readBuf));
         if (control == 0) {
           DEBUGF("LASTFED\n");
           ++readCur;
@@ -1329,15 +1331,15 @@ static SRes DecompressXz(void) {
          */
       }
     }  /* End of LZMA2 stream. */
-    DEBUGF("TELL %d\n", (UInt32)GetReadPosForDebug());
+    DEBUGF("TELL %lld\n", GetReadPosForDebug());
     /* End of block. */
     /* 7 for padding4 and CRC32 + 12 for the next block header + 6 for the next
      * chunk header.
      */
     if (Preread(7 + 12 + 6) < 7 + 12 + 6) return SZ_ERROR_INPUT_EOF;
-    DEBUGF("ALTELL %d blockSizePad=%d\n", (UInt32)GetReadPosForDebug(), blockSizePad & 3);
+    DEBUGF("ALTELL %lld blockSizePad=%d\n", GetReadPosForDebug(), blockSizePad & 3);
     RINOK(IgnoreZeroBytes(blockSizePad & 3));  /* Ignore block padding. */
-    DEBUGF("AMTELL %d\n", (UInt32)GetReadPosForDebug());
+    DEBUGF("AMTELL %lld\n", GetReadPosForDebug());
     readCur += checksumSize;  /* Ignore CRC32, CRC64 etc. */
   }
   /* The .xz input file continues with the index, which we ignore from here. */
