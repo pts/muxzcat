@@ -1053,27 +1053,19 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 packSize, const Byte *src) {
   UInt32 srcLen = 0;
   const UInt32 inSize = packSize;
-  UInt32 unpackSize = p->decoder.dicBufSize - p->decoder.dicPos;
   Bool isFirst = True;
   ELzmaStatus status;
-  size_t outSizeProcessed;
   DEBUGF("DECODE call\n");
   for (;;) {
     size_t dicPos = p->decoder.dicPos;
     size_t destSizeCur = p->decoder.dicBufSize - dicPos;
     size_t srcSizeCur = inSize - srcLen;
-    ELzmaFinishMode curFinishMode = LZMA_FINISH_ANY;
     DEBUGF("DECODE isFirst=%d\n", isFirst);
     ASSERT(!LZMA2_IS_UNCOMPRESSED_STATE(control));
-    /*ASSERT(unpackSize == destSizeCur);*/  /* !! Is this always true? */
-    if (unpackSize <= destSizeCur) {
-      destSizeCur = (size_t)unpackSize;
-      curFinishMode = LZMA_FINISH_END;
-    }
     if (isFirst) {
-      Byte mode = LZMA2_GET_LZMA_MODE(control);
-      Bool initDic = (mode == 3);
-      Bool initState = (mode > 0);
+      const Byte mode = LZMA2_GET_LZMA_MODE(control);
+      const Bool initDic = (mode == 3);
+      const Bool initState = (mode > 0);
       if ((!initDic && p->needInitDic) || (!initState && p->needInitState))
         return SZ_ERROR_DATA;
       LzmaDec_InitDicAndState(&p->decoder, initDic, initState);
@@ -1082,15 +1074,13 @@ static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 pa
       isFirst = False;
     }
     if (srcSizeCur > packSize) srcSizeCur = (size_t)packSize;
-    RINOK(LzmaDec_DecodeToDic(&p->decoder, dicPos + destSizeCur, src, &srcSizeCur, curFinishMode, &status));
+    RINOK(LzmaDec_DecodeToDic(&p->decoder, dicPos + destSizeCur, src, &srcSizeCur, LZMA_FINISH_END, &status));
     src += srcSizeCur;
     srcLen += srcSizeCur;
     packSize -= (UInt32)srcSizeCur;
-    outSizeProcessed = p->decoder.dicPos - dicPos;
-    unpackSize -= (UInt32)outSizeProcessed;
-    if (srcSizeCur == 0 && outSizeProcessed == 0) {
+    if (srcSizeCur == 0 && p->decoder.dicPos == dicPos) {
       if (status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK ||
-          unpackSize != 0 || packSize != 0)
+          p->decoder.dicPos != p->decoder.dicBufSize || packSize != 0)
         return SZ_ERROR_DATA;  /* Output buffer size not exactly correct. */
       return SZ_OK;
     }
