@@ -173,13 +173,13 @@ typedef struct
   const Byte *buf;
   UInt32 range, code;
   size_t dicPos;
-  size_t dicBufSize;
+  size_t dicBufSize;  /* !! Change these to UInt32. */
   UInt32 processedPos;
   UInt32 checkDicSize;
   unsigned state;
   UInt32 reps[4];
   unsigned remainLen;
-  int needFlush;
+  int needFlush;  /* !! Change these to Bool. */
   int needInitState;
   UInt32 numProbs;
   unsigned tempBufSize;
@@ -1112,7 +1112,7 @@ static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 un
         {
           if (status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK ||
               unpackSize != 0 || packSize != 0)
-            return SZ_ERROR_DATA;
+            return SZ_ERROR_DATA;  /* Output buffer size not exactly correct. */
           ASSERT(*srcLen == inSize);
           return SZ_OK;
         }
