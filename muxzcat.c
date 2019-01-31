@@ -135,27 +135,6 @@ typedef struct _CLzmaProps {
 #define CLzmaProb UInt16
 #endif
 
-typedef struct
-{
-  CLzmaProps prop;
-  CLzmaProb *probs;
-  Byte *dic;
-  const Byte *buf;
-  UInt32 range, code;
-  UInt32 dicPos;
-  UInt32 dicBufSize;
-  UInt32 processedPos;
-  UInt32 checkDicSize;
-  UInt32 state;
-  UInt32 reps[4];
-  UInt32 remainLen;
-  UInt32 needFlush;  /* !! Change these to Bool. */
-  UInt32 needInitState;  /* !! Change these to Bool. */
-  UInt32 numProbs;
-  UInt32 tempBufSize;
-  Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
-} CLzmaDec;
-
 typedef enum
 {
   LZMA_STATUS_NOT_SPECIFIED,               /* use main error code instead */
@@ -179,6 +158,27 @@ typedef enum
 #define LzmaProps_GetNumProbs(p) ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp)))
 /* 14134 */
 #define Lzma2Props_GetMaxNumProbs() ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << LZMA2_LCLP_MAX))
+
+typedef struct
+{
+  CLzmaProps prop;
+  CLzmaProb *probs;
+  Byte *dic;
+  const Byte *buf;
+  UInt32 range, code;
+  UInt32 dicPos;
+  UInt32 dicBufSize;
+  UInt32 processedPos;
+  UInt32 checkDicSize;
+  UInt32 state;
+  UInt32 reps[4];
+  UInt32 remainLen;
+  UInt32 numProbs;
+  UInt32 tempBufSize;
+  Bool needFlush;
+  Bool needInitState;
+  Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
+} CLzmaDec;
 
 typedef struct
 {
@@ -885,7 +885,7 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, UInt32 dicLimit, const Byte *src, U
 
   while (p->remainLen != kMatchSpecLenStart)
   {
-      UInt32 checkEndMarkNow;  /* !! Bool. */
+      Bool checkEndMarkNow;
 
       if (p->needFlush != 0)
       {
@@ -903,7 +903,7 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, UInt32 dicLimit, const Byte *src, U
         p->tempBufSize = 0;
       }
 
-      checkEndMarkNow = 0;
+      checkEndMarkNow = False;
       if (p->dicPos >= dicLimit)
       {
         if (p->remainLen == 0 && p->code == 0)
@@ -916,7 +916,7 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, UInt32 dicLimit, const Byte *src, U
           *status = LZMA_STATUS_NOT_FINISHED;
           return SZ_ERROR_DATA;
         }
-        checkEndMarkNow = 1;
+        checkEndMarkNow = True;
       }
 
       if (p->needInitState)
