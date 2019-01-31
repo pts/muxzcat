@@ -1061,7 +1061,7 @@ static void LzmaDec_UpdateWithUncompressed(CLzmaDec *p, const Byte *src, size_t 
 }
 
 /* !! Inline single call. */
-static SRes Lzma2Dec_DecodeControl(CLzma2Dec *p, const Byte *src, size_t *srcLen) {
+static SRes Lzma2Dec_DecodeControl(const Byte *src, size_t *srcLen) {
   Byte b, control;
   size_t inSize = *srcLen;
   *srcLen = 0;
@@ -1073,7 +1073,7 @@ static SRes Lzma2Dec_DecodeControl(CLzma2Dec *p, const Byte *src, size_t *srcLen
   ASSERT(b != 0);
   control = b;
   if (LZMA2_IS_UNCOMPRESSED_STATE(control)) {
-    if ((control & 0x7F) > 2) { on_error:
+    if ((control & 0x7F) > 2) {
       return SZ_ERROR_DATA;
     }
   }
@@ -1090,22 +1090,10 @@ static SRes Lzma2Dec_DecodeControl(CLzma2Dec *p, const Byte *src, size_t *srcLen
     ASSERT(*srcLen < inSize);
     (*srcLen)++;
     b = *src++;
-    if (!LZMA2_IS_THERE_PROP(LZMA2_GET_LZMA_MODE(control))) {
-      if (p->needInitProp) goto on_error;
-    } else {
+    if (LZMA2_IS_THERE_PROP(LZMA2_GET_LZMA_MODE(control))) {
       ASSERT(*srcLen < inSize);
       (*srcLen)++;
       b = *src++;
-      int lc, lp;
-      if (b >= (9 * 5 * 5)) goto on_error;
-      lc = b % 9;
-      b /= 9;
-      p->decoder.prop.pb = b / 5;
-      lp = b % 5;
-      if (lc + lp > LZMA2_LCLP_MAX) goto on_error;
-      p->decoder.prop.lc = lc;
-      p->decoder.prop.lp = lp;
-      p->needInitProp = False;
     }
   }
   return SZ_OK;
@@ -1319,6 +1307,8 @@ static SRes IgnoreFewBytes(UInt32 c) {
 #define SZ_ERROR_NOT_FINISHED_WITH_MARK 64
 #define SZ_ERROR_BAD_DICPOS 65
 #define SZ_ERROR_FINISHED_TOO_EARLY 66
+#define SZ_ERROR_MISSING_INITPROP 67
+#define SZ_ERROR_BAD_LCLPPB_PROP 68
 
 static SRes IgnoreZeroBytes(UInt32 c) {
   int i;
@@ -1439,7 +1429,7 @@ static SRes DecompressXz(void) {
         /* Actually 2 bytes is enough to get to the index if everything is
          * aligned and there is no block checksum.
          */
-        if (Preread(5) < 5) return SZ_ERROR_INPUT_EOF;
+        if (Preread(6) < 6) return SZ_ERROR_INPUT_EOF;
         i = readCur[0];
         DEBUGF("CONTROL 0x%02x at=%d\n", i, (UInt32)Tell());
         if (i == 0) {
@@ -1458,6 +1448,21 @@ static SRes DecompressXz(void) {
           us += (i & 31) << 16;
           cs = (readCur[3] << 8) + readCur[4] + 1;
           feedSize = cs + 5 + isProp;
+          if (isProp) {
+            Byte b = readCur[5];
+            int lc, lp;
+            if (b >= (9 * 5 * 5)) return SZ_ERROR_BAD_LCLPPB_PROP;
+            lc = b % 9;
+            b /= 9;
+            state.decoder.prop.pb = b / 5;
+            lp = b % 5;
+            if (lc + lp > LZMA2_LCLP_MAX) return SZ_ERROR_BAD_LCLPPB_PROP;
+            state.decoder.prop.lc = lc;
+            state.decoder.prop.lp = lp;
+            state.needInitProp = False;
+          } else {
+            if (state.needInitProp) return SZ_ERROR_MISSING_INITPROP;
+          }
         }
         /* Decompressed data too long, won't fit to decompressBuf. */
         if (tus + us > sizeof(decompressBuf)) return SZ_ERROR_MEM;
@@ -1467,7 +1472,7 @@ static SRes DecompressXz(void) {
           size_t inProcessed = feedSize;
           ELzmaStatus status;  /* !! remove this as an argument */
           DEBUGF("FEED us=%d feedSize=%d dicPos=%d\n", us, feedSize, (int)state.decoder.dicPos);
-          RINOK(Lzma2Dec_DecodeControl(&state, readCur, &inProcessed));
+          RINOK(Lzma2Dec_DecodeControl(readCur, &inProcessed));
           readCur += inProcessed;
           inProcessed = feedSize -= inProcessed;
           /* !! Get rid of Lzma2Dec_DecodeToDic, use LzmaDec_DecodeToDic directly. */
