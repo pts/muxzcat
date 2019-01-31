@@ -1053,27 +1053,24 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 packSize, const Byte *src) {
   UInt32 srcLen = 0;
   const UInt32 inSize = packSize;
-  Bool isFirst = True;
+  const Byte mode = LZMA2_GET_LZMA_MODE(control);
+  const Bool initDic = (mode == 3);
+  const Bool initState = (mode > 0);
   ELzmaStatus status;
   DEBUGF("DECODE call\n");
+  ASSERT(!LZMA2_IS_UNCOMPRESSED_STATE(control));
+  if ((!initDic && p->needInitDic) || (!initState && p->needInitState))
+    return SZ_ERROR_DATA;
+  LzmaDec_InitDicAndState(&p->decoder, initDic, initState);
+  p->needInitDic = False;
+  p->needInitState = False;
   for (;;) {
     size_t dicPos = p->decoder.dicPos;
     size_t destSizeCur = p->decoder.dicBufSize - dicPos;
     size_t srcSizeCur = inSize - srcLen;
-    DEBUGF("DECODE isFirst=%d\n", isFirst);
-    ASSERT(!LZMA2_IS_UNCOMPRESSED_STATE(control));
-    if (isFirst) {
-      const Byte mode = LZMA2_GET_LZMA_MODE(control);
-      const Bool initDic = (mode == 3);
-      const Bool initState = (mode > 0);
-      if ((!initDic && p->needInitDic) || (!initState && p->needInitState))
-        return SZ_ERROR_DATA;
-      LzmaDec_InitDicAndState(&p->decoder, initDic, initState);
-      p->needInitDic = False;
-      p->needInitState = False;
-      isFirst = False;
-    }
+    DEBUGF("DECODE\n");  /* !! is the 2nd call necessary? */
     if (srcSizeCur > packSize) srcSizeCur = (size_t)packSize;
+    /* !! Keep only LZMA_FINISH_END,implemented. */
     RINOK(LzmaDec_DecodeToDic(&p->decoder, dicPos + destSizeCur, src, &srcSizeCur, LZMA_FINISH_END, &status));
     src += srcSizeCur;
     srcLen += srcSizeCur;
