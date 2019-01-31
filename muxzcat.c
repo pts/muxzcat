@@ -1,6 +1,9 @@
-/* by pts@fazekas.hu at Wed Jan 30 15:15:23 CET 2019
+/*
+ * muxzcat.c: tiny .xz and .lzma extractor, size-optimized for Linux i386
+ * by pts@fazekas.hu at Wed Jan 30 15:15:23 CET 2019
  *
- * Based on https://github.com/pts/pts-tiny-7z-sfx/commit/b9a101b076672879f861d472665afaa6caa6fec1
+ * LZMA algorithm implementation based on
+ * https://github.com/pts/pts-tiny-7z-sfx/commit/b9a101b076672879f861d472665afaa6caa6fec1
  *
  * Limitations of this decompressor:
  *
@@ -10,7 +13,8 @@
  *   data) and a small constant overhead.
  * * It doesn't support decompressed data larger than 1610612736 (~1.61 GB).
  *   FYI linux-4.20.5.tar is about half as much, 854855680 bytes.
- * * It supports only LZMA2 (no other filters).
+ * * For .xz it supports only LZMA2 (no other filters such as BCJ).
+ * * For .lzma it doesn't work with files with 5 <= lc + lp <= 8.
  * * It doesn't verify checksums.
  * * It extracts the first stream only, and ignores the index.
  * * It doesn't support dictionary sizes larger than 1610612736 bytes (~1.61 GB).
@@ -106,11 +110,12 @@ static void MemmoveOverlap(void *dest, const void *src, UInt32 n) {
 #define SZ_ERROR_OUTPUT_EOF 7
 #define SZ_ERROR_READ 8
 #define SZ_ERROR_WRITE 9
-#define SZ_ERROR_FINISHED_WITH_MARK 15          /* LzmaDec_DecodeToDic stream was finished with end mark. */
-#define SZ_ERROR_NOT_FINISHED 16                /* LzmaDec_DecodeToDic stream was not finished */
-#define SZ_ERROR_NEEDS_MORE_INPUT 17            /* LzmaDec_DecodeToDic, you must provide more input bytes */
+#define SZ_ERROR_FINISHED_WITH_MARK 15            /* LzmaDec_DecodeToDic stream was finished with end mark. */
+#define SZ_ERROR_NOT_FINISHED 16                  /* LzmaDec_DecodeToDic stream was not finished */
+#define SZ_ERROR_NEEDS_MORE_INPUT 17              /* LzmaDec_DecodeToDic, you must provide more input bytes */
 /*#define SZ_MAYBE_FINISHED_WITHOUT_MARK SZ_OK*/  /* LzmaDec_DecodeToDic, there is probability that stream was finished without end mark */
 #define SZ_ERROR_CHUNK_NOT_CONSUMED 18
+#define SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL 17      /* LzmaDec_DecodeToDic, more input needed, but existing input was partially processed */
 
 typedef UInt32 SRes;
 
@@ -883,6 +888,8 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
           global.tempBuf[global.tempBufSize++] = *src++;
         if (global.tempBufSize < RC_INIT_SIZE)
         {
+         on_needs_more_input:
+          if (srcLen != srcLen0) return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL;
           return SZ_ERROR_NEEDS_MORE_INPUT;
         }
         if (global.tempBuf[0] != 0)
@@ -898,7 +905,7 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
         if (global.remainLen == 0 && global.code == 0)
         {
           if (srcLen != srcLen0) return SZ_ERROR_CHUNK_NOT_CONSUMED;
-          return SZ_OK /* LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK */;
+          return SZ_OK /* MAYBE_FINISHED_WITHOUT_MARK */;
         }
         if (global.remainLen != 0)
         {
@@ -907,8 +914,9 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
         checkEndMarkNow = True;
       }
 
-      if (global.needInitLzma)
+      if (global.needInitLzma) {
         LzmaDec_InitStateReal();
+      }
 
       if (global.tempBufSize == 0)
       {
@@ -922,7 +930,7 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
             memcpy(global.tempBuf, src, inSize);
             global.tempBufSize = (UInt32)inSize;
             srcLen += inSize;
-            return SZ_ERROR_NEEDS_MORE_INPUT;
+            goto on_needs_more_input;
           }
           if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
           {
@@ -952,7 +960,7 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
           if (dummyRes == DUMMY_ERROR)
           {
             srcLen += lookAhead;
-            return SZ_ERROR_NEEDS_MORE_INPUT;
+            goto on_needs_more_input;
           }
           if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
           {
@@ -1016,6 +1024,7 @@ static UInt32 Preread(UInt32 r) {
 #endif
     }
   }
+  DEBUGF("PREREAD r=%d p=%d\n", r, p);
   return p;
 }
 
@@ -1055,22 +1064,101 @@ static SRes IgnoreZeroBytes(UInt32 c) {
   return SZ_OK;
 }
 
+static UInt32 GetLE4(Byte *p) {
+  return p[0] | p[1] << 8 | p[2] << 16 | p[3] << 24;
+}
+
+/* Expects global.dicSize be set already. Can be called before or after InitProp. */
+static void InitDecode(void) {
+  /* global.lc = global.pb = global.lp = 0; */  /* needinitprop will initialize it */
+  global.dicBufSize = 0;  /* We'll increment it later. */
+  global.needInitDic = True;
+  global.needInitState = True;
+  global.needInitProp = True;
+  global.dicPos = 0;
+  LzmaDec_InitDicAndState(True, True);
+}
+
+static SRes InitProp(Byte b) {
+  UInt32 lc, lp;
+  if (b >= (9 * 5 * 5)) return SZ_ERROR_BAD_LCLPPB_PROP;
+  lc = b % 9;
+  b /= 9;
+  global.pb = b / 5;
+  lp = b % 5;
+  if (lc + lp > LZMA2_LCLP_MAX) return SZ_ERROR_BAD_LCLPPB_PROP;
+  global.lc = lc;
+  global.lp = lp;
+  global.needInitProp = False;
+  return SZ_OK;
+}
+
 #define FILTER_ID_LZMA2 0x21
 
-/* Reads from stdin, writes to stdout, uses CLzmaDec.dic.
- * It verifies some aspects of the file format (so it can't be tricked to an
- * infinite loop etc.), itdoesn't verify checksums (e.g. CRC32).
- * Based on https://tukaani.org/xz/xz-file-format-1.0.4.txt
+/* Reads .xz or .lzma data from stdin, writes uncompressed bytes to stdout,
+ * uses CLzmaDec.dic. It verifies some aspects of the file format (so it
+ * can't be tricked to an infinite loop etc.), itdoesn't verify checksums
+ * (e.g. CRC32).
  */
-static SRes DecompressXz(void) {
-  SRes res = SZ_OK;
+static SRes DecompressXzOrLzma(void) {
   Byte checksumSize;
+  UInt32 bhf;  /* Block header flags */
   /* 12 for the stream header + 12 for the first block header + 6 for the
    * first chunk header. empty.xz is 32 bytes.
    */
   if (Preread(12 + 12 + 6) < 12 + 12 + 6) return SZ_ERROR_INPUT_EOF;
   /* readbuf[7] is actually stream flags, should also be 0. */
-  if (0 != memcmp(readCur, "\xFD""7zXZ\0", 7)) return SZ_ERROR_BAD_MAGIC;
+  if (0 == memcmp(readCur, "\xFD""7zXZ\0", 7)) {  /* .xz */
+  } else if (readCur[0] <= 225 && readCur[13] == 0 &&  /* .lzma */
+        /* High 4 bytes of uncompressed size. */
+        ((bhf = GetLE4(readCur + 9)) == 0 || bhf == ~(UInt32)0) &&
+        (global.dicSize = GetLE4(readCur + 1)) >= LZMA_DIC_MIN &&
+        global.dicSize <= sizeof(global.dic)) {
+    /* Based on https://svn.python.org/projects/external/xz-5.0.3/doc/lzma-file-format.txt */
+    UInt32 us = bhf == 0 ? GetLE4(readCur + 5) : bhf /* max UInt32 */;
+    UInt32 srcLen;
+    UInt32 oldDicPos;
+    InitDecode();
+    /* LZMA restricts lc + lp <= 4. LZMA requires lc + lp <= 12.
+     * We apply the LZMA2 restriction here (to save memory in
+     * CLzmaDec.probs), thus we are not able to extract some legitimate
+     * .lzma files.
+     */
+    RINOK(InitProp(readCur[0]));
+    readCur += 13;  /* Start decompressing the 0 byte. */
+    DEBUGF("LZMA dicSize=0x%x us=%d\n", global.dicSize, us);
+    /* TODO(pts): Limit on uncompressed size unless 8 bytes of -1 is
+     * specified.
+     */
+    global.dicBufSize = sizeof(global.dic);
+    /* Any Preread(...) amount starting from 1 works here, but higher values
+     * are faster.
+     */
+    while ((srcLen = Preread(sizeof(readBuf))) > 0) {
+      SRes res;
+      oldDicPos = global.dicPos;
+      res = LzmaDec_DecodeToDic(readCur, srcLen);
+      DEBUGF("LZMADEC res=%d\n", res);
+      readCur += srcLen;
+      if (global.dicPos > us) global.dicPos = us;
+      {
+        const Byte *q = global.dic + global.dicPos, *p = global.dic + oldDicPos;
+        DEBUGF("WRITE %d dicPos=%d\n", (int)(q - p), global.dicPos);
+        while (p != q) {
+          const Int32 got = write(1, p, q - p);
+          if (got <= 0) return SZ_ERROR_WRITE;
+          p += got;
+        }
+      }
+      if (res == SZ_ERROR_FINISHED_WITH_MARK) break;
+      if (res != SZ_ERROR_NEEDS_MORE_INPUT && res != SZ_OK) return res;
+      if (global.dicPos == us) break;
+    }
+    return SZ_OK;
+  } else {
+    return SZ_ERROR_BAD_MAGIC;
+  }
+  /* Based on https://tukaani.org/xz/xz-file-format-1.0.4.txt */
   switch (readCur[7]) {
    case 0: /* None */ checksumSize = 1; break;
    case 1: /* CRC32 */ checksumSize = 4; break;
@@ -1083,9 +1171,7 @@ static SRes DecompressXz(void) {
     /* We need it modulo 4, so a Byte is enough. */
     Byte blockSizePad = 3;
     UInt32 bhs, bhs2; /* Block header size */
-    UInt32 bhf;  /* Block header flags */
     Byte dicSizeProp;
-    UInt32 dicSize;
     Byte* readAtBlock;
     ASSERT(readEnd - readCur >= 12);  /* At least 12 bytes preread. */
     readAtBlock = readCur;
@@ -1128,8 +1214,8 @@ static SRes DecompressXz(void) {
      * 32-bit systems).
      */
     if (dicSizeProp > 37) return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE;
-    dicSize = LZMA2_DIC_SIZE_FROM_SMALL_PROP(dicSizeProp);
-    ASSERT(dicSize >= LZMA_DIC_MIN);
+    global.dicSize = LZMA2_DIC_SIZE_FROM_SMALL_PROP(dicSizeProp);
+    ASSERT(global.dicSize >= LZMA_DIC_MIN);
     DEBUGF("dicSize39=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(39));
     DEBUGF("dicSize38=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(38));
     DEBUGF("dicSize37=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(37));
@@ -1145,17 +1231,7 @@ static SRes DecompressXz(void) {
     { /* Parse LZMA2 stream. */
       /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
       UInt32 us, cs;  /* Uncompressed and compressed chunk sizes. */
-
-      global.dicSize = dicSize;
-      global.lc = 0;  /* needinitprop will initialize it */
-      global.pb = 0;
-      global.lp = 0;
-      global.dicBufSize = 0;  /* We'll increment it later. */
-      global.needInitDic = True;
-      global.needInitState = True;
-      global.needInitProp = True;
-      global.dicPos = 0;
-      LzmaDec_InitDicAndState(True, True);
+      InitDecode();
 
       for (;;) {
         Byte control;
@@ -1194,17 +1270,7 @@ static SRes DecompressXz(void) {
           us += (control & 31) << 16;
           cs = (readCur[3] << 8) + readCur[4] + 1;
           if (isProp) {
-            Byte b = readCur[5];
-            UInt32 lc, lp;
-            if (b >= (9 * 5 * 5)) return SZ_ERROR_BAD_LCLPPB_PROP;
-            lc = b % 9;
-            b /= 9;
-            global.pb = b / 5;
-            lp = b % 5;
-            if (lc + lp > LZMA2_LCLP_MAX) return SZ_ERROR_BAD_LCLPPB_PROP;
-            global.lc = lc;
-            global.lp = lp;
-            global.needInitProp = False;
+            RINOK(InitProp(readCur[5]));
             ++readCur;
             --blockSizePad;
           } else {
@@ -1268,7 +1334,7 @@ static SRes DecompressXz(void) {
     readCur += checksumSize;  /* Ignore CRC32, CRC64 etc. */
   }
   /* The .xz input file continues with the index, which we ignore from here. */
-  return res;
+  return SZ_OK;
 }
 
 int main(int argc, char **argv) {
@@ -1277,5 +1343,5 @@ int main(int argc, char **argv) {
   setmode(0, O_BINARY);
   setmode(1, O_BINARY);
 #endif
-  return DecompressXz();
+  return DecompressXzOrLzma();
 }
