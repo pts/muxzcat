@@ -1050,72 +1050,49 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 /* Works if p <= 39. */
 #define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
-typedef enum {
-  LZMA2_STATE_DATA,
-  LZMA2_STATE_DATA_CONT,
-} ELzma2State;
 static SRes Lzma2Dec_DecodeToDicCompressed(CLzma2Dec *p, Byte control, UInt32 packSize, const Byte *src) {
   UInt32 srcLen = 0;
   const UInt32 inSize = packSize;
   UInt32 unpackSize = p->decoder.dicBufSize - p->decoder.dicPos;
-  Byte state = LZMA2_STATE_DATA;  /* !! remove LZMA2_STATE */
+  Bool isFirst = True;
   ELzmaStatus status;
+  size_t outSizeProcessed;
   DEBUGF("DECODE call\n");
   for (;;) {
-    DEBUGF("DECODE state=%d\n", state);
-    ASSERT(state == LZMA2_STATE_DATA || state == LZMA2_STATE_DATA_CONT);
-    {
-      size_t dicPos = p->decoder.dicPos;
-      size_t destSizeCur = p->decoder.dicBufSize - dicPos;
-      size_t srcSizeCur = inSize - srcLen;
-      ELzmaFinishMode curFinishMode = LZMA_FINISH_ANY;
-
-      ASSERT(!LZMA2_IS_UNCOMPRESSED_STATE(control));
-
-      if (unpackSize <= destSizeCur)
-      {
-        destSizeCur = (size_t)unpackSize;
-        curFinishMode = LZMA_FINISH_END;
-      }
-
-      {
-        size_t outSizeProcessed;
-        SRes res;
-
-        if (state == LZMA2_STATE_DATA)
-        {
-          int mode = LZMA2_GET_LZMA_MODE(control);
-          Bool initDic = (mode == 3);
-          Bool initState = (mode > 0);
-          if ((!initDic && p->needInitDic) || (!initState && p->needInitState))
-            return SZ_ERROR_DATA;
-
-          LzmaDec_InitDicAndState(&p->decoder, initDic, initState);
-          p->needInitDic = False;
-          p->needInitState = False;
-          state = LZMA2_STATE_DATA_CONT;
-        }
-        if (srcSizeCur > packSize)
-          srcSizeCur = (size_t)packSize;
-
-        res = LzmaDec_DecodeToDic(&p->decoder, dicPos + destSizeCur, src, &srcSizeCur, curFinishMode, &status);
-
-        src += srcSizeCur;
-        srcLen += srcSizeCur;
-        packSize -= (UInt32)srcSizeCur;
-
-        outSizeProcessed = p->decoder.dicPos - dicPos;
-        unpackSize -= (UInt32)outSizeProcessed;
-
-        RINOK(res);
-        if (srcSizeCur == 0 && outSizeProcessed == 0)
-        {
-          if (status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK ||
-              unpackSize != 0 || packSize != 0)
-            return SZ_ERROR_DATA;  /* Output buffer size not exactly correct. */
-          return SZ_OK;
-        }
-      }
+    size_t dicPos = p->decoder.dicPos;
+    size_t destSizeCur = p->decoder.dicBufSize - dicPos;
+    size_t srcSizeCur = inSize - srcLen;
+    ELzmaFinishMode curFinishMode = LZMA_FINISH_ANY;
+    DEBUGF("DECODE isFirst=%d\n", isFirst);
+    ASSERT(!LZMA2_IS_UNCOMPRESSED_STATE(control));
+    /*ASSERT(unpackSize == destSizeCur);*/  /* !! Is this always true? */
+    if (unpackSize <= destSizeCur) {
+      destSizeCur = (size_t)unpackSize;
+      curFinishMode = LZMA_FINISH_END;
+    }
+    if (isFirst) {
+      Byte mode = LZMA2_GET_LZMA_MODE(control);
+      Bool initDic = (mode == 3);
+      Bool initState = (mode > 0);
+      if ((!initDic && p->needInitDic) || (!initState && p->needInitState))
+        return SZ_ERROR_DATA;
+      LzmaDec_InitDicAndState(&p->decoder, initDic, initState);
+      p->needInitDic = False;
+      p->needInitState = False;
+      isFirst = False;
+    }
+    if (srcSizeCur > packSize) srcSizeCur = (size_t)packSize;
+    RINOK(LzmaDec_DecodeToDic(&p->decoder, dicPos + destSizeCur, src, &srcSizeCur, curFinishMode, &status));
+    src += srcSizeCur;
+    srcLen += srcSizeCur;
+    packSize -= (UInt32)srcSizeCur;
+    outSizeProcessed = p->decoder.dicPos - dicPos;
+    unpackSize -= (UInt32)outSizeProcessed;
+    if (srcSizeCur == 0 && outSizeProcessed == 0) {
+      if (status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK ||
+          unpackSize != 0 || packSize != 0)
+        return SZ_ERROR_DATA;  /* Output buffer size not exactly correct. */
+      return SZ_OK;
     }
   }
 }
