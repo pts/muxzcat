@@ -176,7 +176,7 @@ typedef struct
   UInt32 numProbs;
   UInt32 tempBufSize;
   Bool needFlush;
-  Bool needInitState;
+  Bool needInitLzma;
   Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
 } CLzmaDec;
 
@@ -856,10 +856,10 @@ static void LzmaDec_InitDicAndState(CLzmaDec *p, Bool initDic, Bool initState)
   {
     p->processedPos = 0;
     p->checkDicSize = 0;
-    p->needInitState = 1;
+    p->needInitLzma = True;
   }
   if (initState)
-    p->needInitState = 1;
+    p->needInitLzma = True;
 }
 
 static void LzmaDec_InitStateReal(CLzmaDec *p)
@@ -871,7 +871,7 @@ static void LzmaDec_InitStateReal(CLzmaDec *p)
     probs[i] = kBitModelTotal >> 1;
   p->reps[0] = p->reps[1] = p->reps[2] = p->reps[3] = 1;
   p->state = 0;
-  p->needInitState = 0;
+  p->needInitLzma = False;
 }
 
 static SRes LzmaDec_DecodeToDic(CLzmaDec *p, UInt32 dicLimit, const Byte *src, UInt32 *srcLen,
@@ -919,7 +919,7 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, UInt32 dicLimit, const Byte *src, U
         checkEndMarkNow = True;
       }
 
-      if (p->needInitState)
+      if (p->needInitLzma)
         LzmaDec_InitStateReal(p);
 
       if (p->tempBufSize == 0)
