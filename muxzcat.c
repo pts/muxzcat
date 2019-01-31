@@ -17,6 +17,10 @@
  *   (This is not a problem in practice, because even `xz -9e' generates
  *   only 64 MiB dictionary size.)
  *
+ * TODO(pts): Also add lzmadec decompression. For that we may need
+ * LzmaDec_DecodeToDic's non-SZ_OK return values and the updated srcLen to
+ * be returned. We also need a longer probs[Lzma2Props_GetMaxNumProbs()].
+ *
  * Can use: -DCONFIG_DEBUG
  * Can use: -DCONFIG_PROB32  (Increases memory requirements by 28 KiB, decreases code size by 108 bytes on i386, makes it faster.)
  * Can use: -DCONFIG_SIZE_OPT  (Decreases code size by 416 bytes on i386, makes execution 0.206% slower.)
@@ -102,10 +106,11 @@ static void MemmoveOverlap(void *dest, const void *src, UInt32 n) {
 #define SZ_ERROR_OUTPUT_EOF 7
 #define SZ_ERROR_READ 8
 #define SZ_ERROR_WRITE 9
-#define SZ_FINISHED_WITH_MARK 15          /* stream was finished with end mark. */
-#define SZ_NOT_FINISHED 16                /* stream was not finished */
-#define SZ_NEEDS_MORE_INPUT 17            /* you must provide more input bytes */
-/*#define SZ_MAYBE_FINISHED_WITHOUT_MARK SZ_OK*/  /* there is probability that stream was finished without end mark */
+#define SZ_ERROR_FINISHED_WITH_MARK 15          /* LzmaDec_DecodeToDic stream was finished with end mark. */
+#define SZ_ERROR_NOT_FINISHED 16                /* LzmaDec_DecodeToDic stream was not finished */
+#define SZ_ERROR_NEEDS_MORE_INPUT 17            /* LzmaDec_DecodeToDic, you must provide more input bytes */
+/*#define SZ_MAYBE_FINISHED_WITHOUT_MARK SZ_OK*/  /* LzmaDec_DecodeToDic, there is probability that stream was finished without end mark */
+#define SZ_ERROR_CHUNK_NOT_CONSUMED 18
 
 typedef UInt32 SRes;
 
@@ -861,10 +866,11 @@ static void LzmaDec_InitStateReal(void)
   global.needInitLzma = False;
 }
 
-static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen) {
+static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
   const UInt32 dicLimit = global.dicBufSize;
-  UInt32 inSize = *srcLen;
-  (*srcLen) = 0;
+  const UInt32 srcLen0 = srcLen;
+  UInt32 inSize = srcLen;
+  srcLen = 0;
   LzmaDec_WriteRem(dicLimit);
 
   while (global.remainLen != kMatchSpecLenStart)
@@ -873,11 +879,11 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen) {
 
       if (global.needFlush)
       {
-        for (; inSize > 0 && global.tempBufSize < RC_INIT_SIZE; (*srcLen)++, inSize--)
+        for (; inSize > 0 && global.tempBufSize < RC_INIT_SIZE; srcLen++, inSize--)
           global.tempBuf[global.tempBufSize++] = *src++;
         if (global.tempBufSize < RC_INIT_SIZE)
         {
-          return SZ_NEEDS_MORE_INPUT;
+          return SZ_ERROR_NEEDS_MORE_INPUT;
         }
         if (global.tempBuf[0] != 0)
           return SZ_ERROR_DATA;
@@ -891,11 +897,12 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen) {
       {
         if (global.remainLen == 0 && global.code == 0)
         {
+          if (srcLen != srcLen0) return SZ_ERROR_CHUNK_NOT_CONSUMED;
           return SZ_OK /* LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK */;
         }
         if (global.remainLen != 0)
         {
-          return SZ_NOT_FINISHED;
+          return SZ_ERROR_NOT_FINISHED;
         }
         checkEndMarkNow = True;
       }
@@ -914,12 +921,12 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen) {
           {
             memcpy(global.tempBuf, src, inSize);
             global.tempBufSize = (UInt32)inSize;
-            (*srcLen) += inSize;
-            return SZ_NEEDS_MORE_INPUT;
+            srcLen += inSize;
+            return SZ_ERROR_NEEDS_MORE_INPUT;
           }
           if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
           {
-            return SZ_NOT_FINISHED;
+            return SZ_ERROR_NOT_FINISHED;
           }
           bufLimit = src;
         }
@@ -929,7 +936,7 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen) {
         if (LzmaDec_DecodeReal2(dicLimit, bufLimit) != 0)
           return SZ_ERROR_DATA;
         processed = (UInt32)(global.buf - src);
-        (*srcLen) += processed;
+        srcLen += processed;
         src += processed;
         inSize -= processed;
       }
@@ -944,26 +951,26 @@ static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 *srcLen) {
           SRes dummyRes = LzmaDec_TryDummy(global.tempBuf, rem);
           if (dummyRes == DUMMY_ERROR)
           {
-            (*srcLen) += lookAhead;
-            return SZ_NEEDS_MORE_INPUT;
+            srcLen += lookAhead;
+            return SZ_ERROR_NEEDS_MORE_INPUT;
           }
           if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
           {
-            return SZ_NOT_FINISHED;
+            return SZ_ERROR_NOT_FINISHED;
           }
         }
         global.buf = global.tempBuf;
         if (LzmaDec_DecodeReal2(dicLimit, global.buf) != 0)
           return SZ_ERROR_DATA;
         lookAhead -= (rem - (UInt32)(global.buf - global.tempBuf));
-        (*srcLen) += lookAhead;
+        srcLen += lookAhead;
         src += lookAhead;
         inSize -= lookAhead;
         global.tempBufSize = 0;
       }
   }
   if (global.code != 0) return SZ_ERROR_DATA;
-  return SZ_FINISHED_WITH_MARK;
+  return SZ_ERROR_FINISHED_WITH_MARK;
 }
 
 #define LZMA2_GET_LZMA_MODE(pc) (((pc) >> 5) & 3)
@@ -1228,13 +1235,9 @@ static SRes DecompressXz(void) {
             global.checkDicSize = global.dicSize;
           global.processedPos += unpackSize;
         } else {  /* Compressed chunk. */
-          UInt32 srcSizeCur = cs;
           DEBUGF("DECODE call\n");
           /* This call doesn't change global.dicBufSize. */
-          RINOK(LzmaDec_DecodeToDic(readCur, &srcSizeCur));
-          if (srcSizeCur != cs) {  /* !! */
-            return SZ_ERROR_DATA;  /* Compressed or uncompressed chunk size not exactly correct. */
-          }
+          RINOK(LzmaDec_DecodeToDic(readCur, cs));
         }
         if (global.dicPos != global.dicBufSize) return SZ_ERROR_BAD_DICPOS;
         {
