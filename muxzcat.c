@@ -161,7 +161,6 @@ typedef enum
 
 typedef struct {
   CLzmaProps prop;
-  Byte *dic;
   const Byte *buf;
   UInt32 range, code;
   UInt32 dicPos;
@@ -180,6 +179,13 @@ typedef struct {
   Bool needInitState;
   Bool needInitProp;
   Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
+  /* Contains the uncompressed data.
+   *
+   * We rely on virtual memory so that if we don't use the end of array for
+   * small files, then the operating system won't take the entire array away
+   * from other processes.
+   */
+  Byte dic[1610612736];
 } CLzmaDec;
 
 /* --- */
@@ -1067,15 +1073,9 @@ static SRes IgnoreZeroBytes(UInt32 c) {
 
 #define FILTER_ID_LZMA2 0x21
 
-/* Contains the uncompressed data.
- *
- * We rely on virtual memory so that if we don't use the end of array for
- * small files, then the operating system won't take the entire array away
- * from other processes.
- */
-static Byte decompressBuf[1610612736];
+static CLzmaDec state;
 
-/* Reads from stdin, writes to stdout, uses decompressBuf.
+/* Reads from stdin, writes to stdout, uses CLzmaDec.dic.
  * It verifies some aspects of the file format (so it can't be tricked to an
  * infinite loop etc.), itdoesn't verify checksums (e.g. CRC32).
  * Based on https://tukaani.org/xz/xz-file-format-1.0.4.txt
@@ -1163,14 +1163,12 @@ static SRes DecompressXz(void) {
     { /* Parse LZMA2 stream. */
       /* Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format */
       UInt32 us, cs;  /* Uncompressed and compressed chunk sizes. */
-      CLzmaDec state;
 
       state.prop.dicSize = dicSize;
       state.prop.lc = 0;  /* needinitprop will initialize it */
       state.prop.pb = 0;
       state.prop.lp = 0;
       state.numProbs = Lzma2Props_GetMaxNumProbs();
-      state.dic = decompressBuf;
       state.dicBufSize = 0;  /* We'll increment it later. */
       state.needInitDic = True;
       state.needInitState = True;
@@ -1240,8 +1238,8 @@ static SRes DecompressXz(void) {
           state.needInitState = False;
         }
         state.dicBufSize += us;
-        /* Decompressed data too long, won't fit to decompressBuf. */
-        if (state.dicBufSize > sizeof(decompressBuf)) return SZ_ERROR_MEM;
+        /* Decompressed data too long, won't fit to CLzmaDec.dic. */
+        if (state.dicBufSize > sizeof(state.dic)) return SZ_ERROR_MEM;
         /* Read 6 extra bytes to optimize away a read(...) system call in
          * the Prefetch(6) call in the next chunk header.
          */
@@ -1267,7 +1265,7 @@ static SRes DecompressXz(void) {
         }
         if (state.dicPos != state.dicBufSize) return SZ_ERROR_BAD_DICPOS;
         {
-          const Byte *q = decompressBuf + state.dicBufSize, *p = q - us;
+          const Byte *q = state.dic + state.dicBufSize, *p = q - us;
           while (p != q) {
             const Int32 got = write(1, p, q - p);
             if (got <= 0) return SZ_ERROR_WRITE;
