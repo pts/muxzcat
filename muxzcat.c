@@ -16,7 +16,6 @@
  * * It doesn't support dictionary sizes larger than 1610612736 bytes (~1.61 GB).
  *   (This is not a problem in practice, because even `xz -9e' generates
  *   only 64 MiB dictionary size.)
- * * !! Split DecodeLzma2 to per-chunk, thus limiting the compressed memory usage to 64 KiB.
  * * !! 32-bit sizes? Make it optional.
  *
  * Can use: -DCONFIG_DEBUG
@@ -1054,7 +1053,9 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 /* Works if p <= 39. */
 #define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
-/* !! Read at least 65536 bytes in the beginning to decompressBuf, no need for input buffering? */
+/* !! Use Preread instead of GET_BYTE to read the .xz header to readBuf.
+ * Maybe it will make the executable smaller.
+ */
 static Byte readBuf[65536 + 12], *readCur = readBuf, *readEnd = readBuf;
 static UInt64 readFileOfs = 0;
 
