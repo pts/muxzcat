@@ -36,7 +36,6 @@
 #ifdef __XTINY__
 
 #include <xtiny.h>
-typedef ssize_t ptrdiff_t;
 typedef int64_t Int64;
 typedef uint64_t UInt64;
 typedef int32_t Int32;
@@ -595,11 +594,12 @@ static int LzmaDec_DecodeReal(CLzmaDec *p, size_t limit, const Byte *bufLimit)
         if (pos + curLen <= dicBufSize)
         {
           Byte *dest = dic + dicPos;
-          ptrdiff_t src = (ptrdiff_t)pos - (ptrdiff_t)dicPos;
+          const UInt32 diff = dicPos - pos;
           const Byte *lim = dest + curLen;
+          ASSERT(dicPos > pos);
           dicPos += curLen;
           do
-            *(dest) = (Byte)*(dest + src);
+            *(dest) = (Byte)*(dest - diff);
           while (++dest != lim);
         }
         else
