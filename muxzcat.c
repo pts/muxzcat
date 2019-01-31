@@ -1043,7 +1043,7 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 #define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
 /* !! Read at least 65536 bytes in the beginning to decompressBuf, no need for input buffering? */
-static Byte readBuf[65536 + 6], *readCur = readBuf, *readEnd = readBuf;
+static Byte readBuf[65536 + 12], *readCur = readBuf, *readEnd = readBuf;
 static UInt64 readFileOfs = 0;
 
 /* Try to preread r bytes to the read buffer. Returns the number of bytes
@@ -1058,9 +1058,7 @@ static UInt32 Preread(UInt32 r) {
   UInt32 p = readEnd - readCur;
   ASSERT(r <= sizeof(readBuf));
   if (p < r) {  /* Not enough pending available. */
-    if (readCur == readEnd) {
-      readCur = readEnd = readBuf;
-    } else if (readBuf + sizeof(readBuf) - readCur + 0U < r) {
+    if (readBuf + sizeof(readBuf) - readCur + 0U < r) {
       /* If no room for r bytes to the end, discard bytes from the beginning. */
       DEBUGF("MEMMOVE size=%d\n", p);
       MemmoveBackward(readBuf, readCur, p);
@@ -1324,7 +1322,10 @@ static SRes DecompressXz(void) {
         state.decoder.dicBufSize += us;
         /* Decompressed data too long, won't fit to decompressBuf. */
         if (state.decoder.dicBufSize > sizeof(decompressBuf)) return SZ_ERROR_MEM;
-        if (Preread(cs) < cs) return SZ_ERROR_INPUT_EOF;
+        /* Read 6 extra bytes to optimize away a read(...) system call in
+         * the Prefetch(6) call in the next chunk header.
+         */
+        if (Preread(cs + 6) < cs) return SZ_ERROR_INPUT_EOF;
         DEBUGF("FEED us=%d cs=%d dicPos=%d\n", us, cs, (int)state.decoder.dicPos);
         if ((Byte)i < 0x80) {  /* Uncompressed chunk. */
           const UInt32 unpackSize = state.decoder.dicBufSize - state.decoder.dicPos;
