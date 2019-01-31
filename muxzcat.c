@@ -1043,7 +1043,7 @@ static SRes LzmaDec_DecodeToDic(CLzmaDec *p, size_t dicLimit, const Byte *src, s
 #define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
 /* !! Read at least 65536 bytes in the beginning to decompressBuf, no need for input buffering? */
-static Byte readBuf[65535 + 6], *readCur = readBuf, *readEnd = readBuf;
+static Byte readBuf[65536 + 6], *readCur = readBuf, *readEnd = readBuf;
 static UInt64 readFileOfs = 0;
 
 /* Try to preread r bytes to the read buffer. Returns the number of bytes
