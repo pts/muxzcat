@@ -2,8 +2,20 @@
  * muxzcat.c: tiny .xz and .lzma extractor, size-optimized for Linux i386
  * by pts@fazekas.hu at Wed Jan 30 15:15:23 CET 2019
  *
- * LZMA algorithm implementation based on
- * https://github.com/pts/pts-tiny-7z-sfx/commit/b9a101b076672879f861d472665afaa6caa6fec1
+ * Compile with any of:
+ *
+ *   $ gcc -ansi -s -O2 -W -Wall -Wextra -o muxzcat muxzcat.c
+ *   $ g++ -ansi -s -O2 -W -Wall -Wextra -o muxzcat muxzcat.c
+ *   $ xtiny   gcc -DCONFIG_SIZE_OPT -DCONFIG_PROB32 -ansi -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c
+ *   $ xstatic gcc -DCONFIG_SIZE_OPT -DCONFIG_PROB32 -ansi -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c
+ *   $ tcc -W -Wall -Wextra -Werror -s -O2 -o muxzcat muxzcat.c
+ *
+ * Run with any of:
+ *
+ *   $ ./muxzcat <input.xz >output.bin
+ *   $ ./muxzcat <input.lzma >output.bin
+ *
+ * Error is indicated as a non-zero exit status.
  *
  * Limitations of this decompressor:
  *
@@ -21,9 +33,9 @@
  *   (This is not a problem in practice, because even `xz -9e' generates
  *   only 64 MiB dictionary size.)
  *
- * TODO(pts): Also add lzmadec decompression. For that we may need
- * LzmaDec_DecodeToDic's non-SZ_OK return values and the updated srcLen to
- * be returned. We also need a longer probs[Lzma2Props_GetMaxNumProbs()].
+ * LZMA algorithm implementation based on
+ * https://github.com/pts/pts-tiny-7z-sfx/commit/b9a101b076672879f861d472665afaa6caa6fec1
+ * , which is based on 7z922.tar.bz2.
  *
  * Can use: -DCONFIG_DEBUG
  * Can use: -DCONFIG_PROB32  (Increases memory requirements by 28 KiB, decreases code size by 108 bytes on i386, makes it faster.)
@@ -38,7 +50,23 @@
  *   $ xz --lzma2=preset=8,dict=4096 <ta8.tar >ta4k.tar.xz
  */
 
-#ifdef __XTINY__
+#ifdef __TINYC__  /* tcc https://bellard.org/tcc/ , pts-tcc https://github.com/pts/pts-tcc */
+
+typedef unsigned size_t;  /* TODO(pts): Support 64-bit tcc */
+typedef int ssize_t;  /* TODO(pts): Support 64-bit tcc */
+typedef int int32_t;
+typedef unsigned uint32_t;
+typedef short int16_t;
+typedef unsigned short uint16_t;
+typedef unsigned char uint8_t;
+
+void *memcpy(void *dest, const void *src, size_t n);
+int memcmp(const void *s1, const void *s2, size_t n);
+ssize_t read(int fd, void *buf, size_t count);
+ssize_t write(int fd, const void *buf, size_t count);
+
+#else
+#ifdef __XTINY__  /* xtiny https://github.com/pts/pts-xtiny */
 
 #include <xtiny.h>
 
@@ -53,13 +81,16 @@
 #  include <fcntl.h>  /* setmode() */
 #endif
 #include <stdint.h>
-#endif  /* USE_MINIINC1 */
+#endif  /* __XTINY__ */
+#endif  /* __TINYC__ */
 
 typedef int32_t  Int32;
 typedef uint32_t UInt32;
 typedef int16_t  Int16;
 typedef uint16_t UInt16;
 typedef uint8_t  Byte;
+
+/* --- */
 
 #ifdef CONFIG_DEBUG
 /* This is guaranteed to work with Linux and gcc only. For example, %lld in
