@@ -1,5 +1,5 @@
 /*
- * muxzcat.c: tiny .xz and .lzma extractor, size-optimized for Linux i386
+ * muxzcat.c: tiny .xz and .lzma decompression filter
  * by pts@fazekas.hu at Wed Jan 30 15:15:23 CET 2019
  *
  * Compile with any of:
@@ -17,23 +17,29 @@
  *   $ ./muxzcat <input.xz >output.bin
  *   $ ./muxzcat <input.lzma >output.bin
  *
- * Error is indicated as a non-zero exit status.
+ *   Error is indicated as a non-zero exit status.
  *
- * Limitations of this decompressor:
+ * muxzcat.c is size-optimized for Linux i386 (also runs on amd64) with
+ * `xtiny gcc': the final statically linked executable is 7376 bytes, and with
+ * upxbc (`upxbc --elftiny -f -o muxzcat.upx muxzcat') it can be compressed
+ * to 4678 bytes.
  *
- * * It keeps both uncompressed data in memory, and it needs 130 KiB of
- *   memory on top of it: readBuf is about 64 KiB, CLzma2Dec.prob is about
+ * Limitations of muxzcat.c:
+ *
+ * * It keeps uncompressed data in memory, and it needs 130 KiB of
+ *   memory on top of it: readBuf is about 64 KiB, CLzmaDec.prob is about
  *   28 KiB, the rest is decompressBuf (containing the entire uncompressed
  *   data) and a small constant overhead.
- * * It doesn't support decompressed data larger than 1610612736 (~1.61 GB).
+ * * It doesn't support uncompressed data larger than 1610612736 (~1.61 GB).
  *   FYI linux-4.20.5.tar is about half as much, 854855680 bytes.
  * * For .xz it supports only LZMA2 (no other filters such as BCJ).
  * * For .lzma it doesn't work with files with 5 <= lc + lp <= 8.
- * * It doesn't verify checksums.
- * * It extracts the first stream only, and ignores the index.
- * * It doesn't support dictionary sizes larger than 1610612736 bytes (~1.61 GB).
- *   (This is not a problem in practice, because even `xz -9e' generates
- *   only 64 MiB dictionary size.)
+ * * It doesn't verify checksums (e.g. CRC-32 and CRC-64).
+ * * It extracts the first stream only, and it ignores the index.
+ * * It doesn't support dictionary sizes larger than 1610612736 bytes
+ *   (~1.61 GB).
+ *   (This is not a problem in practice, because even the ouput of `xz -9e'
+ *   uses only 64 MiB dictionary size.)
  *
  * LZMA algorithm implementation based on
  * https://github.com/pts/pts-tiny-7z-sfx/commit/b9a101b076672879f861d472665afaa6caa6fec1
