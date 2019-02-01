@@ -9,6 +9,8 @@
  *   $ xtiny   gcc -DCONFIG_SIZE_OPT -DCONFIG_PROB32 -ansi -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c
  *   $ xstatic gcc -DCONFIG_SIZE_OPT -DCONFIG_PROB32 -ansi -s -Os -W -Wall -Wextra -o muxzcat muxzcat.c
  *   $ tcc -W -Wall -Wextra -Werror -s -O2 -o muxzcat muxzcat.c
+ *   $ i686-w64-mingw32-gcc   -s -Os -W -Wall -Wextra -o muxzcat.exe muxzcat.c
+ *   $ x86-64-w64-mingw32-gcc -s -Os -W -Wall -Wextra -o muxzcat.exe muxzcat.c
  *
  * Run with any of:
  *
@@ -1374,7 +1376,7 @@ static SRes DecompressXzOrLzma(void) {
 
 int main(int argc, char **argv) {
   (void)argc; (void)argv;
-#if defined(MSDOS) || defined(_WIN32)
+#if defined(MSDOS) || defined(_WIN32)  /* Also MinGW. Good. */
   setmode(0, O_BINARY);
   setmode(1, O_BINARY);
 #endif
