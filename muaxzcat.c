@@ -863,12 +863,10 @@ void LzmaDec_InitStateReal(void)
 /* Decompress LZMA stream in
  * global.readBuf[global.readCur : global.readCur + srcLen].
  */
-SRes LzmaDec_DecodeToDic(UInt32 srcLen) {
+SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
   const UInt32 dicLimit = global.dicBufSize;
-  const UInt32 srcLen0 = srcLen;
-  UInt32 inSize = srcLen;
   const Byte * const srcPtr0 = &global.readBuf[global.readCur];
-  srcLen = 0;
+  UInt32 srcCur = 0;
   LzmaDec_WriteRem(dicLimit);
 
   while (global.remainLen != kMatchSpecLenStart)
@@ -877,12 +875,12 @@ SRes LzmaDec_DecodeToDic(UInt32 srcLen) {
 
       if (global.needFlush)
       {
-        for (; inSize > 0 && global.tempBufSize < RC_INIT_SIZE; inSize--)
-          global.tempBuf[global.tempBufSize++] = *(srcPtr0 + srcLen++);
+        for (; srcLen > srcCur && global.tempBufSize < RC_INIT_SIZE;)
+          global.tempBuf[global.tempBufSize++] = *(srcPtr0 + srcCur++);
         if (global.tempBufSize < RC_INIT_SIZE)
         {
          on_needs_more_input:
-          if (srcLen != srcLen0) return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL;
+          if (srcCur != srcLen) return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL;
           return SZ_ERROR_NEEDS_MORE_INPUT;
         }
         if (global.tempBuf[0] != 0)
@@ -897,7 +895,7 @@ SRes LzmaDec_DecodeToDic(UInt32 srcLen) {
       {
         if (global.remainLen == 0 && global.code == 0)
         {
-          if (srcLen != srcLen0) return SZ_ERROR_CHUNK_NOT_CONSUMED;
+          if (srcCur != srcLen) return SZ_ERROR_CHUNK_NOT_CONSUMED;
           return SZ_OK /* MAYBE_FINISHED_WITHOUT_MARK */;
         }
         if (global.remainLen != 0)
@@ -915,48 +913,48 @@ SRes LzmaDec_DecodeToDic(UInt32 srcLen) {
       {
         UInt32 processed;
         const Byte *bufLimit;
-        if (inSize < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
+        if (srcLen - srcCur < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
         {
-          SRes dummyRes = LzmaDec_TryDummy(srcPtr0 + srcLen, inSize);
+          SRes dummyRes = LzmaDec_TryDummy(srcPtr0 + srcCur, srcLen - srcCur);
           if (dummyRes == DUMMY_ERROR)
           {
+            /* This condition can be triggered by passing srcCur==1 to LzmaDec_DecodeToDic. */
+            global.tempBufSize = srcLen - srcCur;
             {
               UInt32 copyIdx;
-              for (copyIdx = 0; copyIdx < inSize; ++copyIdx) {
-                global.tempBuf[copyIdx] = srcPtr0[srcLen + copyIdx];
+              for (copyIdx = 0; copyIdx < global.tempBufSize; ++copyIdx) {
+                global.tempBuf[copyIdx] = srcPtr0[srcCur + copyIdx];
               }
             }
-            global.tempBufSize = (UInt32)inSize;
-            srcLen += inSize;
+            srcCur = srcLen;
             goto on_needs_more_input;
           }
           if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
           {
             return SZ_ERROR_NOT_FINISHED;
           }
-          bufLimit = srcPtr0 + srcLen;
+          bufLimit = srcPtr0 + srcCur;
         }
         else
-          bufLimit = srcPtr0 + srcLen + inSize - LZMA_REQUIRED_INPUT_MAX;
-        global.buf = srcPtr0 + srcLen;  /* !! Use readCur instead of global.buf, remove global.buf. */
+          bufLimit = srcPtr0 + srcLen - LZMA_REQUIRED_INPUT_MAX;
+        global.buf = srcPtr0 + srcCur;  /* !! Use readCur instead of global.buf, remove global.buf. */
         if (LzmaDec_DecodeReal2(dicLimit, bufLimit) != 0)
           return SZ_ERROR_DATA;
-        processed = (UInt32)(global.buf - (srcPtr0 + srcLen));
-        srcLen += processed;
-        inSize -= processed;
+        processed = (UInt32)(global.buf - (srcPtr0 + srcCur));
+        srcCur += processed;
       }
       else
       {
         UInt32 rem = global.tempBufSize, lookAhead = 0;
-        while (rem < LZMA_REQUIRED_INPUT_MAX && lookAhead < inSize)
-          global.tempBuf[rem++] = srcPtr0[srcLen + lookAhead++];
+        while (rem < LZMA_REQUIRED_INPUT_MAX && lookAhead < srcLen - srcCur)
+          global.tempBuf[rem++] = srcPtr0[srcCur + lookAhead++];
         global.tempBufSize = rem;
         if (rem < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
         {
           SRes dummyRes = LzmaDec_TryDummy(global.tempBuf, rem);
           if (dummyRes == DUMMY_ERROR)
           {
-            srcLen += lookAhead;
+            srcCur += lookAhead;
             goto on_needs_more_input;
           }
           if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
@@ -968,8 +966,7 @@ SRes LzmaDec_DecodeToDic(UInt32 srcLen) {
         if (LzmaDec_DecodeReal2(dicLimit, global.buf) != 0)
           return SZ_ERROR_DATA;
         lookAhead -= (rem - (UInt32)(global.buf - global.tempBuf));
-        srcLen += lookAhead;
-        inSize -= lookAhead;
+        srcCur += lookAhead;
         global.tempBufSize = 0;
       }
   }
