@@ -578,13 +578,11 @@ void LzmaDec_WriteRem(UInt32 limit)
 {
   if (global.remainLen != 0 && global.remainLen < kMatchSpecLenStart)
   {
-    Byte *dic = global.dic;
-    UInt32 dicPos = global.dicPos;
     UInt32 dicBufSize = global.dicBufSize;
     UInt32 len = global.remainLen;
     UInt32 rep0 = global.reps[0];
-    if (limit - dicPos < len)
-      len = (UInt32)(limit - dicPos);
+    if (limit - global.dicPos < len)
+      len = (UInt32)(limit - global.dicPos);
 
     if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= len)
       global.checkDicSize = global.dicSize;
@@ -594,10 +592,9 @@ void LzmaDec_WriteRem(UInt32 limit)
     while (len != 0)
     {
       len--;
-      dic[dicPos] = dic[(dicPos - rep0) + ((dicPos < rep0) ? dicBufSize : 0)];
-      dicPos++;
+      global.dic[global.dicPos] = global.dic[(global.dicPos - rep0) + ((global.dicPos < rep0) ? dicBufSize : 0)];
+      global.dicPos++;
     }
-    global.dicPos = dicPos;
   }
 }
 
@@ -826,9 +823,9 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
 }
 
 
-void LzmaDec_InitRc(const Byte *data)
+void LzmaDec_InitRc(UInt32 initRcCur)
 {
-  global.code = ((UInt32)data[1] << 24) | ((UInt32)data[2] << 16) | ((UInt32)data[3] << 8) | ((UInt32)data[4]);
+  global.code = ((UInt32)global.readBuf[initRcCur + 1] << 24) | ((UInt32)global.readBuf[initRcCur + 2] << 16) | ((UInt32)global.readBuf[initRcCur + 3] << 8) | ((UInt32)global.readBuf[initRcCur + 4]);
   global.range = 0xFFFFFFFF;
   global.needFlush = False;
 }
@@ -888,7 +885,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         if (global.readBuf[READBUF_SIZE] != 0)
           return SZ_ERROR_DATA;
 
-        LzmaDec_InitRc(&global.readBuf[READBUF_SIZE]);  /* tempBuf. */
+        LzmaDec_InitRc(READBUF_SIZE);  /* tempBuf. */
         global.tempBufSize = 0;
       }
 
