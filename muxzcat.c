@@ -1176,6 +1176,7 @@ static SRes DecompressXzOrLzma(void) {
     UInt32 us = bhf == 0 ? GetLE4(readCur + 5) : bhf /* max UInt32 */;
     UInt32 srcLen;
     UInt32 oldDicPos;
+    /* TODO(pts): return SZ_ERROR_MEM if us is larger than sizeof(global.dic). */
     InitDecode();
     /* LZMA restricts lc + lp <= 4. LZMA requires lc + lp <= 12.
      * We apply the LZMA2 restriction here (to save memory in
@@ -1184,11 +1185,8 @@ static SRes DecompressXzOrLzma(void) {
      */
     RINOK(InitProp(readCur[0]));
     readCur += 13;  /* Start decompressing the 0 byte. */
-    DEBUGF("LZMA dicSize=0x%x us=%d\n", global.dicSize, us);
-    /* TODO(pts): Limit on uncompressed size unless 8 bytes of -1 is
-     * specified.
-     */
     global.dicBufSize = sizeof(global.dic);
+    DEBUGF("LZMA dicSize=0x%x us=%d\n", global.dicSize, us);
     /* Any Preread(...) amount starting from 1 works here, but higher values
      * are faster.
      */

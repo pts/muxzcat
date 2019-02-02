@@ -128,11 +128,13 @@ typedef Byte Bool;
  * Minimum value: 1846.
  * Maximum value for LZMA streams: 1846 + (768 << (8 + 4)) == 3147574.
  * Maximum value for LZMA2 streams: 1846 + (768 << 4) == 14134.
- * Memory usage of prob: sizeof(CLzmaProb) * value == (2 or 4) * value bytes.
+ * Memory usage of prob: size_of_CLzmaProb * value == (2 or 4) * value bytes.
  */
 #define LzmaProps_GetNumProbs(p) ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp)))
 /* 14134 */
 #define Lzma2Props_GetMaxNumProbs() ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << LZMA2_LCLP_MAX))
+
+#define DIC_ARRAY_SIZE 1610612736
 
 typedef struct {
   /* These fields would fit into a byte, but i386 code is shorter as UInt32. */
@@ -157,11 +159,12 @@ typedef struct {
   Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
   /* Contains the uncompressed data.
    *
+   * Array size is about 1.61 GB.
    * We rely on virtual memory so that if we don't use the end of array for
    * small files, then the operating system won't take the entire array away
    * from other processes.
    */
-  Byte dic[1610612736];
+  Byte dic[DIC_ARRAY_SIZE];
 } CLzmaDec;
 
 CLzmaDec global;
@@ -1113,9 +1116,9 @@ SRes DecompressXzOrLzma(void) {
         /* High 4 bytes of uncompressed size. */
         ((bhf = GetLE4(readCur + 9)) == 0 || bhf == ~(UInt32)0) &&
         (global.dicSize = GetLE4(readCur + 1)) >= LZMA_DIC_MIN &&
-        global.dicSize <= sizeof(global.dic)) {
+        global.dicSize <= DIC_ARRAY_SIZE) {
     /* Based on https://svn.python.org/projects/external/xz-5.0.3/doc/lzma-file-format.txt */
-    UInt32 us = bhf == 0 ? GetLE4(readCur + 5) : bhf /* max UInt32 */;
+    UInt32 us;
     UInt32 srcLen;
     UInt32 oldDicPos;
     InitDecode();
@@ -1125,12 +1128,18 @@ SRes DecompressXzOrLzma(void) {
      * .lzma files.
      */
     RINOK(InitProp(readCur[0]));
+    if (bhf == 0) {
+      global.dicBufSize = us = GetLE4(readCur + 5);
+      if (us > DIC_ARRAY_SIZE) return SZ_ERROR_MEM;
+    } else {
+      us = bhf;  /* max UInt32. */
+      global.dicBufSize = DIC_ARRAY_SIZE;
+    }
     readCur += 13;  /* Start decompressing the 0 byte. */
-    DEBUGF("LZMA dicSize=0x%x us=%d\n", global.dicSize, us);
+    DEBUGF("LZMA dicSize=0x%x us=%d bhf=%d\n", global.dicSize, us, bhf);
     /* TODO(pts): Limit on uncompressed size unless 8 bytes of -1 is
      * specified.
      */
-    global.dicBufSize = sizeof(global.dic);
     /* Any Preread(...) amount starting from 1 works here, but higher values
      * are faster.
      */
@@ -1278,7 +1287,7 @@ SRes DecompressXzOrLzma(void) {
         }
         global.dicBufSize += us;
         /* Decompressed data too long, won't fit to CLzmaDec.dic. */
-        if (global.dicBufSize > sizeof(global.dic)) return SZ_ERROR_MEM;
+        if (global.dicBufSize > DIC_ARRAY_SIZE) return SZ_ERROR_MEM;
         /* Read 6 extra bytes to optimize away a read(...) system call in
          * the Prefetch(6) call in the next chunk header.
          */
