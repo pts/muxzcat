@@ -40,7 +40,7 @@ ssize_t write(int fd, const void *buf, size_t count);
 
 #else  /* Not __XTINY__. */
 
-#include <string.h>  /* strcmp() !! */
+#include <string.h>  /* memcmp() */
 #include <unistd.h>  /* read(), write() */
 #ifdef _WIN32
 #  include <windows.h>
@@ -293,7 +293,6 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
   UInt32 lpMask = ((UInt32)1 << (global.lp)) - 1;
   UInt32 lc = global.lc;
 
-  Byte *dic = global.dic;
   UInt32 dicBufSize = global.dicBufSize;
   UInt32 dicPos = global.dicPos;
 
@@ -320,7 +319,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
       prob = probs + Literal;
       if (checkDicSize != 0 || processedPos != 0)
         prob += (LZMA_LIT_SIZE * (((processedPos & lpMask) << lc) +
-        (dic[(dicPos == 0 ? dicBufSize : dicPos) - 1] >> (8 - lc))));
+        (global.dic[(dicPos == 0 ? dicBufSize : dicPos) - 1] >> (8 - lc))));
 
       if (state < kNumLitStates)
       {
@@ -345,7 +344,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
         }
         while (symbol < 0x100);
       }
-      dic[dicPos++] = (Byte)symbol;
+      global.dic[dicPos++] = (Byte)symbol;
       processedPos++;
       continue;
     }
@@ -372,7 +371,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
           IF_BIT_0(prob)
           {
             UPDATE_0(prob);
-            dic[dicPos] = dic[(dicPos - rep0) + ((dicPos < rep0) ? dicBufSize : 0)];
+            global.dic[dicPos] = global.dic[(dicPos - rep0) + ((dicPos < rep0) ? dicBufSize : 0)];
             dicPos++;
             processedPos++;
             state = state < kNumLitStates ? 9 : 11;
@@ -545,13 +544,13 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
           ASSERT(dicPos > pos);
           ASSERT(curLen > 0);
           do {
-            dic[dicPos++] = dic[pos++];
+            global.dic[dicPos++] = global.dic[pos++];
           } while (--curLen != 0);
         }
         else
         {
           do {
-            dic[dicPos++] = dic[pos++];
+            global.dic[dicPos++] = global.dic[pos++];
             if (pos == dicBufSize) pos = 0;
           } while (--curLen != 0);
         }
@@ -641,7 +640,7 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
 {
   UInt32 range = global.range;
   UInt32 code = global.code;
-  const Byte *buf = &global.readBuf[bufDummyCur];
+  const Byte *buf = &global.readBuf[bufDummyCur];  /* !! Get rid of this pointer. */
   const CLzmaProb *probs = global.probs;
   UInt32 state = global.state;
   ELzmaDummy res;
