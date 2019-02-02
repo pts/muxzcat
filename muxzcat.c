@@ -1222,7 +1222,6 @@ static SRes DecompressXzOrLzma(void) {
     Byte dicSizeProp;
     Byte* readAtBlock;
     ASSERT(readEnd - readCur >= 12);  /* At least 12 bytes preread. */
-    readAtBlock = readCur;
     if ((bhs = *readCur++) == 0) break;  /* Last block, index follows. */
     /* Block header size includes the bhs field above and the CRC32 below. */
     bhs = (bhs + 1) << 2;
