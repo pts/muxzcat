@@ -188,7 +188,7 @@ CLzmaDec global;
 
 #define RC_INIT_SIZE 5
 
-#define NORMALIZE if (range < kTopValue) { range <<= 8; code = (code << 8) | (*buf++); }
+#define NORMALIZE if (range < kTopValue) { range <<= 8; code = (code << 8) | (*bufCur++); }
 
 #define IF_BIT_0(p) ttt = *(p); NORMALIZE; bound = (range >> kNumBitModelTotalBits) * ttt; if (code < bound)
 #define UPDATE_0(p) range = bound; *(p) = (CLzmaProb)(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits));
@@ -300,7 +300,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
   UInt32 checkDicSize = global.checkDicSize;
   UInt32 len = 0;
 
-  const Byte *buf = global.buf;
+  const Byte *bufCur = global.buf;
   UInt32 range = global.range;
   UInt32 code = global.code;
 
@@ -557,9 +557,9 @@ SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
       }
     }
   }
-  while (dicPos < limit && buf < bufLimit);
+  while (dicPos < limit && bufCur < bufLimit);
   NORMALIZE;
-  global.buf = buf;
+  global.buf = bufCur;
   global.range = range;
   global.code = code;
   global.remainLen = len;
