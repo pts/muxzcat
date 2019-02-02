@@ -136,6 +136,12 @@ typedef Byte Bool;
 
 #define DIC_ARRAY_SIZE 1610612736
 
+/* 6 is maximum LZMA chunk header size.
+ * 65536 is maximum cs (compressed size) of LZMA2 chunk.
+ * 6 is maximum LZMA chunk header size for the next chunk.
+ */
+#define READBUF_SIZE (6 + 65536 + 6)
+
 typedef struct {
   const Byte *buf;
   UInt32 dicSize;  /* Configured in prop byte. */
@@ -148,14 +154,17 @@ typedef struct {
   UInt32 reps[4];
   UInt32 remainLen;
   UInt32 tempBufSize;
-  CLzmaProb probs[Lzma2Props_GetMaxNumProbs()];
+  UInt32 readCur;  /* Index within (or at end of) readBuf. */
+  UInt32 readEnd;  /* Index within (or at end of) readBuf. */
   Bool needFlush;
   Bool needInitLzma;
   Bool needInitDic;
   Bool needInitState;
   Bool needInitProp;
   Byte lc, lp, pb;  /* Configured in prop byte. Also works as UInt32. */
+  CLzmaProb probs[Lzma2Props_GetMaxNumProbs()];
   Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
+  Byte readBuf[READBUF_SIZE];
   /* Contains the uncompressed data.
    *
    * Array size is about 1.61 GB.
@@ -971,16 +980,6 @@ SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
 /* Works if p <= 39. */
 #define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
-/* 6 is maximum LZMA chunk header size.
- * 65536 is maximum cs (compressed size) of LZMA2 chunk.
- * 6 is maximum LZMA chunk header size for the next chunk.
- */
-#define READBUF_SIZE (6 + 65536 + 6)
-
-Byte readBuf[READBUF_SIZE];
-UInt32 readCur;  /* Index within (or at end of) readBuf. */
-UInt32 readEnd;  /* Index within (or at end of) readBuf. */
-
 /* Tries to preread r bytes to the read buffer. Returns the number of bytes
  * available in the read buffer. If smaller than r, that indicates EOF.
  *
@@ -990,27 +989,27 @@ UInt32 readEnd;  /* Index within (or at end of) readBuf. */
  * Works only if r <= READBUF_SIZE.
  */
 UInt32 Preread(UInt32 r) {
-  UInt32 p = readEnd - readCur;
+  UInt32 p = global.readEnd - global.readCur;
   ASSERT(r <= READBUF_SIZE);
   if (p < r) {  /* Not enough pending available. */
-    if (READBUF_SIZE - readCur + 0U < r) {
+    if (READBUF_SIZE - global.readCur + 0U < r) {
       UInt32 copyIdx;
       /* If no room for r bytes to the end, discard bytes from the beginning. */
       DEBUGF("MEMMOVE size=%d\n", p);
       for (copyIdx = 0; copyIdx < p; ++copyIdx) {
-        readBuf[copyIdx] = readBuf[readCur + copyIdx];
+        global.readBuf[copyIdx] = global.readBuf[global.readCur + copyIdx];
       }
-      readEnd = p;
-      readCur = 0;
+      global.readEnd = p;
+      global.readCur = 0;
     }
     while (p < r) {
-      /* Instead of (r - p) we could use (readBuf + READBUF_SIZE -
-       * readEnd) to read as much as the buffer has room for.
+      /* Instead of (r - p) we could use (global.readBuf + READBUF_SIZE -
+       * global.readEnd) to read as much as the buffer has room for.
        */
       DEBUGF("READ size=%d\n", r - p);
-      const Int32 got = read(0, &readBuf[readEnd], r - p);
+      const Int32 got = read(0, &global.readBuf[global.readEnd], r - p);
       if (got <= 0) break;  /* EOF on input. */
-      readEnd += got;
+      global.readEnd += got;
       p += got;
     }
   }
@@ -1037,18 +1036,18 @@ UInt32 Preread(UInt32 r) {
 #define SZ_ERROR_BAD_LCLPPB_PROP 68
 
 void IgnoreVarint(void) {
-  while (readBuf[readCur++] >= 0x80) {}
+  while (global.readBuf[global.readCur++] >= 0x80) {}
 }
 
 SRes IgnoreZeroBytes(UInt32 c) {
   for (; c > 0; --c) {
-    if (readBuf[readCur++] != 0) return SZ_ERROR_BAD_PADDING;
+    if (global.readBuf[global.readCur++] != 0) return SZ_ERROR_BAD_PADDING;
   }
   return SZ_OK;
 }
 
 UInt32 GetLE4(UInt32 p) {
-  return readBuf[p] | readBuf[p + 1] << 8 | readBuf[p + 2] << 16 | p[readBuf + 3] << 24;
+  return global.readBuf[p] | global.readBuf[p + 1] << 8 | global.readBuf[p + 2] << 16 | p[global.readBuf + 3] << 24;
 }
 
 /* Expects global.dicSize be set already. Can be called before or after InitProp. */
@@ -1103,11 +1102,11 @@ SRes DecompressXzOrLzma(void) {
    */
   if (Preread(12 + 12 + 6) < 12 + 12 + 6) return SZ_ERROR_INPUT_EOF;
   /* readbuf[7] is actually stream flags, should also be 0. */
-  if (0 == memcmp(&readBuf[readCur], "\xFD""7zXZ\0", 7)) {  /* .xz */
-  } else if (readBuf[readCur] <= 225 && readBuf[readCur + 13] == 0 &&  /* .lzma */
+  if (0 == memcmp(&global.readBuf[global.readCur], "\xFD""7zXZ\0", 7)) {  /* .xz */
+  } else if (global.readBuf[global.readCur] <= 225 && global.readBuf[global.readCur + 13] == 0 &&  /* .lzma */
         /* High 4 bytes of uncompressed size. */
-        ((bhf = GetLE4(readCur + 9)) == 0 || bhf == ~(UInt32)0) &&
-        (global.dicSize = GetLE4(readCur + 1)) >= LZMA_DIC_MIN &&
+        ((bhf = GetLE4(global.readCur + 9)) == 0 || bhf == ~(UInt32)0) &&
+        (global.dicSize = GetLE4(global.readCur + 1)) >= LZMA_DIC_MIN &&
         global.dicSize <= DIC_ARRAY_SIZE) {
     /* Based on https://svn.python.org/projects/external/xz-5.0.3/doc/lzma-file-format.txt */
     UInt32 us;
@@ -1119,15 +1118,15 @@ SRes DecompressXzOrLzma(void) {
      * CLzmaDec.probs), thus we are not able to extract some legitimate
      * .lzma files.
      */
-    RINOK(InitProp(readBuf[readCur]));
+    RINOK(InitProp(global.readBuf[global.readCur]));
     if (bhf == 0) {
-      global.dicBufSize = us = GetLE4(readCur + 5);
+      global.dicBufSize = us = GetLE4(global.readCur + 5);
       if (us > DIC_ARRAY_SIZE) return SZ_ERROR_MEM;
     } else {
       us = bhf;  /* max UInt32. */
       global.dicBufSize = DIC_ARRAY_SIZE;
     }
-    readCur += 13;  /* Start decompressing the 0 byte. */
+    global.readCur += 13;  /* Start decompressing the 0 byte. */
     DEBUGF("LZMA dicSize=0x%x us=%d bhf=%d\n", global.dicSize, us, bhf);
     /* TODO(pts): Limit on uncompressed size unless 8 bytes of -1 is
      * specified.
@@ -1138,9 +1137,9 @@ SRes DecompressXzOrLzma(void) {
     while ((srcLen = Preread(READBUF_SIZE)) > 0) {
       SRes res;
       oldDicPos = global.dicPos;
-      res = LzmaDec_DecodeToDic(&readBuf[readCur], srcLen);
+      res = LzmaDec_DecodeToDic(&global.readBuf[global.readCur], srcLen);
       DEBUGF("LZMADEC res=%d\n", res);
-      readCur += srcLen;
+      global.readCur += srcLen;
       if (global.dicPos > us) global.dicPos = us;
       RINOK(WriteFrom(oldDicPos));
       if (res == SZ_ERROR_FINISHED_WITH_MARK) break;
@@ -1152,30 +1151,30 @@ SRes DecompressXzOrLzma(void) {
     return SZ_ERROR_BAD_MAGIC;
   }
   /* Based on https://tukaani.org/xz/xz-file-format-1.0.4.txt */
-  switch (readBuf[readCur + 7]) {
+  switch (global.readBuf[global.readCur + 7]) {
    case 0: /* None */ checksumSize = 1; break;
    case 1: /* CRC32 */ checksumSize = 4; break;
    case 4: /* CRC64, typical xz output. */ checksumSize = 8; break;
    default: return SZ_ERROR_BAD_CHECKSUM_TYPE;
   }
   /* Also ignore the CRC32 after checksumSize. */
-  readCur += 12;
+  global.readCur += 12;
   for (;;) {  /* Next block. */
     /* We need it modulo 4, so a Byte is enough. */
     Byte blockSizePad = 3;
     UInt32 bhs, bhs2; /* Block header size */
     Byte dicSizeProp;
     UInt32 readAtBlock;
-    ASSERT(readEnd - readCur >= 12);  /* At least 12 bytes preread. */
-    readAtBlock = readCur;
-    if ((bhs = readBuf[readCur++]) == 0) break;  /* Last block, index follows. */
+    ASSERT(global.readEnd - global.readCur >= 12);  /* At least 12 bytes preread. */
+    readAtBlock = global.readCur;
+    if ((bhs = global.readBuf[global.readCur++]) == 0) break;  /* Last block, index follows. */
     /* Block header size includes the bhs field above and the CRC32 below. */
     bhs = (bhs + 1) << 2;
     DEBUGF("bhs=%d\n", bhs);
     /* Typically the Preread(12 + 12 + 6) above covers it. */
     if (Preread(bhs) < bhs) return SZ_ERROR_INPUT_EOF;
-    readAtBlock = readCur;
-    bhf = readBuf[readCur++];
+    readAtBlock = global.readCur;
+    bhf = global.readBuf[global.readCur++];
     if ((bhf & 2) != 0) return SZ_ERROR_UNSUPPORTED_FILTER_COUNT;
     DEBUGF("filter count=%d\n", (bhf & 2) + 1);
     if ((bhf & 20) != 0) return SZ_ERROR_BAD_BLOCK_FLAGS;
@@ -1188,10 +1187,10 @@ SRes DecompressXzOrLzma(void) {
       IgnoreVarint();
     }
     /* This is actually a varint, but it's shorter to read it as a byte. */
-    if (readBuf[readCur++] != FILTER_ID_LZMA2) return SZ_ERROR_UNSUPPORTED_FILTER_ID;
+    if (global.readBuf[global.readCur++] != FILTER_ID_LZMA2) return SZ_ERROR_UNSUPPORTED_FILTER_ID;
     /* This is actually a varint, but it's shorter to read it as a byte. */
-    if (readBuf[readCur++] != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
-    dicSizeProp = readBuf[readCur++];
+    if (global.readBuf[global.readCur++] != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
+    dicSizeProp = global.readBuf[global.readCur++];
     /* Typical large dictionary sizes:
      *
      *  * 35: 805306368 bytes == 768 MiB
@@ -1214,11 +1213,11 @@ SRes DecompressXzOrLzma(void) {
     DEBUGF("dicSize37=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(37));
     DEBUGF("dicSize36=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(36));
     DEBUGF("dicSize35=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(35));
-    bhs2 = readCur - readAtBlock + 5;  /* Won't overflow. */
+    bhs2 = global.readCur - readAtBlock + 5;  /* Won't overflow. */
     DEBUGF("bhs=%d bhs2=%d\n", bhs, bhs2);
     if (bhs2 > bhs) return SZ_ERROR_BLOCK_HEADER_TOO_LONG;
     RINOK(IgnoreZeroBytes(bhs - bhs2));
-    readCur += 4;  /* Ignore CRC32. */
+    global.readCur += 4;  /* Ignore CRC32. */
     /* Typically it's offset 24, xz creates it by default, minimal. */
     DEBUGF("LZMA2\n");
     { /* Parse LZMA2 stream. */
@@ -1233,20 +1232,20 @@ SRes DecompressXzOrLzma(void) {
          * aligned and there is no block checksum.
          */
         if (Preread(6) < 6) return SZ_ERROR_INPUT_EOF;
-        control = readBuf[readCur];
-        DEBUGF("CONTROL control=0x%02x at=? inbuf=%d\n", control, readCur);
+        control = global.readBuf[global.readCur];
+        DEBUGF("CONTROL control=0x%02x at=? inbuf=%d\n", control, global.readCur);
         if (control == 0) {
           DEBUGF("LASTFED\n");
-          ++readCur;
+          ++global.readCur;
           break;
         } else if ((Byte)(control - 3) < 0x80 - 3U) {
           return SZ_ERROR_BAD_CHUNK_CONTROL_BYTE;
         }
-        us = (readBuf[readCur + 1] << 8) + readBuf[readCur + 2] + 1;
+        us = (global.readBuf[global.readCur + 1] << 8) + global.readBuf[global.readCur + 2] + 1;
         if (control < 3) {  /* Uncompressed chunk. */
           const Bool initDic = (control == 1);
           cs = us;
-          readCur += 3;
+          global.readCur += 3;
           blockSizePad -= 3;
           if (initDic) {
             global.needInitProp = global.needInitState = True;
@@ -1261,15 +1260,15 @@ SRes DecompressXzOrLzma(void) {
           const Bool initState = (mode > 0);
           const Bool isProp = (control & 64) != 0;
           us += (control & 31) << 16;
-          cs = (readBuf[readCur + 3] << 8) + readBuf[readCur + 4] + 1;
+          cs = (global.readBuf[global.readCur + 3] << 8) + global.readBuf[global.readCur + 4] + 1;
           if (isProp) {
-            RINOK(InitProp(readBuf[readCur + 5]));
-            ++readCur;
+            RINOK(InitProp(global.readBuf[global.readCur + 5]));
+            ++global.readCur;
             --blockSizePad;
           } else {
             if (global.needInitProp) return SZ_ERROR_MISSING_INITPROP;
           }
-          readCur += 5;
+          global.readCur += 5;
           blockSizePad -= 5;
           if ((!initDic && global.needInitDic) || (!initState && global.needInitState))
             return SZ_ERROR_DATA;
@@ -1289,7 +1288,7 @@ SRes DecompressXzOrLzma(void) {
         if (control < 0x80) {  /* Uncompressed chunk. */
           DEBUGF("DECODE uncompressed\n");
           while (global.dicPos != global.dicBufSize) {
-            global.dic[global.dicPos++] = readBuf[readCur++];
+            global.dic[global.dicPos++] = global.readBuf[global.readCur++];
           }
           if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= us)
             global.checkDicSize = global.dicSize;
@@ -1297,8 +1296,8 @@ SRes DecompressXzOrLzma(void) {
         } else {  /* Compressed chunk. */
           DEBUGF("DECODE call\n");
           /* This call doesn't change global.dicBufSize. */
-          RINOK(LzmaDec_DecodeToDic(&readBuf[readCur], cs));
-          readCur += cs;
+          RINOK(LzmaDec_DecodeToDic(&global.readBuf[global.readCur], cs));
+          global.readCur += cs;
         }
         if (global.dicPos != global.dicBufSize) return SZ_ERROR_BAD_DICPOS;
         RINOK(WriteFrom(global.dicPos - us));
@@ -1316,7 +1315,7 @@ SRes DecompressXzOrLzma(void) {
     if (Preread(7 + 12 + 6) < 7 + 12 + 6) return SZ_ERROR_INPUT_EOF;
     DEBUGF("ALTELL blockSizePad=%d\n", blockSizePad & 3);
     RINOK(IgnoreZeroBytes(blockSizePad & 3));  /* Ignore block padding. */
-    readCur += checksumSize;  /* Ignore CRC32, CRC64 etc. */
+    global.readCur += checksumSize;  /* Ignore CRC32, CRC64 etc. */
   }
   /* The .xz input file continues with the index, which we ignore from here. */
   return SZ_OK;
