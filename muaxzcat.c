@@ -143,7 +143,6 @@ typedef Byte Bool;
 #define READBUF_SIZE (6 + 65536 + 6)
 
 typedef struct {
-  const Byte *bufBase;
   UInt32 bufCur;
   UInt32 dicSize;  /* Configured in prop byte. */
   UInt32 range, code;
@@ -164,8 +163,8 @@ typedef struct {
   Bool needInitProp;
   Byte lc, lp, pb;  /* Configured in prop byte. Also works as UInt32. */
   CLzmaProb probs[Lzma2Props_GetMaxNumProbs()];
-  Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
-  Byte readBuf[READBUF_SIZE];
+  /* The first READBUF_SIZE bytes is readBuf, then the LZMA_REQUIRED_INPUT_MAX bytes is tempBuf. */
+  Byte readBuf[READBUF_SIZE + LZMA_REQUIRED_INPUT_MAX];
   /* Contains the uncompressed data.
    *
    * Array size is about 1.61 GB.
@@ -189,7 +188,7 @@ CLzmaDec global;
 
 #define RC_INIT_SIZE 5
 
-#define NORMALIZE if (range < kTopValue) { range <<= 8; code = (code << 8) | (global.bufBase[bufCur++]); }
+#define NORMALIZE if (range < kTopValue) { range <<= 8; code = (code << 8) | (global.readBuf[bufCur++]); }
 
 #define IF_BIT_0(p) ttt = *(p); NORMALIZE; bound = (range >> kNumBitModelTotalBits) * ttt; if (code < bound)
 #define UPDATE_0(p) range = bound; *(p) = (CLzmaProb)(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits));
@@ -217,7 +216,7 @@ CLzmaDec global;
   i -= 0x40; }
 #endif
 
-#define NORMALIZE_CHECK if (range < kTopValue) { if (buf >= &global.bufBase[bufLimit]) return DUMMY_ERROR; range <<= 8; code = (code << 8) | (*buf++); }
+#define NORMALIZE_CHECK if (range < kTopValue) { if (buf >= &global.readBuf[bufLimit]) return DUMMY_ERROR; range <<= 8; code = (code << 8) | (*buf++); }
 
 #define IF_BIT_0_CHECK(p) ttt = *(p); NORMALIZE_CHECK; bound = (range >> kNumBitModelTotalBits) * ttt; if (code < bound)
 #define UPDATE_0_CHECK range = bound;
@@ -642,7 +641,7 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
 {
   UInt32 range = global.range;
   UInt32 code = global.code;
-  const Byte *buf = &global.bufBase[bufDummyCur];
+  const Byte *buf = &global.readBuf[bufDummyCur];
   const CLzmaProb *probs = global.probs;
   UInt32 state = global.state;
   ELzmaDummy res;
@@ -881,17 +880,17 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
       if (global.needFlush)
       {
         for (; decodeLimit > global.readCur && global.tempBufSize < RC_INIT_SIZE;)
-          global.tempBuf[global.tempBufSize++] = global.readBuf[global.readCur++];
+          global.readBuf[READBUF_SIZE + global.tempBufSize++] = global.readBuf[global.readCur++];
         if (global.tempBufSize < RC_INIT_SIZE)
         {
          on_needs_more_input:
           if (decodeLimit != global.readCur) return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL;
           return SZ_ERROR_NEEDS_MORE_INPUT;
         }
-        if (global.tempBuf[0] != 0)
+        if (global.readBuf[READBUF_SIZE] != 0)
           return SZ_ERROR_DATA;
 
-        LzmaDec_InitRc(global.tempBuf);
+        LzmaDec_InitRc(&global.readBuf[READBUF_SIZE]);  /* tempBuf. */
         global.tempBufSize = 0;
       }
 
@@ -920,14 +919,13 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         if (decodeLimit - global.readCur < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
         {
           SRes dummyRes;
-          global.bufBase = &global.readBuf[0];
           dummyRes = LzmaDec_TryDummy(global.readCur, decodeLimit);
           if (dummyRes == DUMMY_ERROR)
           {
             /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
             global.tempBufSize = 0;
             while (global.readCur != decodeLimit) {
-              global.tempBuf[global.tempBufSize++] = global.readBuf[global.readCur++];
+              global.readBuf[READBUF_SIZE + global.tempBufSize++] = global.readBuf[global.readCur++];
             }
             goto on_needs_more_input;
           }
@@ -939,8 +937,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         }
         else
           bufLimit = decodeLimit - LZMA_REQUIRED_INPUT_MAX;
-        global.bufBase = &global.readBuf[0];
-        global.bufCur = global.readCur;  /* !! Use readCur instead of global.buf, remove global.buf. */
+        global.bufCur = global.readCur;  /* !! Use readCur instead of global.bufCur? */
         if (LzmaDec_DecodeReal2(dicLimit, bufLimit) != 0)
           return SZ_ERROR_DATA;
         global.readCur = global.bufCur;
@@ -949,13 +946,12 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
       {
         UInt32 rem = global.tempBufSize, lookAhead = 0;
         while (rem < LZMA_REQUIRED_INPUT_MAX && lookAhead < decodeLimit - global.readCur)
-          global.tempBuf[rem++] = global.readBuf[global.readCur + lookAhead++];
+          global.readBuf[READBUF_SIZE + rem++] = global.readBuf[global.readCur + lookAhead++];
         global.tempBufSize = rem;
         if (rem < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
         {
           SRes dummyRes;
-          global.bufBase = &global.tempBuf[0];
-          dummyRes = LzmaDec_TryDummy(0, rem);
+          dummyRes = LzmaDec_TryDummy(READBUF_SIZE, READBUF_SIZE + rem);
           if (dummyRes == DUMMY_ERROR)
           {
             global.readCur += lookAhead;
@@ -967,11 +963,10 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
           }
         }
         /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
-        global.bufBase = &global.tempBuf[0];
-        global.bufCur = 0;
-        if (LzmaDec_DecodeReal2(dicLimit, 0) != 0)
+        global.bufCur = READBUF_SIZE;  /* tempBuf. */
+        if (LzmaDec_DecodeReal2(0, READBUF_SIZE) != 0)
           return SZ_ERROR_DATA;
-        lookAhead -= rem - global.bufCur;
+        lookAhead -= rem - (global.bufCur - READBUF_SIZE);
         global.readCur += lookAhead;
         global.tempBufSize = 0;
       }
