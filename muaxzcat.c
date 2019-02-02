@@ -638,11 +638,11 @@ typedef enum
 } ELzmaDummy;
 
 /* Replace pointer argument buf here with an UInt32 argument. */
-ELzmaDummy LzmaDec_TryDummy(const Byte *buf, UInt32 inSize)
+ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
 {
   UInt32 range = global.range;
   UInt32 code = global.code;
-  const UInt32 bufLimit = (buf - &global.bufBase[0]) + inSize;
+  const Byte *buf = &global.bufBase[bufDummyCur];
   const CLzmaProb *probs = global.probs;
   UInt32 state = global.state;
   ELzmaDummy res;
@@ -921,7 +921,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         {
           SRes dummyRes;
           global.bufBase = &global.readBuf[0];
-          dummyRes = LzmaDec_TryDummy(&global.readBuf[global.readCur], decodeLimit - global.readCur);
+          dummyRes = LzmaDec_TryDummy(global.readCur, decodeLimit);
           if (dummyRes == DUMMY_ERROR)
           {
             /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
@@ -955,7 +955,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         {
           SRes dummyRes;
           global.bufBase = &global.tempBuf[0];
-          dummyRes = LzmaDec_TryDummy(&global.tempBuf[0], rem);
+          dummyRes = LzmaDec_TryDummy(0, rem);
           if (dummyRes == DUMMY_ERROR)
           {
             global.readCur += lookAhead;
