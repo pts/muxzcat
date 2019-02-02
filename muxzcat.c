@@ -1332,6 +1332,7 @@ static SRes DecompressXzOrLzma(void) {
           global.needInitDic = False;
           global.needInitState = False;
         }
+        ASSERT(global.dicPos == global.dicBufSize);
         global.dicBufSize += us;
         /* Decompressed data too long, won't fit to CLzmaDec.dic. */
         if (global.dicBufSize > sizeof(global.dic)) return SZ_ERROR_MEM;
@@ -1341,13 +1342,12 @@ static SRes DecompressXzOrLzma(void) {
         if (Preread(cs + 6) < cs) return SZ_ERROR_INPUT_EOF;
         DEBUGF("FEED us=%d cs=%d dicPos=%d\n", us, cs, global.dicPos);
         if (control < 0x80) {  /* Uncompressed chunk. */
-          const UInt32 unpackSize = global.dicBufSize - global.dicPos;
           DEBUGF("DECODE uncompressed\n");
-          memcpy(global.dic + global.dicPos, readCur, unpackSize);
-          global.dicPos += unpackSize;
-          if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= unpackSize)
+          memcpy(global.dic + global.dicPos, readCur, us);
+          global.dicPos += us;
+          if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= us)
             global.checkDicSize = global.dicSize;
-          global.processedPos += unpackSize;
+          global.processedPos += us;
         } else {  /* Compressed chunk. */
           DEBUGF("DECODE call\n");
           /* This call doesn't change global.dicBufSize. */
