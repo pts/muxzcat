@@ -860,10 +860,14 @@ void LzmaDec_InitStateReal(void)
   global.needInitLzma = False;
 }
 
-SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
+/* Decompress LZMA stream in
+ * global.readBuf[global.readCur : global.readCur + srcLen].
+ */
+SRes LzmaDec_DecodeToDic(UInt32 srcLen) {
   const UInt32 dicLimit = global.dicBufSize;
   const UInt32 srcLen0 = srcLen;
   UInt32 inSize = srcLen;
+  const Byte * const srcPtr0 = &global.readBuf[global.readCur];
   srcLen = 0;
   LzmaDec_WriteRem(dicLimit);
 
@@ -873,8 +877,8 @@ SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
 
       if (global.needFlush)
       {
-        for (; inSize > 0 && global.tempBufSize < RC_INIT_SIZE; srcLen++, inSize--)
-          global.tempBuf[global.tempBufSize++] = *src++;
+        for (; inSize > 0 && global.tempBufSize < RC_INIT_SIZE; inSize--)
+          global.tempBuf[global.tempBufSize++] = *(srcPtr0 + srcLen++);
         if (global.tempBufSize < RC_INIT_SIZE)
         {
          on_needs_more_input:
@@ -913,13 +917,13 @@ SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
         const Byte *bufLimit;
         if (inSize < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
         {
-          SRes dummyRes = LzmaDec_TryDummy(src, inSize);
+          SRes dummyRes = LzmaDec_TryDummy(srcPtr0 + srcLen, inSize);
           if (dummyRes == DUMMY_ERROR)
           {
             {
               UInt32 copyIdx;
               for (copyIdx = 0; copyIdx < inSize; ++copyIdx) {
-                global.tempBuf[copyIdx] = src[copyIdx];
+                global.tempBuf[copyIdx] = srcPtr0[srcLen + copyIdx];
               }
             }
             global.tempBufSize = (UInt32)inSize;
@@ -930,23 +934,22 @@ SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
           {
             return SZ_ERROR_NOT_FINISHED;
           }
-          bufLimit = src;
+          bufLimit = srcPtr0 + srcLen;
         }
         else
-          bufLimit = src + inSize - LZMA_REQUIRED_INPUT_MAX;
-        global.buf = src;
+          bufLimit = srcPtr0 + srcLen + inSize - LZMA_REQUIRED_INPUT_MAX;
+        global.buf = srcPtr0 + srcLen;  /* !! Use readCur instead of global.buf, remove global.buf. */
         if (LzmaDec_DecodeReal2(dicLimit, bufLimit) != 0)
           return SZ_ERROR_DATA;
-        processed = (UInt32)(global.buf - src);
+        processed = (UInt32)(global.buf - (srcPtr0 + srcLen));
         srcLen += processed;
-        src += processed;
         inSize -= processed;
       }
       else
       {
         UInt32 rem = global.tempBufSize, lookAhead = 0;
         while (rem < LZMA_REQUIRED_INPUT_MAX && lookAhead < inSize)
-          global.tempBuf[rem++] = src[lookAhead++];
+          global.tempBuf[rem++] = srcPtr0[srcLen + lookAhead++];
         global.tempBufSize = rem;
         if (rem < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
         {
@@ -966,7 +969,6 @@ SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
           return SZ_ERROR_DATA;
         lookAhead -= (rem - (UInt32)(global.buf - global.tempBuf));
         srcLen += lookAhead;
-        src += lookAhead;
         inSize -= lookAhead;
         global.tempBufSize = 0;
       }
@@ -1137,7 +1139,7 @@ SRes DecompressXzOrLzma(void) {
     while ((srcLen = Preread(READBUF_SIZE)) > 0) {
       SRes res;
       oldDicPos = global.dicPos;
-      res = LzmaDec_DecodeToDic(&global.readBuf[global.readCur], srcLen);
+      res = LzmaDec_DecodeToDic(srcLen);
       DEBUGF("LZMADEC res=%d\n", res);
       global.readCur += srcLen;
       if (global.dicPos > us) global.dicPos = us;
@@ -1296,7 +1298,7 @@ SRes DecompressXzOrLzma(void) {
         } else {  /* Compressed chunk. */
           DEBUGF("DECODE call\n");
           /* This call doesn't change global.dicBufSize. */
-          RINOK(LzmaDec_DecodeToDic(&global.readBuf[global.readCur], cs));
+          RINOK(LzmaDec_DecodeToDic(cs));
           global.readCur += cs;
         }
         if (global.dicPos != global.dicBufSize) return SZ_ERROR_BAD_DICPOS;
