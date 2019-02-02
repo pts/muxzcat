@@ -216,7 +216,7 @@ CLzmaDec global;
   i -= 0x40; }
 #endif
 
-#define NORMALIZE_CHECK if (range < kTopValue) { if (buf >= &global.readBuf[bufLimit]) return DUMMY_ERROR; range <<= 8; code = (code << 8) | (*buf++); }
+#define NORMALIZE_CHECK if (range < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; range <<= 8; code = (code << 8) | (global.readBuf[bufDummyCur++]); }
 
 #define IF_BIT_0_CHECK(p) ttt = *(p); NORMALIZE_CHECK; bound = (range >> kNumBitModelTotalBits) * ttt; if (code < bound)
 #define UPDATE_0_CHECK range = bound;
@@ -640,7 +640,6 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
 {
   UInt32 range = global.range;
   UInt32 code = global.code;
-  const Byte *buf = &global.readBuf[bufDummyCur];  /* !! Get rid of this pointer. */
   const CLzmaProb *probs = global.probs;
   UInt32 state = global.state;
   ELzmaDummy res;
