@@ -143,7 +143,8 @@ typedef Byte Bool;
 #define READBUF_SIZE (6 + 65536 + 6)
 
 typedef struct {
-  const Byte *buf;
+  const Byte *bufBase;
+  UInt32 bufCur;
   UInt32 dicSize;  /* Configured in prop byte. */
   UInt32 range, code;
   UInt32 dicPos;
@@ -188,7 +189,7 @@ CLzmaDec global;
 
 #define RC_INIT_SIZE 5
 
-#define NORMALIZE if (range < kTopValue) { range <<= 8; code = (code << 8) | (*bufCur++); }
+#define NORMALIZE if (range < kTopValue) { range <<= 8; code = (code << 8) | (global.bufBase[bufCur++]); }
 
 #define IF_BIT_0(p) ttt = *(p); NORMALIZE; bound = (range >> kNumBitModelTotalBits) * ttt; if (code < bound)
 #define UPDATE_0(p) range = bound; *(p) = (CLzmaProb)(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits));
@@ -282,6 +283,7 @@ CLzmaDec global;
 
 #define LZMA_DIC_MIN (1 << 12)
 
+/* Modifies global.bufCur etc. */
 SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
 {
   CLzmaProb *probs = global.probs;
@@ -300,7 +302,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
   UInt32 checkDicSize = global.checkDicSize;
   UInt32 len = 0;
 
-  const Byte *bufCur = global.buf;
+  UInt32 bufCur = global.bufCur;
   UInt32 range = global.range;
   UInt32 code = global.code;
 
@@ -557,9 +559,9 @@ SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
       }
     }
   }
-  while (dicPos < limit && bufCur < bufLimit);
+  while (dicPos < limit && &global.bufBase[bufCur] < bufLimit);
   NORMALIZE;
-  global.buf = bufCur;
+  global.bufCur = bufCur;
   global.range = range;
   global.code = code;
   global.remainLen = len;
@@ -601,6 +603,7 @@ void LzmaDec_WriteRem(UInt32 limit)
   }
 }
 
+/* Modifies global.bufCur etc. */
 SRes LzmaDec_DecodeReal2(UInt32 limit, const Byte *bufLimit)
 {
   do
@@ -617,7 +620,7 @@ SRes LzmaDec_DecodeReal2(UInt32 limit, const Byte *bufLimit)
       global.checkDicSize = global.dicSize;
     LzmaDec_WriteRem(limit);
   }
-  while (global.dicPos < limit && global.buf < bufLimit && global.remainLen < kMatchSpecLenStart);
+  while (global.dicPos < limit && &global.bufBase[global.bufCur] < bufLimit && global.remainLen < kMatchSpecLenStart);
 
   if (global.remainLen > kMatchSpecLenStart)
   {
@@ -918,7 +921,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
           SRes dummyRes = LzmaDec_TryDummy(&global.readBuf[global.readCur], decodeLimit - global.readCur);
           if (dummyRes == DUMMY_ERROR)
           {
-            /* This condition can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
+            /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
             global.tempBufSize = 0;
             while (global.readCur != decodeLimit) {
               global.tempBuf[global.tempBufSize++] = global.readBuf[global.readCur++];
@@ -933,10 +936,11 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         }
         else
           bufLimit = &global.readBuf[decodeLimit - LZMA_REQUIRED_INPUT_MAX];
-        global.buf = &global.readBuf[global.readCur];  /* !! Use readCur instead of global.buf, remove global.buf. */
+        global.bufBase = &global.readBuf[0];
+        global.bufCur = global.readCur;  /* !! Use readCur instead of global.buf, remove global.buf. */
         if (LzmaDec_DecodeReal2(dicLimit, bufLimit) != 0)
           return SZ_ERROR_DATA;
-        global.readCur = (UInt32)(global.buf - &global.readBuf[0]);
+        global.readCur = global.bufCur;
       }
       else
       {
@@ -957,10 +961,12 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
             return SZ_ERROR_NOT_FINISHED;
           }
         }
-        global.buf = global.tempBuf;
-        if (LzmaDec_DecodeReal2(dicLimit, global.buf) != 0)
+        /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
+        global.bufBase = &global.tempBuf[0];
+        global.bufCur = 0;
+        if (LzmaDec_DecodeReal2(dicLimit, &global.bufBase[global.bufCur]) != 0)
           return SZ_ERROR_DATA;
-        lookAhead -= (rem - (UInt32)(global.buf - global.tempBuf));
+        lookAhead -= rem - global.bufCur;
         global.readCur += lookAhead;
         global.tempBufSize = 0;
       }
