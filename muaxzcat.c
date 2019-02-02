@@ -217,7 +217,7 @@ CLzmaDec global;
   i -= 0x40; }
 #endif
 
-#define NORMALIZE_CHECK if (range < kTopValue) { if (buf >= bufLimit) return DUMMY_ERROR; range <<= 8; code = (code << 8) | (*buf++); }
+#define NORMALIZE_CHECK if (range < kTopValue) { if (buf >= &global.bufBase[bufLimit]) return DUMMY_ERROR; range <<= 8; code = (code << 8) | (*buf++); }
 
 #define IF_BIT_0_CHECK(p) ttt = *(p); NORMALIZE_CHECK; bound = (range >> kNumBitModelTotalBits) * ttt; if (code < bound)
 #define UPDATE_0_CHECK range = bound;
@@ -284,7 +284,7 @@ CLzmaDec global;
 #define LZMA_DIC_MIN (1 << 12)
 
 /* Modifies global.bufCur etc. */
-SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
+SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
 {
   CLzmaProb *probs = global.probs;
 
@@ -559,7 +559,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
       }
     }
   }
-  while (dicPos < limit && &global.bufBase[bufCur] < bufLimit);
+  while (dicPos < limit && bufCur < bufLimit);
   NORMALIZE;
   global.bufCur = bufCur;
   global.range = range;
@@ -604,7 +604,7 @@ void LzmaDec_WriteRem(UInt32 limit)
 }
 
 /* Modifies global.bufCur etc. */
-SRes LzmaDec_DecodeReal2(UInt32 limit, const Byte *bufLimit)
+SRes LzmaDec_DecodeReal2(UInt32 limit, UInt32 bufLimit)
 {
   do
   {
@@ -620,7 +620,7 @@ SRes LzmaDec_DecodeReal2(UInt32 limit, const Byte *bufLimit)
       global.checkDicSize = global.dicSize;
     LzmaDec_WriteRem(limit);
   }
-  while (global.dicPos < limit && &global.bufBase[global.bufCur] < bufLimit && global.remainLen < kMatchSpecLenStart);
+  while (global.dicPos < limit && global.bufCur < bufLimit && global.remainLen < kMatchSpecLenStart);
 
   if (global.remainLen > kMatchSpecLenStart)
   {
@@ -637,11 +637,12 @@ typedef enum
   DUMMY_REP
 } ELzmaDummy;
 
+/* Replace pointer argument buf here with an UInt32 argument. */
 ELzmaDummy LzmaDec_TryDummy(const Byte *buf, UInt32 inSize)
 {
   UInt32 range = global.range;
   UInt32 code = global.code;
-  const Byte *bufLimit = buf + inSize;
+  const UInt32 bufLimit = (buf - &global.bufBase[0]) + inSize;
   const CLzmaProb *probs = global.probs;
   UInt32 state = global.state;
   ELzmaDummy res;
@@ -915,10 +916,12 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
 
       if (global.tempBufSize == 0)
       {
-        const Byte *bufLimit;
+        UInt32 bufLimit;
         if (decodeLimit - global.readCur < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
         {
-          SRes dummyRes = LzmaDec_TryDummy(&global.readBuf[global.readCur], decodeLimit - global.readCur);
+          SRes dummyRes;
+          global.bufBase = &global.readBuf[0];
+          dummyRes = LzmaDec_TryDummy(&global.readBuf[global.readCur], decodeLimit - global.readCur);
           if (dummyRes == DUMMY_ERROR)
           {
             /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
@@ -932,10 +935,10 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
           {
             return SZ_ERROR_NOT_FINISHED;
           }
-          bufLimit = &global.readBuf[global.readCur];
+          bufLimit = global.readCur;
         }
         else
-          bufLimit = &global.readBuf[decodeLimit - LZMA_REQUIRED_INPUT_MAX];
+          bufLimit = decodeLimit - LZMA_REQUIRED_INPUT_MAX;
         global.bufBase = &global.readBuf[0];
         global.bufCur = global.readCur;  /* !! Use readCur instead of global.buf, remove global.buf. */
         if (LzmaDec_DecodeReal2(dicLimit, bufLimit) != 0)
@@ -950,7 +953,9 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         global.tempBufSize = rem;
         if (rem < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
         {
-          SRes dummyRes = LzmaDec_TryDummy(global.tempBuf, rem);
+          SRes dummyRes;
+          global.bufBase = &global.tempBuf[0];
+          dummyRes = LzmaDec_TryDummy(&global.tempBuf[0], rem);
           if (dummyRes == DUMMY_ERROR)
           {
             global.readCur += lookAhead;
@@ -964,7 +969,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
         global.bufBase = &global.tempBuf[0];
         global.bufCur = 0;
-        if (LzmaDec_DecodeReal2(dicLimit, &global.bufBase[global.bufCur]) != 0)
+        if (LzmaDec_DecodeReal2(dicLimit, 0) != 0)
           return SZ_ERROR_DATA;
         lookAhead -= rem - global.bufCur;
         global.readCur += lookAhead;
