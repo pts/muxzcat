@@ -77,6 +77,9 @@ struct IntegerTypeAsserts {
 #define TRUNCATE_TO_32BIT(x) ((uint32_t)(x))
 #define TRUNCATE_TO_16BIT(x) ((uint16_t)(x))
 #define TRUNCATE_TO_8BIT(x) ((uint8_t)(x))
+#define GLOBAL(type, name) type name
+#define GLOBAL_ARY16(a, size) uint16_t a##16[size]
+#define GLOBAL_ARY8(a, size) uint8_t a##8[size]
 #define L(name) name  /* Local variable or argument of a function. */
 #define LOCAL(type, name) type name
 #define LOCAL_INIT(type, name, value) type name = (value)
@@ -103,11 +106,9 @@ struct IntegerTypeAsserts {
 #define ASSERT(condition) do {} while (0 && (condition))
 #endif
 
-#define DECLARE_ARY16(a, size) uint16_t a##16[size]
 #define GET_ARY16(a, idx) (+global.a##16[idx])
 /* TRUNCATE_TO_16BIT is must be called on value manually if needed. */
 #define SET_ARY16(a, idx, value) (global.a##16[idx] = value)
-#define DECLARE_ARY8(a, size) uint8_t a##8[size]
 #define GET_ARY8(a, idx) (+global.a##8[idx])
 /* TRUNCATE_TO_8BIT must be called on value manually if needed. */
 #define SET_ARY8(a, idx, value) (global.a##8[idx] = value)
@@ -254,28 +255,34 @@ struct LzmaAsserts {
 #endif  /* CONFIG_LANG_C */
 
 struct Global {
-  UInt32 bufCur;
-  UInt32 dicSize;  /* Configured in prop byte. */
-  UInt32 range, code;
-  UInt32 dicPos;
-  UInt32 dicBufSize;
-  UInt32 processedPos;
-  UInt32 checkDicSize;
-  UInt32 state;
-  UInt32 rep0, rep1, rep2, rep3;
-  UInt32 remainLen;
-  UInt32 tempBufSize;
-  UInt32 readCur;  /* Index within (or at end of) readBuf. */
-  UInt32 readEnd;  /* Index within (or at end of) readBuf. */
-  Bool needFlush;
-  Bool needInitLzma;
-  Bool needInitDic;
-  Bool needInitState;
-  Bool needInitProp;
-  Byte lc, lp, pb;  /* Configured in prop byte. Also works as UInt32. */
-  DECLARE_ARY16(probs, LZMA2_MAX_NUM_PROBS);  /* Probabilities for bit decoding. */
+  GLOBAL(UInt32, bufCur);
+  GLOBAL(UInt32, dicSize);  /* Configured in prop byte. */
+  GLOBAL(UInt32, range);
+  GLOBAL(UInt32, code);
+  GLOBAL(UInt32, dicPos);
+  GLOBAL(UInt32, dicBufSize);
+  GLOBAL(UInt32, processedPos);
+  GLOBAL(UInt32, checkDicSize);
+  GLOBAL(UInt32, state);
+  GLOBAL(UInt32, rep0);
+  GLOBAL(UInt32, rep1);
+  GLOBAL(UInt32, rep2);
+  GLOBAL(UInt32, rep3);
+  GLOBAL(UInt32, remainLen);
+  GLOBAL(UInt32, tempBufSize);
+  GLOBAL(UInt32, readCur);  /* Index within (or at end of) readBuf. */
+  GLOBAL(UInt32, readEnd);  /* Index within (or at end of) readBuf. */
+  GLOBAL(Bool, needFlush);
+  GLOBAL(Bool, needInitLzma);
+  GLOBAL(Bool, needInitDic);
+  GLOBAL(Bool, needInitState);
+  GLOBAL(Bool, needInitProp);
+  GLOBAL(Byte, lc);  /* Configured in prop byte. */
+  GLOBAL(Byte, lp);  /* Configured in prop byte. */
+  GLOBAL(Byte, pb);  /* Configured in prop byte. */
+  GLOBAL_ARY16(probs, LZMA2_MAX_NUM_PROBS);  /* Probabilities for bit decoding. */
   /* The first READBUF_SIZE bytes is readBuf, then the LZMA_REQUIRED_INPUT_MAX bytes is tempBuf. */
-  DECLARE_ARY8(readBuf, READBUF_SIZE + LZMA_REQUIRED_INPUT_MAX);
+  GLOBAL_ARY8(readBuf, READBUF_SIZE + LZMA_REQUIRED_INPUT_MAX);
   /* Contains the uncompressed data.
    *
    * Array size is about 1.61 GB.
@@ -283,7 +290,7 @@ struct Global {
    * small files, then the operating system won't take the entire array away
    * from other processes.
    */
-  DECLARE_ARY8(dic, DIC_ARRAY_SIZE);
+  GLOBAL_ARY8(dic, DIC_ARRAY_SIZE);
 } global;
 
 /* --- */
