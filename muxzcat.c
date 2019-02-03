@@ -98,6 +98,19 @@ typedef int16_t  Int16;
 typedef uint16_t UInt16;
 typedef uint8_t  Byte;
 
+/* This fails to compile if any condition after the : is false. */
+struct IntegerTypeAsserts {
+  int ByteIsInteger : (Byte)1 / 2 == 0;
+  int ByteIs8Bits : sizeof(Byte) == 1;
+  int ByteIsUnsigned : (Byte)-1 > 0;
+  int UInt16IsInteger : (UInt16)1 / 2 == 0;
+  int UInt16Is16Bits : sizeof(UInt16) == 2;
+  int UInt16IsUnsigned : (UInt16)-1 > 0;
+  int UInt32IsInteger : (UInt32)1 / 2 == 0;
+  int UInt32Is32Bits : sizeof(UInt32) == 4;
+  int UInt32IsUnsigned : (UInt32)-1 > 0;
+};
+
 /* --- */
 
 #ifdef CONFIG_DEBUG
