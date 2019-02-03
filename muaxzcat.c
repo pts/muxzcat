@@ -167,19 +167,18 @@ struct IntegerTypeAsserts {
 
 /* TODO(pts): Simplify doublings: e.g .LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) */
 /* !! Mask the inputs and outputs of GET_ARY8, GET_ARY16, SET_ARY8, SET_ARY16? */
-/* !! Mask the inputs of these operators: >> >>= < > <= >= == != */
-/* !! Use *_SMALL more. */
+/* !! Use *_SMALL more, wherever it works. */
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
 #ifdef CONFIG_LANG_C
 #ifdef CONFIG_UINT64
 #define SHR(x, y) ((x & 0xffffffff) >> (y))
 #define SHR_SMALL(x, y) SHR(x, y)
 #define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> (y))
-#define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0) /* !! */
+#define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
 #define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
-#define LT(x, y) (((x) & 0xffffffff) <  ((y) & 0xffffffff)) /* !! */
+#define LT(x, y) (((x) & 0xffffffff) <  ((y) & 0xffffffff))
 #define LE(x, y) (((x) & 0xffffffff) <= ((y) & 0xffffffff))
-#define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff)) /* !! */
+#define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
 #define GE(x, y) (((x) & 0xffffffff) >= ((y) & 0xffffffff))
 #define EQ_SMALL(x, y) EQ(x, y)
 #define NE_SMALL(x, y) NE(x, y)
@@ -726,8 +725,8 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
 
           LOCAL_VAR(localLen) -= LOCAL_VAR(curLen);
           if (LE(LOCAL_VAR(pos) + LOCAL_VAR(curLen), GLOBAL_VAR(dicBufSize))) {
-            ASSERT(GLOBAL_VAR(dicPos) > LOCAL_VAR(pos));
-            ASSERT(LOCAL_VAR(curLen) > 0);
+            ASSERT(GT(GLOBAL_VAR(dicPos), LOCAL_VAR(pos)));
+            ASSERT(GT(LOCAL_VAR(curLen), 0));
             goto do9; while (NE(--LOCAL_VAR(curLen), 0)) { do9: ;
               SET_ARY8(dic, GLOBAL_VAR(dicPos)++, GET_ARY8(dic, LOCAL_VAR(pos)++));
             }
@@ -750,7 +749,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
     LzmaDec_WriteRem(LOCAL_VAR(dicLimit));
   }
 
-  if (GLOBAL_VAR(remainLen) > kMatchSpecLenStart) {
+  if (GT(GLOBAL_VAR(remainLen), kMatchSpecLenStart)) {
     GLOBAL_VAR(remainLen) = kMatchSpecLenStart;
   }
   return SZ_OK;
@@ -1083,7 +1082,7 @@ FUNC_ARG0(void, IgnoreVarint)
 ENDFUNC
 
 FUNC_ARG1(SRes, IgnoreZeroBytes, UInt32, zeroByteCount)
-  for (; LOCAL_VAR(zeroByteCount) > 0; --LOCAL_VAR(zeroByteCount)) {
+  for (; GT_SMALL(LOCAL_VAR(zeroByteCount), 0); --LOCAL_VAR(zeroByteCount)) {
     if (NE_SMALL(GET_ARY8(readBuf, GLOBAL_VAR(readCur)++), 0)) {
       return SZ_ERROR_BAD_PADDING;
     }
@@ -1113,7 +1112,7 @@ FUNC_ARG1(SRes, InitProp, Byte, propByte)
   LOCAL_VAR(propByte) /= 9;
   GLOBAL_VAR(pb) = LOCAL_VAR(propByte) / 5;
   GLOBAL_VAR(lp) = LOCAL_VAR(propByte) % 5;
-  if (GLOBAL_VAR(lc) + GLOBAL_VAR(lp) > LZMA2_LCLP_MAX) { return SZ_ERROR_BAD_LCLPPB_PROP; }
+  if (GT_SMALL(GLOBAL_VAR(lc) + GLOBAL_VAR(lp), LZMA2_LCLP_MAX)) { return SZ_ERROR_BAD_LCLPPB_PROP; }
   GLOBAL_VAR(needInitProp) = FALSE;
   return SZ_OK;
 ENDFUNC
@@ -1168,7 +1167,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
     }
     if (EQ_SMALL(LOCAL_VAR(bhf), 0)) {
       GLOBAL_VAR(dicBufSize) = LOCAL_VAR(readBufUS) = GetLE4(GLOBAL_VAR(readCur) + 5);
-      if (LOCAL_VAR(readBufUS) > DIC_ARRAY_SIZE) { return SZ_ERROR_MEM; }
+      if (GT(LOCAL_VAR(readBufUS), DIC_ARRAY_SIZE)) { return SZ_ERROR_MEM; }
     } else {
       LOCAL_VAR(readBufUS) = LOCAL_VAR(bhf);  /* max UInt32. */
       GLOBAL_VAR(dicBufSize) = DIC_ARRAY_SIZE;
@@ -1181,12 +1180,12 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
     /* Any Preread(...) amount starting from 1 works here, but higher values
      * are faster.
      */
-    while ((LOCAL_VAR(srcLen) = Preread(READBUF_SIZE)) > 0) {
+    while (GT_SMALL((LOCAL_VAR(srcLen) = Preread(READBUF_SIZE)), 0)) {
       LOCAL(SRes, res);
       LOCAL_VAR(fromDicPos) = GLOBAL_VAR(dicPos);
       LOCAL_VAR(res) = LzmaDec_DecodeToDic(LOCAL_VAR(srcLen));
       DEBUGF("LZMADEC res=%d\n", (int)LOCAL_VAR(res));
-      if (GLOBAL_VAR(dicPos) > LOCAL_VAR(readBufUS)) { GLOBAL_VAR(dicPos) = LOCAL_VAR(readBufUS); }
+      if (GT_SMALL(GLOBAL_VAR(dicPos), LOCAL_VAR(readBufUS))) { GLOBAL_VAR(dicPos) = LOCAL_VAR(readBufUS); }
       if (NE_SMALL((LOCAL_VAR(res) = WriteFrom(LOCAL_VAR(fromDicPos))), SZ_OK)) { return LOCAL_VAR(res); }
       if (EQ_SMALL(LOCAL_VAR(res), SZ_ERROR_FINISHED_WITH_MARK)) { BREAK; }
       if (NE_SMALL(LOCAL_VAR(res), SZ_ERROR_NEEDS_MORE_INPUT) && NE_SMALL(LOCAL_VAR(res), SZ_OK)) { return LOCAL_VAR(res); }
@@ -1248,11 +1247,11 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
      *  * 40: 4294967295 bytes, largest supported by .xz
      */
     DEBUGF("dicSizeProp=0x%02x\n", (int)LOCAL_VAR(dicSizeProp));
-    if (LOCAL_VAR(dicSizeProp) > 40) { return SZ_ERROR_BAD_DICTIONARY_SIZE; }
+    if (GT_SMALL(LOCAL_VAR(dicSizeProp), 40)) { return SZ_ERROR_BAD_DICTIONARY_SIZE; }
     /* LZMA2 and .xz support it, we don't (for simpler memory management on
      * 32-bit systems).
      */
-    if (LOCAL_VAR(dicSizeProp) > 37) { return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE; }
+    if (GT_SMALL(LOCAL_VAR(dicSizeProp), 37)) { return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE; }
     GLOBAL_VAR(dicSize) = ((ENSURE_32BIT(2) | ((LOCAL_VAR(dicSizeProp)) & 1)) << ((LOCAL_VAR(dicSizeProp)) / 2 + 11));
     ASSERT(GE_SMALL(GLOBAL_VAR(dicSize), LZMA_DIC_MIN));
     DEBUGF("dicSize39=%u\n", ((ENSURE_32BIT(2) | ((39) & 1)) << ((39) / 2 + 11)));
@@ -1262,7 +1261,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
     DEBUGF("dicSize35=%u\n", ((ENSURE_32BIT(2) | ((35) & 1)) << ((35) / 2 + 11)));
     LOCAL_VAR(bhs2) = GLOBAL_VAR(readCur) - LOCAL_VAR(readAtBlock) + 5;  /* Won't overflow. */
     DEBUGF("bhs=%d bhs2=%d\n", (int)LOCAL_VAR(bhs), (int)LOCAL_VAR(bhs2));
-    if (LOCAL_VAR(bhs2) > LOCAL_VAR(bhs)) { return SZ_ERROR_BLOCK_HEADER_TOO_LONG; }
+    if (GT_SMALL(LOCAL_VAR(bhs2), LOCAL_VAR(bhs))) { return SZ_ERROR_BLOCK_HEADER_TOO_LONG; }
     if (NE_SMALL((LOCAL_VAR(res) = IgnoreZeroBytes(LOCAL_VAR(bhs) - LOCAL_VAR(bhs2))), SZ_OK)) { return LOCAL_VAR(res); }
     GLOBAL_VAR(readCur) += 4;  /* Ignore CRC32. */
     /* Typically it's LOCAL_VAR(offset) 24, xz creates it by default, minimal. */
@@ -1331,7 +1330,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
         ASSERT(EQ_SMALL(GLOBAL_VAR(dicPos), GLOBAL_VAR(dicBufSize)));
         GLOBAL_VAR(dicBufSize) += LOCAL_VAR(chunkUS);
         /* Decompressed data too long, won't fit to GLOBAL_VAR(dic). */
-        if (GLOBAL_VAR(dicBufSize) > DIC_ARRAY_SIZE) { return SZ_ERROR_MEM; }
+        if (GT_SMALL(GLOBAL_VAR(dicBufSize), DIC_ARRAY_SIZE)) { return SZ_ERROR_MEM; }
         /* Read 6 extra bytes to optimize away a read(...) system call in
          * the Prefetch(6) call in the next chunk header.
          */
