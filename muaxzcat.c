@@ -576,21 +576,18 @@ SRes LzmaDec_DecodeReal2(UInt32 dicLimit, UInt32 bufLimit)
   return SZ_OK;
 }
 
-typedef enum
-{
-  DUMMY_ERROR, /* unexpected end of input stream */
-  DUMMY_LIT,
-  DUMMY_MATCH,
-  DUMMY_REP
-} ELzmaDummy;
+#define DUMMY_ERROR 0  /* unexpected end of input stream */
+#define DUMMY_LIT 1
+#define DUMMY_MATCH 2
+#define DUMMY_REP 3
 
 /* Replace pointer argument buf here with an UInt32 argument. */
-ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
+Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
 {
   UInt32 rangeLocal = global.range;
   UInt32 codeLocal = global.code;
   UInt32 stateLocal = global.state;
-  ELzmaDummy res;
+  Byte res;
 
   {
     UInt32 probIdx;
