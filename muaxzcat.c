@@ -208,21 +208,21 @@ CLzmaDec global;
 
 #define RC_INIT_SIZE 5
 
-#define NORMALIZE if (range < kTopValue) { range <<= 8; code = (code << 8) | (global.readBuf[bufCur++]); }
-#define NORMALIZE_CHECK if (range < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; range <<= 8; code = (code << 8) | (global.readBuf[bufDummyCur++]); }
+#define NORMALIZE if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (global.readBuf[global.bufCur++]); }
+#define NORMALIZE_CHECK if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (global.readBuf[bufDummyCur++]); }
 
 #define GET_BIT(probMacroIdx, i) GET_BIT2(probMacroIdx, i, ; , ;)
 #define GET_BIT2(probMacroIdx, i, A0, A1) IF_BIT_0(probMacroIdx) { UPDATE_0(probMacroIdx); i = (i + i); A0; } else { UPDATE_1(probMacroIdx); i = (i + i) + 1; A1; }
-#define GET_BIT2_CHECK(probMacroIdx, i, A0, A1) IF_BIT_0_CHECK(probMacroIdx) { range = bound; i = (i + i); A0; } else { range -= bound; code -= bound; i = (i + i) + 1; A1; }
+#define GET_BIT2_CHECK(probMacroIdx, i, A0, A1) IF_BIT_0_CHECK(probMacroIdx) { rangeLocal = bound; i = (i + i); A0; } else { rangeLocal -= bound; codeLocal -= bound; i = (i + i) + 1; A1; }
 #define GET_BIT_CHECK(probMacroIdx, i) GET_BIT2_CHECK(probMacroIdx, i, ; , ;)
-#define IF_BIT_0(probMacroIdx) ttt = global.probs[probMacroIdx]; NORMALIZE; bound = (range >> kNumBitModelTotalBits) * ttt; if (code < bound)
-#define IF_BIT_0_CHECK(probMacroIdx) ttt = global.probs[probMacroIdx]; NORMALIZE_CHECK; bound = (range >> kNumBitModelTotalBits) * ttt; if (code < bound)
+#define IF_BIT_0(probMacroIdx) ttt = global.probs[probMacroIdx]; NORMALIZE; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
+#define IF_BIT_0_CHECK(probMacroIdx) ttt = global.probs[probMacroIdx]; NORMALIZE_CHECK; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
 #define TREE_6_DECODE(probMacroIdx, i) TREE_DECODE(probMacroIdx, (1 << 6), i)
 #define TREE_DECODE(probMacroIdx, limit, i) { i = 1; do { TREE_GET_BIT(probMacroIdx, i); } while (i < limit); i -= limit; }
 #define TREE_DECODE_CHECK(probMacroIdx, limit, i) { i = 1; do { GET_BIT_CHECK(probMacroIdx + i, i) } while (i < limit); i -= limit; }
 #define TREE_GET_BIT(probMacroIdx, i) { GET_BIT((probMacroIdx + i), i); }
-#define UPDATE_0(probMacroIdx) range = bound; global.probs[probMacroIdx] = (CLzmaProb)(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits));
-#define UPDATE_1(probMacroIdx) range -= bound; code -= bound; global.probs[probMacroIdx] = (CLzmaProb)(ttt - (ttt >> kNumMoveBits));
+#define UPDATE_0(probMacroIdx) rangeLocal = bound; global.probs[probMacroIdx] = (CLzmaProb)(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits));
+#define UPDATE_1(probMacroIdx) rangeLocal -= bound; codeLocal -= bound; global.probs[probMacroIdx] = (CLzmaProb)(ttt - (ttt >> kNumMoveBits));
 
 #define kNumPosBitsMax 4
 #define kNumPosStatesMax (1 << kNumPosBitsMax)
@@ -277,53 +277,42 @@ CLzmaDec global;
 
 #define LZMA_DIC_MIN (1 << 12)
 
-/* Modifies global.bufCur etc. */
 SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
 {
-  UInt32 state = global.state;
-  UInt32 pbMask = ((UInt32)1 << (global.pb)) - 1;
-  UInt32 lpMask = ((UInt32)1 << (global.lp)) - 1;
-  UInt32 lc = global.lc;
-
-  UInt32 dicBufSize = global.dicBufSize;
-  UInt32 dicPos = global.dicPos;
-
-  UInt32 processedPos = global.processedPos;
-  UInt32 checkDicSize = global.checkDicSize;
+  const UInt32 pbMask = ((UInt32)1 << (global.pb)) - 1;
+  const UInt32 lpMask = ((UInt32)1 << (global.lp)) - 1;
   UInt32 len = 0;
-
-  UInt32 bufCur = global.bufCur;
-  UInt32 range = global.range;
-  UInt32 code = global.code;
+  UInt32 rangeLocal = global.range;
+  UInt32 codeLocal = global.code;
 
   do
   {
     UInt32 probIdx;
     UInt32 bound;
     UInt32 ttt;
-    UInt32 posState = processedPos & pbMask;
+    UInt32 posState = global.processedPos & pbMask;
 
-    probIdx = IsMatch + (state << kNumPosBitsMax) + posState;
+    probIdx = IsMatch + (global.state << kNumPosBitsMax) + posState;
     IF_BIT_0(probIdx)
     {
       UInt32 symbol;
       UPDATE_0(probIdx);
       probIdx = Literal;
-      if (checkDicSize != 0 || processedPos != 0) {
-        probIdx += (LZMA_LIT_SIZE * (((processedPos & lpMask) << lc) + (global.dic[(dicPos == 0 ? dicBufSize : dicPos) - 1] >> (8 - lc))));
+      if (global.checkDicSize != 0 || global.processedPos != 0) {
+        probIdx += (LZMA_LIT_SIZE * (((global.processedPos & lpMask) << global.lc) + (global.dic[(global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1] >> (8 - global.lc))));
       }
 
-      if (state < kNumLitStates)
+      if (global.state < kNumLitStates)
       {
-        state -= (state < 4) ? state : 3;
+        global.state -= (global.state < 4) ? global.state : 3;
         symbol = 1;
         do { GET_BIT(probIdx + symbol, symbol) } while (symbol < 0x100);
       }
       else
       {
-        UInt32 matchByte = global.dic[(dicPos - global.rep0) + ((dicPos < global.rep0) ? dicBufSize : 0)];
+        UInt32 matchByte = global.dic[(global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)];
         UInt32 offs = 0x100;
-        state -= (state < 10) ? 3 : 6;
+        global.state -= (global.state < 10) ? 3 : 6;
         symbol = 1;
         do
         {
@@ -336,37 +325,37 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
         }
         while (symbol < 0x100);
       }
-      global.dic[dicPos++] = (Byte)symbol;
-      processedPos++;
+      global.dic[global.dicPos++] = (Byte)symbol;
+      global.processedPos++;
       continue;
     }
     else
     {
       UPDATE_1(probIdx);
-      probIdx = IsRep + state;
+      probIdx = IsRep + global.state;
       IF_BIT_0(probIdx)
       {
         UPDATE_0(probIdx);
-        state += kNumStates;
+        global.state += kNumStates;
         probIdx = LenCoder;
       }
       else
       {
         UPDATE_1(probIdx);
-        if (checkDicSize == 0 && processedPos == 0)
+        if (global.checkDicSize == 0 && global.processedPos == 0)
           return SZ_ERROR_DATA;
-        probIdx = IsRepG0 + state;
+        probIdx = IsRepG0 + global.state;
         IF_BIT_0(probIdx)
         {
           UPDATE_0(probIdx);
-          probIdx = IsRep0Long + (state << kNumPosBitsMax) + posState;
+          probIdx = IsRep0Long + (global.state << kNumPosBitsMax) + posState;
           IF_BIT_0(probIdx)
           {
             UPDATE_0(probIdx);
-            global.dic[dicPos] = global.dic[(dicPos - global.rep0) + ((dicPos < global.rep0) ? dicBufSize : 0)];
-            dicPos++;
-            processedPos++;
-            state = state < kNumLitStates ? 9 : 11;
+            global.dic[global.dicPos] = global.dic[(global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)];
+            global.dicPos++;
+            global.processedPos++;
+            global.state = global.state < kNumLitStates ? 9 : 11;
             continue;
           }
           UPDATE_1(probIdx);
@@ -375,7 +364,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
         {
           UInt32 distance;
           UPDATE_1(probIdx);
-          probIdx = IsRepG1 + state;
+          probIdx = IsRepG1 + global.state;
           IF_BIT_0(probIdx)
           {
             UPDATE_0(probIdx);
@@ -384,7 +373,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
           else
           {
             UPDATE_1(probIdx);
-            probIdx = IsRepG2 + state;
+            probIdx = IsRepG2 + global.state;
             IF_BIT_0(probIdx)
             {
               UPDATE_0(probIdx);
@@ -401,7 +390,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
           global.rep1 = global.rep0;
           global.rep0 = distance;
         }
-        state = state < kNumLitStates ? 8 : 11;
+        global.state = global.state < kNumLitStates ? 8 : 11;
         probIdx = RepLenCoder;
       }
       {
@@ -437,7 +426,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
         len += offset;
       }
 
-      if (state >= kNumStates)
+      if (global.state >= kNumStates)
       {
         UInt32 distance;
         probIdx = PosSlot + ((len < kNumLenToPosStates ? len : kNumLenToPosStates - 1) << kNumPosSlotBits);
@@ -468,23 +457,15 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
             do
             {
               NORMALIZE
-              range >>= 1;
+              rangeLocal >>= 1;
 
               {
                 UInt32 t;
-                code -= range;
-                t = (0 - ((UInt32)code >> 31));
+                codeLocal -= rangeLocal;
+                t = (0 - ((UInt32)codeLocal >> 31));
                 distance = (distance << 1) + (t + 1);
-                code += range & t;
+                codeLocal += rangeLocal & t;
               }
-              /*
-              distance <<= 1;
-              if (code >= range)
-              {
-                code -= range;
-                distance |= 1;
-              }
-              */
             }
             while (--numDirectBits != 0);
             probIdx = Align;
@@ -499,7 +480,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
             if (distance == (UInt32)0xFFFFFFFF)
             {
               len += kMatchSpecLenStart;
-              state -= kNumStates;
+              global.state -= kNumStates;
               break;
             }
           }
@@ -508,67 +489,62 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
         global.rep2 = global.rep1;
         global.rep1 = global.rep0;
         global.rep0 = distance + 1;
-        if (checkDicSize == 0)
+        if (global.checkDicSize == 0)
         {
-          if (distance >= processedPos)
+          if (distance >= global.processedPos)
             return SZ_ERROR_DATA;
         }
-        else if (distance >= checkDicSize)
+        else if (distance >= global.checkDicSize)
           return SZ_ERROR_DATA;
-        state = (state < kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3;
+        global.state = (global.state < kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3;
       }
 
       len += kMatchMinLen;
 
-      if (limit == dicPos)
+      if (limit == global.dicPos)
         return SZ_ERROR_DATA;
       {
-        UInt32 rem = limit - dicPos;
+        UInt32 rem = limit - global.dicPos;
         UInt32 curLen = ((rem < len) ? (UInt32)rem : len);
-        UInt32 pos = (dicPos - global.rep0) + ((dicPos < global.rep0) ? dicBufSize : 0);
+        UInt32 pos = (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0);
 
-        processedPos += curLen;
+        global.processedPos += curLen;
 
         len -= curLen;
-        if (pos + curLen <= dicBufSize)
+        if (pos + curLen <= global.dicBufSize)
         {
-          ASSERT(dicPos > pos);
+          ASSERT(global.dicPos > pos);
           ASSERT(curLen > 0);
           do {
-            global.dic[dicPos++] = global.dic[pos++];
+            global.dic[global.dicPos++] = global.dic[pos++];
           } while (--curLen != 0);
         }
         else
         {
           do {
-            global.dic[dicPos++] = global.dic[pos++];
-            if (pos == dicBufSize) pos = 0;
+            global.dic[global.dicPos++] = global.dic[pos++];
+            if (pos == global.dicBufSize) pos = 0;
           } while (--curLen != 0);
         }
       }
     }
   }
-  while (dicPos < limit && bufCur < bufLimit);
+  while (global.dicPos < limit && global.bufCur < bufLimit);
   NORMALIZE;
-  global.bufCur = bufCur;
-  global.range = range;
-  global.code = code;
+  global.range = rangeLocal;
+  global.code = codeLocal;
   global.remainLen = len;
-  global.dicPos = dicPos;
-  global.processedPos = processedPos;
-  global.state = state;
 
   return SZ_OK;
 }
 
-void LzmaDec_WriteRem(UInt32 limit)
+void LzmaDec_WriteRem(UInt32 dicLimit)
 {
   if (global.remainLen != 0 && global.remainLen < kMatchSpecLenStart)
   {
-    UInt32 dicBufSize = global.dicBufSize;
     UInt32 len = global.remainLen;
-    if (limit - global.dicPos < len)
-      len = (UInt32)(limit - global.dicPos);
+    if (dicLimit - global.dicPos < len)
+      len = (UInt32)(dicLimit - global.dicPos);
 
     if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= len)
       global.checkDicSize = global.dicSize;
@@ -578,30 +554,30 @@ void LzmaDec_WriteRem(UInt32 limit)
     while (len != 0)
     {
       len--;
-      global.dic[global.dicPos] = global.dic[(global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? dicBufSize : 0)];
+      global.dic[global.dicPos] = global.dic[(global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)];
       global.dicPos++;
     }
   }
 }
 
 /* Modifies global.bufCur etc. */
-SRes LzmaDec_DecodeReal2(UInt32 limit, UInt32 bufLimit)
+SRes LzmaDec_DecodeReal2(UInt32 dicLimit, UInt32 bufLimit)
 {
   do
   {
-    UInt32 limit2 = limit;
+    UInt32 dicLimit2 = dicLimit;
     if (global.checkDicSize == 0)
     {
       UInt32 rem = global.dicSize - global.processedPos;
-      if (limit - global.dicPos > rem)
-        limit2 = global.dicPos + rem;
+      if (dicLimit - global.dicPos > rem)
+        dicLimit2 = global.dicPos + rem;
     }
-    RINOK(LzmaDec_DecodeReal(limit2, bufLimit));
+    RINOK(LzmaDec_DecodeReal(dicLimit2, bufLimit));
     if (global.processedPos >= global.dicSize)
       global.checkDicSize = global.dicSize;
-    LzmaDec_WriteRem(limit);
+    LzmaDec_WriteRem(dicLimit);
   }
-  while (global.dicPos < limit && global.bufCur < bufLimit && global.remainLen < kMatchSpecLenStart);
+  while (global.dicPos < dicLimit && global.bufCur < bufLimit && global.remainLen < kMatchSpecLenStart);
 
   if (global.remainLen > kMatchSpecLenStart)
   {
@@ -621,9 +597,9 @@ typedef enum
 /* Replace pointer argument buf here with an UInt32 argument. */
 ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
 {
-  UInt32 range = global.range;
-  UInt32 code = global.code;
-  UInt32 state = global.state;
+  UInt32 rangeLocal = global.range;
+  UInt32 codeLocal = global.code;
+  UInt32 stateLocal = global.state;
   ELzmaDummy res;
 
   {
@@ -632,10 +608,10 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
     UInt32 ttt;
     UInt32 posState = (global.processedPos) & ((1 << global.pb) - 1);
 
-    probIdx = IsMatch + (state << kNumPosBitsMax) + posState;
+    probIdx = IsMatch + (stateLocal << kNumPosBitsMax) + posState;
     IF_BIT_0_CHECK(probIdx)
     {
-      range = bound;
+      rangeLocal = bound;
 
       /* if (bufLimit - buf >= 7) return DUMMY_LIT; */
 
@@ -644,7 +620,7 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
         probIdx += (LZMA_LIT_SIZE * ((((global.processedPos) & ((1 << (global.lp)) - 1)) << global.lc) + (global.dic[(global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1] >> (8 - global.lc))));
       }
 
-      if (state < kNumLitStates)
+      if (stateLocal < kNumLitStates)
       {
         UInt32 symbol = 1;
         do { GET_BIT_CHECK(probIdx + symbol, symbol) } while (symbol < 0x100);
@@ -671,59 +647,59 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
     else
     {
       UInt32 len;
-      range -= bound; code -= bound;
+      rangeLocal -= bound; codeLocal -= bound;
 
-      probIdx = IsRep + state;
+      probIdx = IsRep + stateLocal;
       IF_BIT_0_CHECK(probIdx)
       {
-        range = bound;
-        state = 0;
+        rangeLocal = bound;
+        stateLocal = 0;
         probIdx = LenCoder;
         res = DUMMY_MATCH;
       }
       else
       {
-        range -= bound; code -= bound;
+        rangeLocal -= bound; codeLocal -= bound;
         res = DUMMY_REP;
-        probIdx = IsRepG0 + state;
+        probIdx = IsRepG0 + stateLocal;
         IF_BIT_0_CHECK(probIdx)
         {
-          range = bound;
-          probIdx = IsRep0Long + (state << kNumPosBitsMax) + posState;
+          rangeLocal = bound;
+          probIdx = IsRep0Long + (stateLocal << kNumPosBitsMax) + posState;
           IF_BIT_0_CHECK(probIdx)
           {
-            range = bound;
+            rangeLocal = bound;
             NORMALIZE_CHECK;
             return DUMMY_REP;
           }
           else
           {
-            range -= bound; code -= bound;
+            rangeLocal -= bound; codeLocal -= bound;
           }
         }
         else
         {
-          range -= bound; code -= bound;
-          probIdx = IsRepG1 + state;
+          rangeLocal -= bound; codeLocal -= bound;
+          probIdx = IsRepG1 + stateLocal;
           IF_BIT_0_CHECK(probIdx)
           {
-            range = bound;
+            rangeLocal = bound;
           }
           else
           {
-            range -= bound; code -= bound;
-            probIdx = IsRepG2 + state;
+            rangeLocal -= bound; codeLocal -= bound;
+            probIdx = IsRepG2 + stateLocal;
             IF_BIT_0_CHECK(probIdx)
             {
-              range = bound;
+              rangeLocal = bound;
             }
             else
             {
-              range -= bound; code -= bound;
+              rangeLocal -= bound; codeLocal -= bound;
             }
           }
         }
-        state = kNumStates;
+        stateLocal = kNumStates;
         probIdx = RepLenCoder;
       }
       {
@@ -731,25 +707,25 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
         UInt32 probLenIdx = probIdx + LenChoice;
         IF_BIT_0_CHECK(probLenIdx)
         {
-          range = bound;
+          rangeLocal = bound;
           probLenIdx = probIdx + LenLow + (posState << kLenNumLowBits);
           offset = 0;
           limit = 1 << kLenNumLowBits;
         }
         else
         {
-          range -= bound; code -= bound;
+          rangeLocal -= bound; codeLocal -= bound;
           probLenIdx = probIdx + LenChoice2;
           IF_BIT_0_CHECK(probLenIdx)
           {
-            range = bound;
+            rangeLocal = bound;
             probLenIdx = probIdx + LenMid + (posState << kLenNumMidBits);
             offset = kLenNumLowSymbols;
             limit = 1 << kLenNumMidBits;
           }
           else
           {
-            range -= bound; code -= bound;
+            rangeLocal -= bound; codeLocal -= bound;
             probLenIdx = probIdx + LenHigh;
             offset = kLenNumLowSymbols + kLenNumMidSymbols;
             limit = 1 << kLenNumHighBits;
@@ -759,7 +735,7 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
         len += offset;
       }
 
-      if (state < 4)
+      if (stateLocal < 4)
       {
         UInt32 posSlot;
         probIdx = PosSlot + ((len < kNumLenToPosStates ? len : kNumLenToPosStates - 1) << kNumPosSlotBits);
@@ -780,9 +756,8 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
             do
             {
               NORMALIZE_CHECK
-              range >>= 1;
-              code -= range & (((code - range) >> 31) - 1);
-              /* if (code >= range) code -= range; */
+              rangeLocal >>= 1;
+              codeLocal -= rangeLocal & (((codeLocal - rangeLocal) >> 31) - 1);
             }
             while (--numDirectBits != 0);
             probIdx = Align;
@@ -846,8 +821,7 @@ void LzmaDec_InitStateReal(void)
 SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
   /* Index limit in global.readBuf. */
   const UInt32 decodeLimit = global.readCur + srcLen;
-  const UInt32 dicLimit = global.dicBufSize;
-  LzmaDec_WriteRem(dicLimit);
+  LzmaDec_WriteRem(global.dicBufSize);
 
   while (global.remainLen != kMatchSpecLenStart)
   {
@@ -871,7 +845,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
       }
 
       checkEndMarkNow = False;
-      if (global.dicPos >= dicLimit)
+      if (global.dicPos >= global.dicBufSize)
       {
         if (global.remainLen == 0 && global.code == 0)
         {
@@ -914,7 +888,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         else
           bufLimit = decodeLimit - LZMA_REQUIRED_INPUT_MAX;
         global.bufCur = global.readCur;  /* !! Use readCur instead of global.bufCur? */
-        if (LzmaDec_DecodeReal2(dicLimit, bufLimit) != 0)
+        if (LzmaDec_DecodeReal2(global.dicBufSize, bufLimit) != 0)
           return SZ_ERROR_DATA;
         global.readCur = global.bufCur;
       }
