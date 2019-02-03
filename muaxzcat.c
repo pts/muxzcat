@@ -1035,7 +1035,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
       GLOBAL_VAR(dicBufSize) = DIC_ARRAY_SIZE;
     }
     GLOBAL_VAR(readCur) += 13;  /* Start decompressing the 0 byte. */
-    DEBUGF("LZMA dicSize=0x%x us=%d LOCAL_VAR(bhf)=%d\n", GLOBAL_VAR(dicSize), LOCAL_VAR(readBufUS), LOCAL_VAR(bhf));
+    DEBUGF("LZMA dicSize=0x%x us=%d bhf=%d\n", GLOBAL_VAR(dicSize), LOCAL_VAR(readBufUS), LOCAL_VAR(bhf));
     /* TODO(pts): Limit on uncompressed size unless 8 bytes of -1 is
      * specified.
      */
@@ -1046,7 +1046,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
       LOCAL(SRes, res);
       LOCAL_VAR(fromDicPos) = GLOBAL_VAR(dicPos);
       LOCAL_VAR(res) = LzmaDec_DecodeToDic(LOCAL_VAR(srcLen));
-      DEBUGF("LZMADEC LOCAL_VAR(res)=%d\n", LOCAL_VAR(res));
+      DEBUGF("LZMADEC res=%d\n", LOCAL_VAR(res));
       if (GLOBAL_VAR(dicPos) > LOCAL_VAR(readBufUS)) { GLOBAL_VAR(dicPos) = LOCAL_VAR(readBufUS); } 
       if ((LOCAL_VAR(res) = WriteFrom(LOCAL_VAR(fromDicPos))) != SZ_OK) { return LOCAL_VAR(res); }
       if (LOCAL_VAR(res) == SZ_ERROR_FINISHED_WITH_MARK) { BREAK; }
