@@ -937,13 +937,11 @@ UInt32 Preread(UInt32 r) {
   ASSERT(r <= READBUF_SIZE);
   if (p < r) {  /* Not enough pending available. */
     if (READBUF_SIZE - global.readCur + 0U < r) {
-      UInt32 copyIdx;
       /* If no room for r bytes to the end, discard bytes from the beginning. */
       DEBUGF("MEMMOVE size=%d\n", p);
-      for (copyIdx = 0; copyIdx < p; ++copyIdx) {
-        global.readBuf[copyIdx] = global.readBuf[global.readCur + copyIdx];
+      for (global.readEnd = 0; global.readEnd < p; ++global.readEnd) {
+        global.readBuf[global.readEnd] = global.readBuf[global.readCur + global.readEnd];
       }
-      global.readEnd = p;
       global.readCur = 0;
     }
     while (p < r) {
