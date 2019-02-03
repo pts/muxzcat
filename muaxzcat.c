@@ -164,7 +164,7 @@ typedef struct {
   UInt32 processedPos;
   UInt32 checkDicSize;
   UInt32 state;
-  UInt32 reps[4];
+  UInt32 rep0, rep1, rep2, rep3;
   UInt32 remainLen;
   UInt32 tempBufSize;
   UInt32 readCur;  /* Index within (or at end of) readBuf. */
@@ -301,7 +301,6 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
   CLzmaProb *probs = global.probs;
 
   UInt32 state = global.state;
-  UInt32 rep0 = global.reps[0], rep1 = global.reps[1], rep2 = global.reps[2], rep3 = global.reps[3];
   UInt32 pbMask = ((UInt32)1 << (global.pb)) - 1;
   UInt32 lpMask = ((UInt32)1 << (global.lp)) - 1;
   UInt32 lc = global.lc;
@@ -342,7 +341,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
       }
       else
       {
-        UInt32 matchByte = global.dic[(dicPos - rep0) + ((dicPos < rep0) ? dicBufSize : 0)];
+        UInt32 matchByte = global.dic[(dicPos - global.rep0) + ((dicPos < global.rep0) ? dicBufSize : 0)];
         UInt32 offs = 0x100;
         state -= (state < 10) ? 3 : 6;
         symbol = 1;
@@ -384,7 +383,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
           IF_BIT_0(prob)
           {
             UPDATE_0(prob);
-            global.dic[dicPos] = global.dic[(dicPos - rep0) + ((dicPos < rep0) ? dicBufSize : 0)];
+            global.dic[dicPos] = global.dic[(dicPos - global.rep0) + ((dicPos < global.rep0) ? dicBufSize : 0)];
             dicPos++;
             processedPos++;
             state = state < kNumLitStates ? 9 : 11;
@@ -400,7 +399,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
           IF_BIT_0(prob)
           {
             UPDATE_0(prob);
-            distance = rep1;
+            distance = global.rep1;
           }
           else
           {
@@ -409,18 +408,18 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
             IF_BIT_0(prob)
             {
               UPDATE_0(prob);
-              distance = rep2;
+              distance = global.rep2;
             }
             else
             {
               UPDATE_1(prob);
-              distance = rep3;
-              rep3 = rep2;
+              distance = global.rep3;
+              global.rep3 = global.rep2;
             }
-            rep2 = rep1;
+            global.rep2 = global.rep1;
           }
-          rep1 = rep0;
-          rep0 = distance;
+          global.rep1 = global.rep0;
+          global.rep0 = distance;
         }
         state = state < kNumLitStates ? 8 : 11;
         prob = probs + RepLenCoder;
@@ -526,10 +525,10 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
             }
           }
         }
-        rep3 = rep2;
-        rep2 = rep1;
-        rep1 = rep0;
-        rep0 = distance + 1;
+        global.rep3 = global.rep2;
+        global.rep2 = global.rep1;
+        global.rep1 = global.rep0;
+        global.rep0 = distance + 1;
         if (checkDicSize == 0)
         {
           if (distance >= processedPos)
@@ -547,7 +546,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
       {
         UInt32 rem = limit - dicPos;
         UInt32 curLen = ((rem < len) ? (UInt32)rem : len);
-        UInt32 pos = (dicPos - rep0) + ((dicPos < rep0) ? dicBufSize : 0);
+        UInt32 pos = (dicPos - global.rep0) + ((dicPos < global.rep0) ? dicBufSize : 0);
 
         processedPos += curLen;
 
@@ -578,10 +577,6 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
   global.remainLen = len;
   global.dicPos = dicPos;
   global.processedPos = processedPos;
-  global.reps[0] = rep0;
-  global.reps[1] = rep1;
-  global.reps[2] = rep2;
-  global.reps[3] = rep3;
   global.state = state;
 
   return SZ_OK;
@@ -593,7 +588,6 @@ void LzmaDec_WriteRem(UInt32 limit)
   {
     UInt32 dicBufSize = global.dicBufSize;
     UInt32 len = global.remainLen;
-    UInt32 rep0 = global.reps[0];
     if (limit - global.dicPos < len)
       len = (UInt32)(limit - global.dicPos);
 
@@ -605,7 +599,7 @@ void LzmaDec_WriteRem(UInt32 limit)
     while (len != 0)
     {
       len--;
-      global.dic[global.dicPos] = global.dic[(global.dicPos - rep0) + ((global.dicPos < rep0) ? dicBufSize : 0)];
+      global.dic[global.dicPos] = global.dic[(global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? dicBufSize : 0)];
       global.dicPos++;
     }
   }
@@ -680,8 +674,8 @@ ELzmaDummy LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
       }
       else
       {
-        UInt32 matchByte = global.dic[global.dicPos - global.reps[0] +
-            ((global.dicPos < global.reps[0]) ? global.dicBufSize : 0)];
+        UInt32 matchByte = global.dic[global.dicPos - global.rep0 +
+            ((global.dicPos < global.rep0) ? global.dicBufSize : 0)];
         UInt32 offs = 0x100;
         UInt32 symbol = 1;
         do
@@ -866,7 +860,7 @@ void LzmaDec_InitStateReal(void)
   CLzmaProb *probs = global.probs;
   for (i = 0; i < numProbs; i++)
     probs[i] = kBitModelTotal >> 1;
-  global.reps[0] = global.reps[1] = global.reps[2] = global.reps[3] = 1;
+  global.rep0 = global.rep1 = global.rep2 = global.rep3 = 1;
   global.state = 0;
   global.needInitLzma = False;
 }
