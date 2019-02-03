@@ -1003,14 +1003,13 @@ SRes InitProp(Byte b) {
   return SZ_OK;
 }
 
-/* Writes uncompressed data (global.dic[oldDicPos : global.dicPos] to stdout. */
-SRes WriteFrom(UInt32 oldDicPos) {
-  const Byte *q = global.dic + global.dicPos, *p = global.dic + oldDicPos;
-  DEBUGF("WRITE %d dicPos=%d\n", (int)(q - p), global.dicPos);
-  while (p != q) {
-    const Int32 got = write(1, p, q - p);
+/* Writes uncompressed data (global.dic[fromDicPos : global.dicPos] to stdout. */
+SRes WriteFrom(UInt32 fromDicPos) {
+  DEBUGF("WRITE %d dicPos=%d\n", global.dicPos - fromDicPos, global.dicPos);
+  while (fromDicPos != global.dicPos) {
+    const Int32 got = write(1, global.dic + fromDicPos, global.dicPos - fromDicPos);
     if (got <= 0) return SZ_ERROR_WRITE;
-    p += got;
+    fromDicPos += got;
   }
   return SZ_OK;
 }
@@ -1037,7 +1036,7 @@ SRes DecompressXzOrLzma(void) {
     /* Based on https://svn.python.org/projects/external/xz-5.0.3/doc/lzma-file-format.txt */
     UInt32 us;
     UInt32 srcLen;
-    UInt32 oldDicPos;
+    UInt32 fromDicPos;
     InitDecode();
     /* LZMA restricts lc + lp <= 4. LZMA requires lc + lp <= 12.
      * We apply the LZMA2 restriction here (to save memory in
@@ -1062,11 +1061,11 @@ SRes DecompressXzOrLzma(void) {
      */
     while ((srcLen = Preread(READBUF_SIZE)) > 0) {
       SRes res;
-      oldDicPos = global.dicPos;
+      fromDicPos = global.dicPos;
       res = LzmaDec_DecodeToDic(srcLen);
       DEBUGF("LZMADEC res=%d\n", res);
       if (global.dicPos > us) global.dicPos = us;
-      RINOK(WriteFrom(oldDicPos));
+      RINOK(WriteFrom(fromDicPos));
       if (res == SZ_ERROR_FINISHED_WITH_MARK) break;
       if (res != SZ_ERROR_NEEDS_MORE_INPUT && res != SZ_OK) return res;
       if (global.dicPos == us) break;
