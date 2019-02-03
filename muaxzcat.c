@@ -273,21 +273,18 @@ struct ProbsAsserts {
   int LiteralCode : Literal == LZMA_BASE_SIZE;
 };
 
-void LzmaDec_WriteRem(UInt32 dicLimit)
-{
-  if (global.remainLen != 0 && global.remainLen < kMatchSpecLenStart)
-  {
+void LzmaDec_WriteRem(UInt32 dicLimit) {
+  if (global.remainLen != 0 && global.remainLen < kMatchSpecLenStart) {
     UInt32 len = global.remainLen;
-    if (dicLimit - global.dicPos < len)
+    if (dicLimit - global.dicPos < len) {
       len = (UInt32)(dicLimit - global.dicPos);
-
-    if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= len)
+    }
+    if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= len) {
       global.checkDicSize = global.dicSize;
-
+    }
     global.processedPos += len;
     global.remainLen -= len;
-    while (len != 0)
-    {
+    while (len != 0) {
       len--;
       SET_ARY8(dic, global.dicPos, GET_ARY8(dic, (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)));
       global.dicPos++;
@@ -296,8 +293,7 @@ void LzmaDec_WriteRem(UInt32 dicLimit)
 }
 
 /* Modifies global.bufCur etc. */
-SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit)
-{
+SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit) {
   const UInt32 pbMask = ((UInt32)1 << (global.pb)) - 1;
   const UInt32 lpMask = ((UInt32)1 << (global.lp)) - 1;
   do {
@@ -312,64 +308,55 @@ SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit)
       UInt32 posState = global.processedPos & pbMask;
 
       probIdx = IsMatch + (global.state << kNumPosBitsMax) + posState;
-      ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-      {
+      ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+      if (codeLocal < bound) {
         UInt32 symbol;
         rangeLocal = bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));;
         probIdx = Literal;
         if (global.checkDicSize != 0 || global.processedPos != 0) {
           probIdx += (LZMA_LIT_SIZE * (((global.processedPos & lpMask) << global.lc) + (GET_ARY8(dic, (global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1) >> (8 - global.lc))));
         }
-
-        if (global.state < kNumLitStates)
-        {
+        if (global.state < kNumLitStates) {
           global.state -= (global.state < 4) ? global.state : 3;
           symbol = 1;
           do { ttt = GET_ARY16(probs, probIdx + symbol); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; SET_ARY16(probs, probIdx + symbol, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));; symbol = (symbol + symbol); ;; } else { rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probIdx + symbol, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));; symbol = (symbol + symbol) + 1; ;; } } while (symbol < 0x100);
-        }
-        else
-        {
+        } else {
           UInt32 matchByte = GET_ARY8(dic, (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0));
           UInt32 offs = 0x100;
           global.state -= (global.state < 10) ? 3 : 6;
           symbol = 1;
-          do
-          {
+          do {
             UInt32 bit;
             UInt32 probLitIdx;
             matchByte <<= 1;
             bit = (matchByte & offs);
             probLitIdx = probIdx + offs + bit + symbol;
             ttt = GET_ARY16(probs, probLitIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; SET_ARY16(probs, probLitIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));; symbol = (symbol + symbol); offs &= ~bit; } else { rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probLitIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));; symbol = (symbol + symbol) + 1; offs &= bit; }
-          }
-          while (symbol < 0x100);
+          } while (symbol < 0x100);
         }
         SET_ARY8(dic, global.dicPos++, TRUNCATE_TO_8BIT(symbol));
         global.processedPos++;
         continue;
-      }
-      else
-      {
+      } else {
         rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));;
         probIdx = IsRep + global.state;
-        ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-        {
+        ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+        if (codeLocal < bound) {
           rangeLocal = bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));;
           global.state += kNumStates;
           probIdx = LenCoder;
-        }
-        else
-        {
+        } else {
           rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));;
-          if (global.checkDicSize == 0 && global.processedPos == 0)
+          if (global.checkDicSize == 0 && global.processedPos == 0) {
             return SZ_ERROR_DATA;
+          }
           probIdx = IsRepG0 + global.state;
-          ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-          {
+          ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+          if (codeLocal < bound) {
             rangeLocal = bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));;
             probIdx = IsRep0Long + (global.state << kNumPosBitsMax) + posState;
-            ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-            {
+            ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+            if (codeLocal < bound) {
               rangeLocal = bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));;
               SET_ARY8(dic, global.dicPos, GET_ARY8(dic, (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)));
               global.dicPos++;
@@ -378,28 +365,22 @@ SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit)
               continue;
             }
             rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));;
-          }
-          else
-          {
+          } else {
             UInt32 distance;
             rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));;
             probIdx = IsRepG1 + global.state;
-            ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-            {
+            ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+            if (codeLocal < bound) {
               rangeLocal = bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));;
               distance = global.rep1;
-            }
-            else
-            {
+            } else {
               rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));;
               probIdx = IsRepG2 + global.state;
-              ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-              {
+              ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+              if (codeLocal < bound) {
                 rangeLocal = bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));;
                 distance = global.rep2;
-              }
-              else
-              {
+              } else {
                 rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));;
                 distance = global.rep3;
                 global.rep3 = global.rep2;
@@ -415,26 +396,22 @@ SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit)
         {
           UInt32 limitSub, offset;
           UInt32 probLenIdx = probIdx + LenChoice;
-          ttt = GET_ARY16(probs, probLenIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-          {
+          ttt = GET_ARY16(probs, probLenIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+          if (codeLocal < bound) {
             rangeLocal = bound; SET_ARY16(probs, probLenIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));;
             probLenIdx = probIdx + LenLow + (posState << kLenNumLowBits);
             offset = 0;
             limitSub = (1 << kLenNumLowBits);
-          }
-          else
-          {
+          } else {
             rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probLenIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));;
             probLenIdx = probIdx + LenChoice2;
-            ttt = GET_ARY16(probs, probLenIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-            {
+            ttt = GET_ARY16(probs, probLenIdx); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+            if (codeLocal < bound) {
               rangeLocal = bound; SET_ARY16(probs, probLenIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));;
               probLenIdx = probIdx + LenMid + (posState << kLenNumMidBits);
               offset = kLenNumLowSymbols;
               limitSub = (1 << kLenNumMidBits);
-            }
-            else
-            {
+            } else {
               rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probLenIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));;
               probLenIdx = probIdx + LenHigh;
               offset = kLenNumLowSymbols + kLenNumMidSymbols;
@@ -445,48 +422,36 @@ SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit)
           len += offset;
         }
 
-        if (global.state >= kNumStates)
-        {
+        if (global.state >= kNumStates) {
           UInt32 distance;
           probIdx = PosSlot + ((len < kNumLenToPosStates ? len : kNumLenToPosStates - 1) << kNumPosSlotBits);
           { distance = 1; do { { ttt = GET_ARY16(probs, (probIdx + distance)); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; SET_ARY16(probs, (probIdx + distance), TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));; distance = (distance + distance); ;; } else { rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, (probIdx + distance), TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));; distance = (distance + distance) + 1; ;; }; }; } while (distance < (1 << 6)); distance -= (1 << 6); };
-          if (distance >= kStartPosModelIndex)
-          {
+          if (distance >= kStartPosModelIndex) {
             UInt32 posSlot = (UInt32)distance;
             int numDirectBits = (int)(((distance >> 1) - 1));
             distance = (2 | (distance & 1));
-            if (posSlot < kEndPosModelIndex)
-            {
+            if (posSlot < kEndPosModelIndex) {
               distance <<= numDirectBits;
               probIdx = SpecPos + distance - posSlot - 1;
               {
                 UInt32 mask = 1;
                 UInt32 i = 1;
-                do
-                {
+                do {
                   ttt = GET_ARY16(probs, probIdx + i); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; SET_ARY16(probs, probIdx + i, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));; i = (i + i); ;; } else { rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probIdx + i, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));; i = (i + i) + 1; distance |= mask; };
                   mask <<= 1;
-                }
-                while (--numDirectBits != 0);
+                } while (--numDirectBits != 0);
               }
-            }
-            else
-            {
+            } else {
               numDirectBits -= kNumAlignBits;
-              do
-              {
+              do {
+                UInt32 t;
                 if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }
                 rangeLocal >>= 1;
-
-                {
-                  UInt32 t;
-                  codeLocal -= rangeLocal;
-                  t = (0 - ((UInt32)codeLocal >> 31));
-                  distance = (distance << 1) + (t + 1);
-                  codeLocal += rangeLocal & t;
-                }
-              }
-              while (--numDirectBits != 0);
+                codeLocal -= rangeLocal;
+                t = (0 - ((UInt32)codeLocal >> 31));
+                distance = (distance << 1) + (t + 1);
+                codeLocal += rangeLocal & t;
+              } while (--numDirectBits != 0);
               probIdx = Align;
               distance <<= kNumAlignBits;
               {
@@ -496,8 +461,7 @@ SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit)
                 ttt = GET_ARY16(probs, probIdx + i); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; SET_ARY16(probs, probIdx + i, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));; i = (i + i); ;; } else { rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probIdx + i, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));; i = (i + i) + 1; distance |= 4; };
                 ttt = GET_ARY16(probs, probIdx + i); if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; SET_ARY16(probs, probIdx + i, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));; i = (i + i); ;; } else { rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probIdx + i, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));; i = (i + i) + 1; distance |= 8; };
               }
-              if (distance == (UInt32)0xFFFFFFFF)
-              {
+              if (distance == (UInt32)0xFFFFFFFF) {
                 len += kMatchSpecLenStart;
                 global.state -= kNumStates;
                 break;
@@ -508,20 +472,22 @@ SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit)
           global.rep2 = global.rep1;
           global.rep1 = global.rep0;
           global.rep0 = distance + 1;
-          if (global.checkDicSize == 0)
-          {
-            if (distance >= global.processedPos)
+          if (global.checkDicSize == 0) {
+            if (distance >= global.processedPos) {
               return SZ_ERROR_DATA;
+            }
           }
-          else if (distance >= global.checkDicSize)
+          else if (distance >= global.checkDicSize) {
             return SZ_ERROR_DATA;
+          }
           global.state = (global.state < kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3;
         }
 
         len += kMatchMinLen;
 
-        if (dicLimit2 == global.dicPos)
+        if (dicLimit2 == global.dicPos) {
           return SZ_ERROR_DATA;
+        }
         {
           UInt32 rem = dicLimit2 - global.dicPos;
           UInt32 curLen = ((rem < len) ? (UInt32)rem : len);
@@ -530,16 +496,13 @@ SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit)
           global.processedPos += curLen;
 
           len -= curLen;
-          if (pos + curLen <= global.dicBufSize)
-          {
+          if (pos + curLen <= global.dicBufSize) {
             ASSERT(global.dicPos > pos);
             ASSERT(curLen > 0);
             do {
               SET_ARY8(dic, global.dicPos++, GET_ARY8(dic, pos++));
             } while (--curLen != 0);
-          }
-          else
-          {
+          } else {
             do {
               SET_ARY8(dic, global.dicPos++, GET_ARY8(dic, pos++));
               if (pos == global.dicBufSize) pos = 0;
@@ -552,26 +515,24 @@ SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit)
     global.range = rangeLocal;
     global.code = codeLocal;
     global.remainLen = len;
-    if (global.processedPos >= global.dicSize)
+    if (global.processedPos >= global.dicSize) {
       global.checkDicSize = global.dicSize;
+    }
     LzmaDec_WriteRem(dicLimit);
   } while (global.dicPos < dicLimit && global.bufCur < bufLimit && global.remainLen < kMatchSpecLenStart);
 
-  if (global.remainLen > kMatchSpecLenStart)
-  {
+  if (global.remainLen > kMatchSpecLenStart) {
     global.remainLen = kMatchSpecLenStart;
   }
   return SZ_OK;
 }
 
 /* Replace pointer argument buf here with an UInt32 argument. */
-Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
-{
+Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit) {
   UInt32 rangeLocal = global.range;
   UInt32 codeLocal = global.code;
   UInt32 stateLocal = global.state;
   Byte res;
-
   {
     UInt32 probIdx;
     UInt32 bound;
@@ -579,91 +540,71 @@ Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
     UInt32 posState = (global.processedPos) & ((1 << global.pb) - 1);
 
     probIdx = IsMatch + (stateLocal << kNumPosBitsMax) + posState;
-    ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-    {
+    ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+    if (codeLocal < bound) {
       rangeLocal = bound;
-
-      /* if (bufLimit - buf >= 7) return DUMMY_LIT; */
-
       probIdx = Literal;
       if (global.checkDicSize != 0 || global.processedPos != 0) {
         probIdx += (LZMA_LIT_SIZE * ((((global.processedPos) & ((1 << (global.lp)) - 1)) << global.lc) + (GET_ARY8(dic, (global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1) >> (8 - global.lc))));
       }
 
-      if (stateLocal < kNumLitStates)
-      {
+      if (stateLocal < kNumLitStates) {
         UInt32 symbol = 1;
-        do { ttt = GET_ARY16(probs, probIdx + symbol); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; symbol = (symbol + symbol); ;; } else { rangeLocal -= bound; codeLocal -= bound; symbol = (symbol + symbol) + 1; ;; } } while (symbol < 0x100);
-      }
-      else
-      {
+        do { ttt = GET_ARY16(probs, probIdx + symbol); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; symbol = (symbol + symbol); ;; } else { rangeLocal -= bound; codeLocal -= bound; symbol = (symbol + symbol) + 1; ;; } } while (symbol < 0x100);
+      } else {
         UInt32 matchByte = GET_ARY8(dic, global.dicPos - global.rep0 + ((global.dicPos < global.rep0) ? global.dicBufSize : 0));
         UInt32 offs = 0x100;
         UInt32 symbol = 1;
-        do
-        {
+        do {
           UInt32 bit;
           UInt32 probLitIdx;
           matchByte <<= 1;
           bit = (matchByte & offs);
           probLitIdx = probIdx + offs + bit + symbol;
-          ttt = GET_ARY16(probs, probLitIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; symbol = (symbol + symbol); offs &= ~bit; } else { rangeLocal -= bound; codeLocal -= bound; symbol = (symbol + symbol) + 1; offs &= bit; }
-        }
-        while (symbol < 0x100);
+          ttt = GET_ARY16(probs, probLitIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; symbol = (symbol + symbol); offs &= ~bit; } else { rangeLocal -= bound; codeLocal -= bound; symbol = (symbol + symbol) + 1; offs &= bit; }
+        } while (symbol < 0x100);
       }
       res = DUMMY_LIT;
-    }
-    else
-    {
+    } else {
       UInt32 len;
       rangeLocal -= bound; codeLocal -= bound;
 
       probIdx = IsRep + stateLocal;
-      ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-      {
+      ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+       if (codeLocal < bound) {
         rangeLocal = bound;
         stateLocal = 0;
         probIdx = LenCoder;
         res = DUMMY_MATCH;
-      }
-      else
-      {
+      } else {
         rangeLocal -= bound; codeLocal -= bound;
         res = DUMMY_REP;
         probIdx = IsRepG0 + stateLocal;
-        ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-        {
+        ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+        if (codeLocal < bound) {
           rangeLocal = bound;
           probIdx = IsRep0Long + (stateLocal << kNumPosBitsMax) + posState;
-          ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-          {
+          ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+          if (codeLocal < bound) {
             rangeLocal = bound;
-            if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); };
+            if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); };
             return DUMMY_REP;
-          }
-          else
-          {
+          } else {
             rangeLocal -= bound; codeLocal -= bound;
           }
-        }
-        else
-        {
+        } else {
           rangeLocal -= bound; codeLocal -= bound;
           probIdx = IsRepG1 + stateLocal;
-          ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-          {
+          ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+          if (codeLocal < bound) {
             rangeLocal = bound;
-          }
-          else
-          {
+          } else {
             rangeLocal -= bound; codeLocal -= bound;
             probIdx = IsRepG2 + stateLocal;
-            ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-            {
+            ttt = GET_ARY16(probs, probIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+            if (codeLocal < bound) {
               rangeLocal = bound;
-            }
-            else
-            {
+            } else {
               rangeLocal -= bound; codeLocal -= bound;
             }
           }
@@ -674,61 +615,47 @@ Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
       {
         UInt32 limitSub, offset;
         UInt32 probLenIdx = probIdx + LenChoice;
-        ttt = GET_ARY16(probs, probLenIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-        {
+        ttt = GET_ARY16(probs, probLenIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+        if (codeLocal < bound) {
           rangeLocal = bound;
           probLenIdx = probIdx + LenLow + (posState << kLenNumLowBits);
           offset = 0;
           limitSub = 1 << kLenNumLowBits;
-        }
-        else
-        {
+        } else {
           rangeLocal -= bound; codeLocal -= bound;
           probLenIdx = probIdx + LenChoice2;
-          ttt = GET_ARY16(probs, probLenIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-          {
+          ttt = GET_ARY16(probs, probLenIdx); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt;
+          if (codeLocal < bound) {
             rangeLocal = bound;
             probLenIdx = probIdx + LenMid + (posState << kLenNumMidBits);
             offset = kLenNumLowSymbols;
             limitSub = 1 << kLenNumMidBits;
-          }
-          else
-          {
+          } else {
             rangeLocal -= bound; codeLocal -= bound;
             probLenIdx = probIdx + LenHigh;
             offset = kLenNumLowSymbols + kLenNumMidSymbols;
             limitSub = 1 << kLenNumHighBits;
           }
         }
-        { len = 1; do { ttt = GET_ARY16(probs, probLenIdx + len); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; len = (len + len); ;; } else { rangeLocal -= bound; codeLocal -= bound; len = (len + len) + 1; ;; } } while (len < limitSub); len -= limitSub; };
+        { len = 1; do { ttt = GET_ARY16(probs, probLenIdx + len); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; len = (len + len); ;; } else { rangeLocal -= bound; codeLocal -= bound; len = (len + len) + 1; ;; } } while (len < limitSub); len -= limitSub; };
         len += offset;
       }
 
-      if (stateLocal < 4)
-      {
+      if (stateLocal < 4) {
         UInt32 posSlot;
         probIdx = PosSlot + ((len < kNumLenToPosStates ? len : kNumLenToPosStates - 1) << kNumPosSlotBits);
-        { posSlot = 1; do { ttt = GET_ARY16(probs, probIdx + posSlot); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; posSlot = (posSlot + posSlot); ;; } else { rangeLocal -= bound; codeLocal -= bound; posSlot = (posSlot + posSlot) + 1; ;; } } while (posSlot < 1 << kNumPosSlotBits); posSlot -= 1 << kNumPosSlotBits; };
-        if (posSlot >= kStartPosModelIndex)
-        {
+        { posSlot = 1; do { ttt = GET_ARY16(probs, probIdx + posSlot); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; posSlot = (posSlot + posSlot); ;; } else { rangeLocal -= bound; codeLocal -= bound; posSlot = (posSlot + posSlot) + 1; ;; } } while (posSlot < 1 << kNumPosSlotBits); posSlot -= 1 << kNumPosSlotBits; };
+        if (posSlot >= kStartPosModelIndex) {
           UInt32 numDirectBits = ((posSlot >> 1) - 1);
-
-          /* if (bufLimit - buf >= 8) return DUMMY_MATCH; */
-
-          if (posSlot < kEndPosModelIndex)
-          {
+          if (posSlot < kEndPosModelIndex) {
             probIdx = SpecPos + ((2 | (posSlot & 1)) << numDirectBits) - posSlot - 1;
-          }
-          else
-          {
+          } else {
             numDirectBits -= kNumAlignBits;
-            do
-            {
-              if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }
+            do {
+              if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }
               rangeLocal >>= 1;
               codeLocal -= rangeLocal & (((codeLocal - rangeLocal) >> 31) - 1);
-            }
-            while (--numDirectBits != 0);
+            } while (--numDirectBits != 0);
             probIdx = Align;
             numDirectBits = kNumAlignBits;
           }
@@ -736,32 +663,30 @@ Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
             UInt32 i = 1;
             do
             {
-              ttt = GET_ARY16(probs, probIdx + i); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; i = (i + i); ;; } else { rangeLocal -= bound; codeLocal -= bound; i = (i + i) + 1; ;; };
-            }
-            while (--numDirectBits != 0);
+              ttt = GET_ARY16(probs, probIdx + i); if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound) { rangeLocal = bound; i = (i + i); ;; } else { rangeLocal -= bound; codeLocal -= bound; i = (i + i) + 1; ;; };
+            } while (--numDirectBits != 0);
           }
         }
       }
     }
   }
-  if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); };
+  if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); };
   return res;
 }
 
-void LzmaDec_InitDicAndState(const Bool initDic, const Bool initState)
-{
+void LzmaDec_InitDicAndState(const Bool initDic, const Bool initState) {
   global.needFlush = TRUE;
   global.remainLen = 0;
   global.tempBufSize = 0;
 
-  if (initDic)
-  {
+  if (initDic) {
     global.processedPos = 0;
     global.checkDicSize = 0;
     global.needInitLzma = TRUE;
   }
-  if (initState)
+  if (initState) {
     global.needInitLzma = TRUE;
+  }
 }
 
 /* Decompress LZMA stream in
@@ -773,118 +698,106 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
   const UInt32 decodeLimit = global.readCur + srcLen;
   LzmaDec_WriteRem(global.dicBufSize);
 
-  while (global.remainLen != kMatchSpecLenStart)
-  {
-      Bool checkEndMarkNow;
+  while (global.remainLen != kMatchSpecLenStart) {
+    Bool checkEndMarkNow;
 
-      if (global.needFlush)
-      {
-        /* Read 5 bytes (RC_INIT_SIZE) to tempBuf, first of which must be
-         * 0, initialize the range coder with the 4 bytes after the 0 byte.
-         */
-        for (; decodeLimit > global.readCur && global.tempBufSize < RC_INIT_SIZE;) {
-          SET_ARY8(readBuf, READBUF_SIZE + global.tempBufSize++, GET_ARY8(readBuf, global.readCur++));
-        }
-        if (global.tempBufSize < RC_INIT_SIZE)
-        {
-         on_needs_more_input:
-          if (decodeLimit != global.readCur) return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL;
-          return SZ_ERROR_NEEDS_MORE_INPUT;
-        }
-        if (GET_ARY8(readBuf, READBUF_SIZE) != 0)
-          return SZ_ERROR_DATA;
-        global.code = ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 1) << 24) | ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 2) << 16) | ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 3) << 8) | ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 4));
-        global.range = 0xFFFFFFFF;
-        global.needFlush = FALSE;
-        global.tempBufSize = 0;
+    if (global.needFlush) {
+      /* Read 5 bytes (RC_INIT_SIZE) to tempBuf, first of which must be
+       * 0, initialize the range coder with the 4 bytes after the 0 byte.
+       */
+      for (; decodeLimit > global.readCur && global.tempBufSize < RC_INIT_SIZE;) {
+        SET_ARY8(readBuf, READBUF_SIZE + global.tempBufSize++, GET_ARY8(readBuf, global.readCur++));
       }
+      if (global.tempBufSize < RC_INIT_SIZE) {
+       on_needs_more_input:
+        if (decodeLimit != global.readCur) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
+        return SZ_ERROR_NEEDS_MORE_INPUT;
+      }
+      if (GET_ARY8(readBuf, READBUF_SIZE) != 0) {
+        return SZ_ERROR_DATA;
+      }
+      global.code = ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 1) << 24) | ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 2) << 16) | ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 3) << 8) | ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 4));
+      global.range = 0xFFFFFFFF;
+      global.needFlush = FALSE;
+      global.tempBufSize = 0;
+    }
 
-      checkEndMarkNow = FALSE;
-      if (global.dicPos >= global.dicBufSize)
-      {
-        if (global.remainLen == 0 && global.code == 0)
-        {
-          if (decodeLimit != global.readCur) return SZ_ERROR_CHUNK_NOT_CONSUMED;
-          return SZ_OK /* MAYBE_FINISHED_WITHOUT_MARK */;
+    checkEndMarkNow = FALSE;
+    if (global.dicPos >= global.dicBufSize) {
+      if (global.remainLen == 0 && global.code == 0) {
+        if (decodeLimit != global.readCur) { return SZ_ERROR_CHUNK_NOT_CONSUMED; }
+        return SZ_OK /* MAYBE_FINISHED_WITHOUT_MARK */;
+      }
+      if (global.remainLen != 0) {
+        return SZ_ERROR_NOT_FINISHED;
+      }
+      checkEndMarkNow = TRUE;
+    }
+
+    if (global.needInitLzma) {
+      const UInt32 numProbs = Literal + ((UInt32)LZMA_LIT_SIZE << (global.lc + global.lp));
+      UInt32 i;
+      for (i = 0; i < numProbs; i++) {
+        SET_ARY16(probs, i, kBitModelTotal >> 1);
+      }
+      global.rep0 = global.rep1 = global.rep2 = global.rep3 = 1;
+      global.state = 0;
+      global.needInitLzma = FALSE;
+    }
+
+    if (global.tempBufSize == 0) {
+      UInt32 bufLimit;
+      if (decodeLimit - global.readCur < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow) {
+        SRes dummyRes;
+        dummyRes = LzmaDec_TryDummy(global.readCur, decodeLimit);
+        if (dummyRes == DUMMY_ERROR) {
+          /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
+          global.tempBufSize = 0;
+          while (global.readCur != decodeLimit) {
+            SET_ARY8(readBuf, READBUF_SIZE + global.tempBufSize++, GET_ARY8(readBuf, global.readCur++));
+          }
+          goto on_needs_more_input;
         }
-        if (global.remainLen != 0)
-        {
+        if (checkEndMarkNow && dummyRes != DUMMY_MATCH) {
           return SZ_ERROR_NOT_FINISHED;
         }
-        checkEndMarkNow = TRUE;
-      }
-
-      if (global.needInitLzma) {
-        const UInt32 numProbs = Literal + ((UInt32)LZMA_LIT_SIZE << (global.lc + global.lp));
-        UInt32 i;
-        for (i = 0; i < numProbs; i++) {
-          SET_ARY16(probs, i, kBitModelTotal >> 1);
-        }
-        global.rep0 = global.rep1 = global.rep2 = global.rep3 = 1;
-        global.state = 0;
-        global.needInitLzma = FALSE;
-      }
-
-      if (global.tempBufSize == 0)
-      {
-        UInt32 bufLimit;
-        if (decodeLimit - global.readCur < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
-        {
-          SRes dummyRes;
-          dummyRes = LzmaDec_TryDummy(global.readCur, decodeLimit);
-          if (dummyRes == DUMMY_ERROR)
-          {
-            /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
-            global.tempBufSize = 0;
-            while (global.readCur != decodeLimit) {
-              SET_ARY8(readBuf, READBUF_SIZE + global.tempBufSize++, GET_ARY8(readBuf, global.readCur++));
-            }
-            goto on_needs_more_input;
-          }
-          if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
-          {
-            return SZ_ERROR_NOT_FINISHED;
-          }
-          bufLimit = global.readCur;
-        }
-        else
-          bufLimit = decodeLimit - LZMA_REQUIRED_INPUT_MAX;
-        global.bufCur = global.readCur;
-        if (LzmaDec_DecodeReal2(global.dicBufSize, bufLimit) != 0)
-          return SZ_ERROR_DATA;
-        global.readCur = global.bufCur;
+        bufLimit = global.readCur;
       }
       else
-      {
-        UInt32 rem = global.tempBufSize, lookAhead = 0;
-        while (rem < LZMA_REQUIRED_INPUT_MAX && lookAhead < decodeLimit - global.readCur) {
-          SET_ARY8(readBuf, READBUF_SIZE + rem++, GET_ARY8(readBuf, global.readCur + lookAhead++));
-        }
-        global.tempBufSize = rem;
-        if (rem < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
-        {
-          SRes dummyRes;
-          dummyRes = LzmaDec_TryDummy(READBUF_SIZE, READBUF_SIZE + rem);
-          if (dummyRes == DUMMY_ERROR)
-          {
-            global.readCur += lookAhead;
-            goto on_needs_more_input;
-          }
-          if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
-          {
-            return SZ_ERROR_NOT_FINISHED;
-          }
-        }
-        /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
-        global.bufCur = READBUF_SIZE;  /* tempBuf. */
-        if (LzmaDec_DecodeReal2(0, READBUF_SIZE) != 0)
-          return SZ_ERROR_DATA;
-        lookAhead -= rem - (global.bufCur - READBUF_SIZE);
-        global.readCur += lookAhead;
-        global.tempBufSize = 0;
+        bufLimit = decodeLimit - LZMA_REQUIRED_INPUT_MAX;
+      global.bufCur = global.readCur;
+      if (LzmaDec_DecodeReal2(global.dicBufSize, bufLimit) != 0) {
+        return SZ_ERROR_DATA;
       }
+      global.readCur = global.bufCur;
+    } else {
+      UInt32 rem = global.tempBufSize, lookAhead = 0;
+      while (rem < LZMA_REQUIRED_INPUT_MAX && lookAhead < decodeLimit - global.readCur) {
+        SET_ARY8(readBuf, READBUF_SIZE + rem++, GET_ARY8(readBuf, global.readCur + lookAhead++));
+      }
+      global.tempBufSize = rem;
+      if (rem < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow) {
+        SRes dummyRes;
+        dummyRes = LzmaDec_TryDummy(READBUF_SIZE, READBUF_SIZE + rem);
+        if (dummyRes == DUMMY_ERROR) {
+          global.readCur += lookAhead;
+          goto on_needs_more_input;
+        }
+        if (checkEndMarkNow && dummyRes != DUMMY_MATCH) {
+          return SZ_ERROR_NOT_FINISHED;
+        }
+      }
+      /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
+      global.bufCur = READBUF_SIZE;  /* tempBuf. */
+      if (LzmaDec_DecodeReal2(0, READBUF_SIZE) != 0) {
+        return SZ_ERROR_DATA;
+      }
+      lookAhead -= rem - (global.bufCur - READBUF_SIZE);
+      global.readCur += lookAhead;
+      global.tempBufSize = 0;
+    }
   }
-  if (global.code != 0) return SZ_ERROR_DATA;
+  if (global.code != 0) { return SZ_ERROR_DATA; }
   return SZ_ERROR_FINISHED_WITH_MARK;
 }
 
@@ -929,7 +842,9 @@ void IgnoreVarint(void) {
 
 SRes IgnoreZeroBytes(UInt32 c) {
   for (; c > 0; --c) {
-    if (GET_ARY8(readBuf, global.readCur++) != 0) return SZ_ERROR_BAD_PADDING;
+    if (GET_ARY8(readBuf, global.readCur++) != 0) {
+      return SZ_ERROR_BAD_PADDING;
+    }
   }
   return SZ_OK;
 }
@@ -951,12 +866,12 @@ void InitDecode(void) {
 
 SRes InitProp(Byte b) {
   UInt32 lc, lp;
-  if (b >= (9 * 5 * 5)) return SZ_ERROR_BAD_LCLPPB_PROP;
+  if (b >= (9 * 5 * 5)) { return SZ_ERROR_BAD_LCLPPB_PROP; }
   lc = b % 9;
   b /= 9;
   global.pb = b / 5;
   lp = b % 5;
-  if (lc + lp > LZMA2_LCLP_MAX) return SZ_ERROR_BAD_LCLPPB_PROP;
+  if (lc + lp > LZMA2_LCLP_MAX) { return SZ_ERROR_BAD_LCLPPB_PROP; }
   global.lc = lc;
   global.lp = lp;
   global.needInitProp = FALSE;
@@ -968,7 +883,7 @@ SRes WriteFrom(UInt32 fromDicPos) {
   DEBUGF("WRITE %d dicPos=%d\n", global.dicPos - fromDicPos, global.dicPos);
   while (fromDicPos != global.dicPos) {
     const UInt32 got = WRITE_TO_STDOUT_FROM_ARY8(dic, fromDicPos, global.dicPos - fromDicPos);
-    if (got & 0x80000000) return SZ_ERROR_WRITE;
+    if (got & 0x80000000) { return SZ_ERROR_WRITE; }
     fromDicPos += got;
   }
   return SZ_OK;
@@ -987,7 +902,7 @@ SRes DecompressXzOrLzma(void) {
   /* 12 for the stream header + 12 for the first block header + 6 for the
    * first chunk header. empty.xz is 32 bytes.
    */
-  if (Preread(12 + 12 + 6) < 12 + 12 + 6) return SZ_ERROR_INPUT_EOF;
+  if (Preread(12 + 12 + 6) < 12 + 12 + 6) { return SZ_ERROR_INPUT_EOF; }
   /* readbuf[7] is actually stream flags, should also be 0. */
   if (GET_ARY8(readBuf, 0) == 0xfd && GET_ARY8(readBuf, 1) == 0x37 &&
       GET_ARY8(readBuf, 2) == 0x7a && GET_ARY8(readBuf, 3) == 0x58 &&
@@ -1008,10 +923,12 @@ SRes DecompressXzOrLzma(void) {
      * global.probs), thus we are not able to extract some legitimate
      * .lzma files.
      */
-    if ((res = InitProp(GET_ARY8(readBuf, global.readCur))) != SZ_OK) return res;
+    if ((res = InitProp(GET_ARY8(readBuf, global.readCur))) != SZ_OK) {
+      return res;
+    }
     if (bhf == 0) {
       global.dicBufSize = us = GetLE4(global.readCur + 5);
-      if (us > DIC_ARRAY_SIZE) return SZ_ERROR_MEM;
+      if (us > DIC_ARRAY_SIZE) { return SZ_ERROR_MEM; }
     } else {
       us = bhf;  /* max UInt32. */
       global.dicBufSize = DIC_ARRAY_SIZE;
@@ -1030,9 +947,9 @@ SRes DecompressXzOrLzma(void) {
       res = LzmaDec_DecodeToDic(srcLen);
       DEBUGF("LZMADEC res=%d\n", res);
       if (global.dicPos > us) global.dicPos = us;
-      if ((res = WriteFrom(fromDicPos)) != SZ_OK) return res;
+      if ((res = WriteFrom(fromDicPos)) != SZ_OK) { return res; }
       if (res == SZ_ERROR_FINISHED_WITH_MARK) break;
-      if (res != SZ_ERROR_NEEDS_MORE_INPUT && res != SZ_OK) return res;
+      if (res != SZ_ERROR_NEEDS_MORE_INPUT && res != SZ_OK) { return res; }
       if (global.dicPos == us) break;
     }
     return SZ_OK;
@@ -1061,12 +978,12 @@ SRes DecompressXzOrLzma(void) {
     bhs = (bhs + 1) << 2;
     DEBUGF("bhs=%d\n", bhs);
     /* Typically the Preread(12 + 12 + 6) above covers it. */
-    if (Preread(bhs) < bhs) return SZ_ERROR_INPUT_EOF;
+    if (Preread(bhs) < bhs) { return SZ_ERROR_INPUT_EOF; }
     readAtBlock = global.readCur;
     bhf = GET_ARY8(readBuf, global.readCur++);
-    if ((bhf & 2) != 0) return SZ_ERROR_UNSUPPORTED_FILTER_COUNT;
+    if ((bhf & 2) != 0) { return SZ_ERROR_UNSUPPORTED_FILTER_COUNT; }
     DEBUGF("filter count=%d\n", (bhf & 2) + 1);
-    if ((bhf & 20) != 0) return SZ_ERROR_BAD_BLOCK_FLAGS;
+    if ((bhf & 20) != 0) { return SZ_ERROR_BAD_BLOCK_FLAGS; }
     if (bhf & 64) {  /* Compressed size present. */
       /* Usually not present, just ignore it. */
       IgnoreVarint();
@@ -1076,9 +993,9 @@ SRes DecompressXzOrLzma(void) {
       IgnoreVarint();
     }
     /* This is actually a varint, but it's shorter to read it as a byte. */
-    if (GET_ARY8(readBuf, global.readCur++) != FILTER_ID_LZMA2) return SZ_ERROR_UNSUPPORTED_FILTER_ID;
+    if (GET_ARY8(readBuf, global.readCur++) != FILTER_ID_LZMA2) { return SZ_ERROR_UNSUPPORTED_FILTER_ID; }
     /* This is actually a varint, but it's shorter to read it as a byte. */
-    if (GET_ARY8(readBuf, global.readCur++) != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
+    if (GET_ARY8(readBuf, global.readCur++) != 1) { return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE; }
     dicSizeProp = GET_ARY8(readBuf, global.readCur++);
     /* Typical large dictionary sizes:
      *
@@ -1090,11 +1007,11 @@ SRes DecompressXzOrLzma(void) {
      *  * 40: 4294967295 bytes, largest supported by .xz
      */
     DEBUGF("dicSizeProp=0x%02x\n", dicSizeProp);
-    if (dicSizeProp > 40) return SZ_ERROR_BAD_DICTIONARY_SIZE;
+    if (dicSizeProp > 40) { return SZ_ERROR_BAD_DICTIONARY_SIZE; }
     /* LZMA2 and .xz support it, we don't (for simpler memory management on
      * 32-bit systems).
      */
-    if (dicSizeProp > 37) return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE;
+    if (dicSizeProp > 37) { return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE; }
     global.dicSize = (((UInt32)2 | ((dicSizeProp) & 1)) << ((dicSizeProp) / 2 + 11));
     ASSERT(global.dicSize >= LZMA_DIC_MIN);
     DEBUGF("dicSize39=%u\n", (((UInt32)2 | ((39) & 1)) << ((39) / 2 + 11)));
@@ -1104,8 +1021,8 @@ SRes DecompressXzOrLzma(void) {
     DEBUGF("dicSize35=%u\n", (((UInt32)2 | ((35) & 1)) << ((35) / 2 + 11)));
     bhs2 = global.readCur - readAtBlock + 5;  /* Won't overflow. */
     DEBUGF("bhs=%d bhs2=%d\n", bhs, bhs2);
-    if (bhs2 > bhs) return SZ_ERROR_BLOCK_HEADER_TOO_LONG;
-    if ((res = IgnoreZeroBytes(bhs - bhs2)) != SZ_OK) return res;
+    if (bhs2 > bhs) { return SZ_ERROR_BLOCK_HEADER_TOO_LONG; }
+    if ((res = IgnoreZeroBytes(bhs - bhs2)) != SZ_OK) { return res; }
     global.readCur += 4;  /* Ignore CRC32. */
     /* Typically it's offset 24, xz creates it by default, minimal. */
     DEBUGF("LZMA2\n");
@@ -1120,7 +1037,7 @@ SRes DecompressXzOrLzma(void) {
         /* Actually 2 bytes is enough to get to the index if everything is
          * aligned and there is no block checksum.
          */
-        if (Preread(6) < 6) return SZ_ERROR_INPUT_EOF;
+        if (Preread(6) < 6) { return SZ_ERROR_INPUT_EOF; }
         control = GET_ARY8(readBuf, global.readCur);
         DEBUGF("CONTROL control=0x%02x at=? inbuf=%d\n", control, global.readCur);
         if (control == 0) {
@@ -1151,16 +1068,19 @@ SRes DecompressXzOrLzma(void) {
           us += (control & 31) << 16;
           cs = (GET_ARY8(readBuf, global.readCur + 3) << 8) + GET_ARY8(readBuf, global.readCur + 4) + 1;
           if (isProp) {
-            if ((res = InitProp(GET_ARY8(readBuf, global.readCur + 5))) != SZ_OK) return res;
+            if ((res = InitProp(GET_ARY8(readBuf, global.readCur + 5))) != SZ_OK) {
+              return res;
+            }
             ++global.readCur;
             --blockSizePad;
           } else {
-            if (global.needInitProp) return SZ_ERROR_MISSING_INITPROP;
+            if (global.needInitProp) { return SZ_ERROR_MISSING_INITPROP; }
           }
           global.readCur += 5;
           blockSizePad -= 5;
-          if ((!initDic && global.needInitDic) || (!initState && global.needInitState))
+          if ((!initDic && global.needInitDic) || (!initState && global.needInitState)) {
             return SZ_ERROR_DATA;
+          }
           LzmaDec_InitDicAndState(initDic, initState);
           global.needInitDic = FALSE;
           global.needInitState = FALSE;
@@ -1168,27 +1088,28 @@ SRes DecompressXzOrLzma(void) {
         ASSERT(global.dicPos == global.dicBufSize);
         global.dicBufSize += us;
         /* Decompressed data too long, won't fit to global.dic. */
-        if (global.dicBufSize > DIC_ARRAY_SIZE) return SZ_ERROR_MEM;
+        if (global.dicBufSize > DIC_ARRAY_SIZE) { return SZ_ERROR_MEM; }
         /* Read 6 extra bytes to optimize away a read(...) system call in
          * the Prefetch(6) call in the next chunk header.
          */
-        if (Preread(cs + 6) < cs) return SZ_ERROR_INPUT_EOF;
+        if (Preread(cs + 6) < cs) { return SZ_ERROR_INPUT_EOF; }
         DEBUGF("FEED us=%d cs=%d dicPos=%d\n", us, cs, global.dicPos);
         if (control < 0x80) {  /* Uncompressed chunk. */
           DEBUGF("DECODE uncompressed\n");
           while (global.dicPos != global.dicBufSize) {
             SET_ARY8(dic, global.dicPos++, GET_ARY8(readBuf, global.readCur++));
           }
-          if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= us)
+          if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= us) {
             global.checkDicSize = global.dicSize;
+          }
           global.processedPos += us;
         } else {  /* Compressed chunk. */
           DEBUGF("DECODE call\n");
           /* This call doesn't change global.dicBufSize. */
-          if ((res = LzmaDec_DecodeToDic(cs)) != SZ_OK) return res;
+          if ((res = LzmaDec_DecodeToDic(cs)) != SZ_OK) { return res; }
         }
-        if (global.dicPos != global.dicBufSize) return SZ_ERROR_BAD_DICPOS;
-        if ((res = WriteFrom(global.dicPos - us)) != SZ_OK) return res;
+        if (global.dicPos != global.dicBufSize) { return SZ_ERROR_BAD_DICPOS; }
+        if ((res = WriteFrom(global.dicPos - us)) != SZ_OK) { return res; }
         blockSizePad -= cs;
         /* We can't discard decompressbuf[:global.dicBufSize] now,
          * because we need it a dictionary in which subsequent calls to
@@ -1200,9 +1121,10 @@ SRes DecompressXzOrLzma(void) {
     /* 7 for padding4 and CRC32 + 12 for the next block header + 6 for the next
      * chunk header.
      */
-    if (Preread(7 + 12 + 6) < 7 + 12 + 6) return SZ_ERROR_INPUT_EOF;
+    if (Preread(7 + 12 + 6) < 7 + 12 + 6) { return SZ_ERROR_INPUT_EOF; }
     DEBUGF("ALTELL blockSizePad=%d\n", blockSizePad & 3);
-    if ((res = IgnoreZeroBytes(blockSizePad & 3)) != SZ_OK) return res;  /* Ignore block padding. */
+    /* Ignore block padding. */
+    if ((res = IgnoreZeroBytes(blockSizePad & 3)) != SZ_OK) { return res; }
     global.readCur += checksumSize;  /* Ignore CRC32, CRC64 etc. */
   }
   /* The .xz input file continues with the index, which we ignore from here. */
