@@ -141,11 +141,13 @@ typedef Byte Bool;
  * Minimum value: 1846.
  * Maximum value for LZMA streams: 1846 + (768 << (8 + 4)) == 3147574.
  * Maximum value for LZMA2 streams: 1846 + (768 << 4) == 14134.
- * Memory usage of prob: size_of_CLzmaProb * value == (2 or 4) * value bytes.
+ * Memory usage of prob: sizeof(global.probs[0]) * value == (2 or 4) * value bytes.
  */
 #define LzmaProps_GetNumProbs(p) ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp)))
 /* 14134 */
 #define Lzma2Props_GetMaxNumProbs() ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << LZMA2_LCLP_MAX))
+
+#define LZMA2_MAX_NUM_PROBS 14134
 
 #define DIC_ARRAY_SIZE 1610612736
 
@@ -154,6 +156,11 @@ typedef Byte Bool;
  * 6 is maximum LZMA chunk header size for the next chunk.
  */
 #define READBUF_SIZE (6 + 65536 + 6)
+
+/* This fails to compile if any condition after the : is false. */
+struct LzmaAsserts {
+  int Lzma2MaxNumProbsIsCorrect : LZMA2_MAX_NUM_PROBS == Lzma2Props_GetMaxNumProbs();
+};
 
 typedef struct {
   UInt32 bufCur;
@@ -175,7 +182,7 @@ typedef struct {
   Bool needInitState;
   Bool needInitProp;
   Byte lc, lp, pb;  /* Configured in prop byte. Also works as UInt32. */
-  CLzmaProb probs[Lzma2Props_GetMaxNumProbs()];
+  CLzmaProb probs[LZMA2_MAX_NUM_PROBS];
   /* The first READBUF_SIZE bytes is readBuf, then the LZMA_REQUIRED_INPUT_MAX bytes is tempBuf. */
   Byte readBuf[READBUF_SIZE + LZMA_REQUIRED_INPUT_MAX];
   /* Contains the uncompressed data.
