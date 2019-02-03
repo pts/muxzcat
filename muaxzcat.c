@@ -971,7 +971,7 @@ SRes IgnoreZeroBytes(UInt32 c) {
 }
 
 UInt32 GetLE4(UInt32 p) {
-  return global.readBuf[p] | global.readBuf[p + 1] << 8 | global.readBuf[p + 2] << 16 | p[global.readBuf + 3] << 24;
+  return global.readBuf[p] | global.readBuf[p + 1] << 8 | global.readBuf[p + 2] << 16 | global.readBuf[p + 3] << 24;
 }
 
 /* Expects global.dicSize be set already. Can be called before or after InitProp. */
