@@ -110,13 +110,13 @@ struct IntegerTypeAsserts {
 #define ENDGLOBALS } global;
 #define GLOBAL_VAR(name) global.name  /* Get or set a global variable. */
 #define SET_GLOBAL(name, setid, op) global.name op
-#define GET_ARY16(a, idx) ((UInt32)global.a##16[idx])
+#define GET_ARY16(a, idx) ((UInt32)global.a##16[TRUNCATE_TO_32BIT(idx)])
 /* TRUNCATE_TO_16BIT is must be called on value manually if needed. */
-#define SET_ARY16(a, idx, value) (global.a##16[idx] = value)
+#define SET_ARY16(a, idx, value) (global.a##16[TRUNCATE_TO_32BIT(idx)] = value)
 #define CLEAR_ARY8(a)
-#define GET_ARY8(a, idx) ((UInt32)global.a##8[idx])
+#define GET_ARY8(a, idx) ((UInt32)global.a##8[TRUNCATE_TO_32BIT(idx)])
 /* TRUNCATE_TO_8BIT must be called on value manually if needed. */
-#define SET_ARY8(a, idx, value) (global.a##8[idx] = value)
+#define SET_ARY8(a, idx, value) (global.a##8[TRUNCATE_TO_32BIT(idx)] = value)
 #define CLEAR_ARY16(a)
 #define READ_FROM_STDIN_TO_ARY8(a, fromIdx, size) (read(0, &global.a##8[fromIdx], (size)))
 #define WRITE_TO_STDOUT_FROM_ARY8(a, fromIdx, size) (write(1, &global.a##8[fromIdx], (size)))
@@ -129,6 +129,7 @@ struct IntegerTypeAsserts {
 #define ENDGLOBALS
 #define GLOBAL_VAR(name) $##name
 #define SET_GLOBAL(name, setid, op) $##name op
+/* !! Not all indexes can be more than 32-bit. Optimize away the long ones. */
 #define GET_ARY16(a, idx) vec($##a, TRUNCATE_TO_32BIT(idx), 16)
 #define SET_ARY16(a, idx, value) vec($##a, TRUNCATE_TO_32BIT(idx), 16) = value
 #define CLEAR_ARY16(a) $##a = ''
@@ -214,12 +215,21 @@ struct IntegerTypeAsserts {
 #define LE(x, y) (((x) & 0xffffffff) <= ((y) & 0xffffffff))
 #define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
 #define GE(x, y) (((x) & 0xffffffff) >= ((y) & 0xffffffff))
+#if 0  /* !! */
 #define EQ_SMALL(x, y) ((x) == (y))
 #define NE_SMALL(x, y) ((x) < (y))
 #define LT_SMALL(x, y) ((x) < (y))
 #define LE_SMALL(x, y) ((x) <= (y))
 #define GT_SMALL(x, y) ((x) > (y))
 #define GE_SMALL(x, y) ((x) >= (y))
+#else
+#define EQ_SMALL(x, y) EQ(x, y)
+#define NE_SMALL(x, y) NE(x, y)
+#define LT_SMALL(x, y) LT(x, y)
+#define LE_SMALL(x, y) LE(x, y)
+#define GT_SMALL(x, y) GT(x, y)
+#define GE_SMALL(x, y) GE(x, y)
+#endif
 #endif  /* CONFIG_LANG_PERL */
 
 /* --- */
@@ -459,7 +469,7 @@ GLOBALS
    * small files, then the operating system won't take the entire array away
    * from other processes.
    */
-  GLOBAL_ARY8(dic, DIC_ARRAY_SIZE);
+  GLOBAL_ARY8(dic, DIC_ARRAY_SIZE / 10);
 ENDGLOBALS
 
 #ifdef CONFIG_DEBUG
@@ -730,6 +740,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
             ASSERT(GT(GLOBAL_VAR(dicPos), LOCAL_VAR(pos)));
             ASSERT(GT(LOCAL_VAR(curLen), 0));
             goto do9; while (NE(--LOCAL_VAR(curLen), 0)) { do9: ;
+              /* Here pos can be negative if 64-bit. */
               SET_ARY8(dic, GLOBAL_VAR(dicPos)++, GET_ARY8(dic, LOCAL_VAR(pos)++));
             }
           } else {
@@ -959,7 +970,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, srcLen)
         return SZ_ERROR_DATA;
       }
       GLOBAL_VAR(code) = (ENSURE_32BIT(GET_ARY8(readBuf, READBUF_SIZE + 1)) << 24) | (ENSURE_32BIT(GET_ARY8(readBuf, READBUF_SIZE + 2)) << 16) | (ENSURE_32BIT(GET_ARY8(readBuf, READBUF_SIZE + 3)) << 8) | (ENSURE_32BIT(GET_ARY8(readBuf, READBUF_SIZE + 4)));
-      GLOBAL_VAR(range) = 0xFFFFFFFF;
+      GLOBAL_VAR(range) = 0xffffffff;
       GLOBAL_VAR(needFlush) = FALSE;
       GLOBAL_VAR(tempBufSize) = 0;
     }
@@ -1070,7 +1081,7 @@ FUNC_ARG1(UInt32, Preread, const UInt32, prereadSize)
        */
       DEBUGF("READ size=%d\n", ENSURE_32BIT(LOCAL_VAR(prereadSize) - LOCAL_VAR(prereadPos)));
       LOCAL_INIT(UInt32, got, READ_FROM_STDIN_TO_ARY8(readBuf, GLOBAL_VAR(readEnd), LOCAL_VAR(prereadSize) - LOCAL_VAR(prereadPos)));
-      if (TRUNCATE_TO_32BIT(LOCAL_VAR(got) - 1) & 0x80000000) { BREAK; }  /* EOF or error on input. */
+      if ((LOCAL_VAR(got) - 1) & 0x80000000) { BREAK; }  /* EOF or error on input. */
       GLOBAL_VAR(readEnd) += LOCAL_VAR(got);
       LOCAL_VAR(prereadPos) += LOCAL_VAR(got);
     }
@@ -1151,7 +1162,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
       EQ_SMALL(GET_ARY8(readBuf, 6), 0)) {  /* .xz: "\xFD""7zXZ\0" */
   } ELSE_IF (LE_SMALL(GET_ARY8(readBuf, GLOBAL_VAR(readCur)), 225) && EQ_SMALL(GET_ARY8(readBuf, GLOBAL_VAR(readCur) + 13), 0) &&  /* .lzma */
         /* High 4 bytes of uncompressed size. */
-        (EQ_SMALL((LOCAL_VAR(bhf) = GetLE4(GLOBAL_VAR(readCur) + 9)), 0) || EQ(LOCAL_VAR(bhf), TRUNCATE_TO_32BIT(-1))) &&
+        (EQ_SMALL((LOCAL_VAR(bhf) = GetLE4(GLOBAL_VAR(readCur) + 9)), 0) || EQ(LOCAL_VAR(bhf), 0xffffffff)) &&
         GE_SMALL((GLOBAL_VAR(dicSize) = GetLE4(GLOBAL_VAR(readCur) + 1)), LZMA_DIC_MIN) &&
         LE(GLOBAL_VAR(dicSize), DIC_ARRAY_SIZE)) {
     /* Based on https://svn.python.org/projects/external/xz-5.0.3/doc/lzma-file-format.txt */
