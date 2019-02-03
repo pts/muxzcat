@@ -180,10 +180,17 @@ struct IntegerTypeAsserts {
 
 /* --- */
 
+#if 1  /* Make everything 32-bit, for easier porting to other languages. */
+typedef uint32_t UInt32;
+typedef uint32_t Byte;
+typedef uint32_t SRes;
+typedef uint32_t Bool;
+#else
 typedef uint32_t UInt32;
 typedef uint8_t Byte;
 typedef uint8_t SRes;
 typedef uint8_t Bool;
+#endif
 
 /* For LZMA streams, lc + lp <= 8 + 4 <= 12.
  * For LZMA2 streams, lc + lp <= 4.
