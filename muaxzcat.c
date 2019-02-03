@@ -165,6 +165,31 @@ struct IntegerTypeAsserts {
 #define ENDFUNC }
 #endif  /* CONFIG_LANG_PERL */
 
+/* !! Mask the inputs and outputs of GET_ARY8, GET_ARY16, SET_ARY8, SET_ARY16? */
+/* !! Mask the inputs of these operators: >> >>= < > <= >= == != */
+#ifdef CONFIG_LANG_C
+#define SHR(x, y) ((x) >> (y))
+#define SHR_SMALL(x, y) ((x) >> (y))  /* When 0 <= x < (2 ** 31). */
+#define SET_SHR(x, y) ((x) >>= (y))
+#define LT(x, y) ((x) < (y))
+#define LE(x, y) ((x) <= (y))
+#define EQ(x, y) ((x) == (y))
+#define NE(x, y) ((x) != (y))
+/* !! > >= / /= */
+#endif  /* CONFIG_LANG_C */
+#ifdef CONFIG_LANG_PERL
+#define SHR(x, y) ((x & 0xffffffff) >> (y))
+#define SHR_SMALL(x, y) ((x) >> (y))
+#define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> (y))
+#define LT(x, y) ((x) & 0xffffffff < (y) & 0xffffffff)
+#define LE(x, y) ((x) & 0xffffffff <= (y) & 0xffffffff)
+#define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
+#define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
+/* !! > >= */
+#endif  /* CONFIG_LANG_PERL */
+
+
+
 /* --- */
 
 #ifdef CONFIG_LANG_C
@@ -455,19 +480,19 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
       LOCAL_INIT(UInt32, posState, GLOBAL_VAR(processedPos) & LOCAL_VAR(pbMask));
 
       LOCAL_VAR(probIdx) = IsMatch + (GLOBAL_VAR(state) << (kNumPosBitsMax)) + LOCAL_VAR(posState);
-      LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+      LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
       if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
         LOCAL(UInt32, symbol);
-        LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));;
+        LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + (SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits))));;
         LOCAL_VAR(probIdx) = Literal;
         if (GLOBAL_VAR(checkDicSize) != 0 || GLOBAL_VAR(processedPos) != 0) {
-          LOCAL_VAR(probIdx) += (LZMA_LIT_SIZE * (((GLOBAL_VAR(processedPos) & LOCAL_VAR(lpMask)) << GLOBAL_VAR(lc)) + (GET_ARY8(dic, (GLOBAL_VAR(dicPos) == 0 ? GLOBAL_VAR(dicBufSize) : GLOBAL_VAR(dicPos)) - 1) >> (8 - GLOBAL_VAR(lc)))));
+          LOCAL_VAR(probIdx) += (LZMA_LIT_SIZE * (((GLOBAL_VAR(processedPos) & LOCAL_VAR(lpMask)) << GLOBAL_VAR(lc)) + SHR(GET_ARY8(dic, (GLOBAL_VAR(dicPos) == 0 ? GLOBAL_VAR(dicBufSize) : GLOBAL_VAR(dicPos)) - 1), (8 - GLOBAL_VAR(lc)))));
         }
         if (GLOBAL_VAR(state) < kNumLitStates) {
           GLOBAL_VAR(state) -= (GLOBAL_VAR(state) < 4) ? GLOBAL_VAR(state) : 3;
           LOCAL_VAR(symbol) = 1;
           goto do3; while (LOCAL_VAR(symbol) < 0x100) { do3: ;
-            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(symbol)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(symbol), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));; LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(symbol), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));; LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) + 1; ;; }
+            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(symbol)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits)) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(symbol), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));; LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(symbol), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));; LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) + 1; ;; }
           }
         } else {
           LOCAL_INIT(UInt32, matchByte, GET_ARY8(dic, (GLOBAL_VAR(dicPos) - GLOBAL_VAR(rep0)) + ((GLOBAL_VAR(dicPos) < GLOBAL_VAR(rep0)) ? GLOBAL_VAR(dicBufSize) : 0)));
@@ -480,57 +505,57 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
             LOCAL_VAR(matchByte) <<= 1;
             LOCAL_VAR(localBit) = (LOCAL_VAR(matchByte) & LOCAL_VAR(offs));
             LOCAL_VAR(probLitIdx) = LOCAL_VAR(probIdx) + LOCAL_VAR(offs) + LOCAL_VAR(localBit) + LOCAL_VAR(symbol);
-            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLitIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLitIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));; LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)); LOCAL_VAR(offs) &= ~LOCAL_VAR(localBit); } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLitIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));; LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) + 1; LOCAL_VAR(offs) &= LOCAL_VAR(localBit); }
+            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLitIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLitIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));; LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)); LOCAL_VAR(offs) &= ~LOCAL_VAR(localBit); } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLitIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));; LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) + 1; LOCAL_VAR(offs) &= LOCAL_VAR(localBit); }
           }
         }
         SET_ARY8(dic, GLOBAL_VAR(dicPos)++, TRUNCATE_TO_8BIT(LOCAL_VAR(symbol)));
         GLOBAL_VAR(processedPos)++;
         CONTINUE;
       } else {
-        LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));;
+        LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));;
         LOCAL_VAR(probIdx) = IsRep + GLOBAL_VAR(state);
-        LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+        LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
         if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
-          LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));;
+          LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));;
           GLOBAL_VAR(state) += kNumStates;
           LOCAL_VAR(probIdx) = LenCoder;
         } else {
-          LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));;
+          LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));;
           if (GLOBAL_VAR(checkDicSize) == 0 && GLOBAL_VAR(processedPos) == 0) {
             return SZ_ERROR_DATA;
           }
           LOCAL_VAR(probIdx) = IsRepG0 + GLOBAL_VAR(state);
-          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
           if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
-            LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));;
+            LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));;
             LOCAL_VAR(probIdx) = IsRep0Long + (GLOBAL_VAR(state) << (kNumPosBitsMax)) + LOCAL_VAR(posState);
-            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
             if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
-              LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));;
+              LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));;
               SET_ARY8(dic, GLOBAL_VAR(dicPos), GET_ARY8(dic, (GLOBAL_VAR(dicPos) - GLOBAL_VAR(rep0)) + ((GLOBAL_VAR(dicPos) < GLOBAL_VAR(rep0)) ? GLOBAL_VAR(dicBufSize) : 0)));
               GLOBAL_VAR(dicPos)++;
               GLOBAL_VAR(processedPos)++;
               GLOBAL_VAR(state) = GLOBAL_VAR(state) < kNumLitStates ? 9 : 11;
               CONTINUE;
             }
-            LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));;
+            LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));;
           } else {
             LOCAL(UInt32, distance);
-            LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));;
+            LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));;
             LOCAL_VAR(probIdx) = IsRepG1 + GLOBAL_VAR(state);
-            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
             if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
-              LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));;
+              LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));;
               LOCAL_VAR(distance) = GLOBAL_VAR(rep1);
             } else {
-              LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));;
+              LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));;
               LOCAL_VAR(probIdx) = IsRepG2 + GLOBAL_VAR(state);
-              LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+              LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
               if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
-                LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));;
+                LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));;
                 LOCAL_VAR(distance) = GLOBAL_VAR(rep2);
               } else {
-                LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));;
+                LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));;
                 LOCAL_VAR(distance) = GLOBAL_VAR(rep3);
                 GLOBAL_VAR(rep3) = GLOBAL_VAR(rep2);
               }
@@ -546,23 +571,23 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
           LOCAL(UInt32, limitSub);
           LOCAL(UInt32, offset);
           LOCAL_INIT(UInt32, probLenIdx, LOCAL_VAR(probIdx) + LenChoice);
-          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLenIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLenIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
           if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
-            LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLenIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));;
+            LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLenIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));;
             LOCAL_VAR(probLenIdx) = LOCAL_VAR(probIdx) + LenLow + (LOCAL_VAR(posState) << (kLenNumLowBits));
             LOCAL_VAR(offset) = 0;
             LOCAL_VAR(limitSub) = (ENSURE_32BIT(1) << (kLenNumLowBits));
           } else {
-            LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLenIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));;
+            LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLenIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));;
             LOCAL_VAR(probLenIdx) = LOCAL_VAR(probIdx) + LenChoice2;
-            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLenIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLenIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
             if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
-              LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLenIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));;
+              LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLenIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));;
               LOCAL_VAR(probLenIdx) = LOCAL_VAR(probIdx) + LenMid + (LOCAL_VAR(posState) << (kLenNumMidBits));
               LOCAL_VAR(offset) = kLenNumLowSymbols;
               LOCAL_VAR(limitSub) = ENSURE_32BIT(1) << (kLenNumMidBits);
             } else {
-              LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLenIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));;
+              LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probLenIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));;
               LOCAL_VAR(probLenIdx) = LOCAL_VAR(probIdx) + LenHigh;
               LOCAL_VAR(offset) = kLenNumLowSymbols + kLenNumMidSymbols;
               LOCAL_VAR(limitSub) = ENSURE_32BIT(1) << (kLenNumHighBits);
@@ -571,7 +596,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
           {
             LOCAL_VAR(localLen) = 1;
             goto do5; while (LOCAL_VAR(localLen) < LOCAL_VAR(limitSub)) { do5: ;
-              { LOCAL_VAR(ttt) = GET_ARY16(probs, (LOCAL_VAR(probLenIdx) + LOCAL_VAR(localLen))); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, (LOCAL_VAR(probLenIdx) + LOCAL_VAR(localLen)), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));; LOCAL_VAR(localLen) = (LOCAL_VAR(localLen) + LOCAL_VAR(localLen)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, (LOCAL_VAR(probLenIdx) + LOCAL_VAR(localLen)), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));; LOCAL_VAR(localLen) = (LOCAL_VAR(localLen) + LOCAL_VAR(localLen)) + 1; ;; }; };
+              { LOCAL_VAR(ttt) = GET_ARY16(probs, (LOCAL_VAR(probLenIdx) + LOCAL_VAR(localLen))); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, (LOCAL_VAR(probLenIdx) + LOCAL_VAR(localLen)), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));; LOCAL_VAR(localLen) = (LOCAL_VAR(localLen) + LOCAL_VAR(localLen)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, (LOCAL_VAR(probLenIdx) + LOCAL_VAR(localLen)), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));; LOCAL_VAR(localLen) = (LOCAL_VAR(localLen) + LOCAL_VAR(localLen)) + 1; ;; }; };
             }
             LOCAL_VAR(localLen) -= LOCAL_VAR(limitSub);
           };
@@ -584,13 +609,13 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
           {
             LOCAL_VAR(distance) = 1;
             goto do6; while (LOCAL_VAR(distance) < (1 << 6)) { do6: ;
-              { LOCAL_VAR(ttt) = GET_ARY16(probs, (LOCAL_VAR(probIdx) + LOCAL_VAR(distance))); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, (LOCAL_VAR(probIdx) + LOCAL_VAR(distance)), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));; LOCAL_VAR(distance) = (LOCAL_VAR(distance) + LOCAL_VAR(distance)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, (LOCAL_VAR(probIdx) + LOCAL_VAR(distance)), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));; LOCAL_VAR(distance) = (LOCAL_VAR(distance) + LOCAL_VAR(distance)) + 1; ;; };};
+              { LOCAL_VAR(ttt) = GET_ARY16(probs, (LOCAL_VAR(probIdx) + LOCAL_VAR(distance))); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, (LOCAL_VAR(probIdx) + LOCAL_VAR(distance)), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));; LOCAL_VAR(distance) = (LOCAL_VAR(distance) + LOCAL_VAR(distance)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, (LOCAL_VAR(probIdx) + LOCAL_VAR(distance)), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));; LOCAL_VAR(distance) = (LOCAL_VAR(distance) + LOCAL_VAR(distance)) + 1; ;; };};
             }
             LOCAL_VAR(distance) -= (1 << 6);
           };
           if (LOCAL_VAR(distance) >= kStartPosModelIndex) {
             LOCAL_INIT(const UInt32, posSlot, LOCAL_VAR(distance));
-            LOCAL_INIT(UInt32, numDirectBits, (LOCAL_VAR(distance) >> 1) - 1);
+            LOCAL_INIT(UInt32, numDirectBits, SHR(LOCAL_VAR(distance), 1) - 1);
             LOCAL_VAR(distance) = (2 | (LOCAL_VAR(distance) & 1));
             if (LOCAL_VAR(posSlot) < kEndPosModelIndex) {
               LOCAL_VAR(distance) <<= LOCAL_VAR(numDirectBits);
@@ -599,7 +624,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
                 LOCAL_INIT(UInt32, mask, 1);
                 LOCAL_INIT(UInt32, localI, 1);
                 goto do7; while (--LOCAL_VAR(numDirectBits) != 0) { do7: ;
-                  LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; LOCAL_VAR(distance) |= LOCAL_VAR(mask); };
+                  LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; LOCAL_VAR(distance) |= LOCAL_VAR(mask); };
                   LOCAL_VAR(mask) <<= 1;
                 }
               }
@@ -608,9 +633,9 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
               goto do8; while (--LOCAL_VAR(numDirectBits) != 0) { do8: ;
                 LOCAL(UInt32, localT);
                 if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }
-                LOCAL_VAR(rangeLocal) >>= 1;
+                SET_SHR(LOCAL_VAR(rangeLocal), 1);
                 LOCAL_VAR(codeLocal) -= LOCAL_VAR(rangeLocal);
-                LOCAL_VAR(localT) = (0 - (ENSURE_32BIT(LOCAL_VAR(codeLocal) >> 31)));
+                LOCAL_VAR(localT) = (0 - (ENSURE_32BIT(SHR(LOCAL_VAR(codeLocal), 31))));
                 LOCAL_VAR(distance) = (LOCAL_VAR(distance) << 1) + (LOCAL_VAR(localT) + 1);
                 LOCAL_VAR(codeLocal) += LOCAL_VAR(rangeLocal) & LOCAL_VAR(localT);
               }
@@ -618,10 +643,10 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
               LOCAL_VAR(distance) <<= kNumAlignBits;
               {
                 LOCAL_INIT(UInt32, localI, 1);
-                LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; LOCAL_VAR(distance) |= 1; };
-                LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; LOCAL_VAR(distance) |= 2; };
-                LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; LOCAL_VAR(distance) |= 4; };
-                LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + ((kBitModelTotal - LOCAL_VAR(ttt)) >> kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - (LOCAL_VAR(ttt) >> kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; LOCAL_VAR(distance) |= 8; };
+                LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; LOCAL_VAR(distance) |= 1; };
+                LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; LOCAL_VAR(distance) |= 2; };
+                LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; LOCAL_VAR(distance) |= 4; };
+                LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR(LOCAL_VAR(ttt), kNumMoveBits)));; LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; LOCAL_VAR(distance) |= 8; };
               }
               if (LOCAL_VAR(distance) == ENSURE_32BIT(0xffffffff)) {
                 LOCAL_VAR(localLen) += kMatchSpecLenStart;
@@ -702,18 +727,18 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
     LOCAL_INIT(UInt32, posState, (GLOBAL_VAR(processedPos)) & ((1 << GLOBAL_VAR(pb)) - 1));
 
     LOCAL_VAR(probIdx) = IsMatch + (LOCAL_VAR(stateLocal) << (kNumPosBitsMax)) + LOCAL_VAR(posState);
-    LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+    LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
     if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
       LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound);
       LOCAL_VAR(probIdx) = Literal;
       if (GLOBAL_VAR(checkDicSize) != 0 || GLOBAL_VAR(processedPos) != 0) {
-        LOCAL_VAR(probIdx) += (LZMA_LIT_SIZE * ((((GLOBAL_VAR(processedPos)) & ((1 << (GLOBAL_VAR(lp))) - 1)) << GLOBAL_VAR(lc)) + (GET_ARY8(dic, (GLOBAL_VAR(dicPos) == 0 ? GLOBAL_VAR(dicBufSize) : GLOBAL_VAR(dicPos)) - 1) >> (8 - GLOBAL_VAR(lc)))));
+        LOCAL_VAR(probIdx) += (LZMA_LIT_SIZE * ((((GLOBAL_VAR(processedPos)) & ((1 << (GLOBAL_VAR(lp))) - 1)) << GLOBAL_VAR(lc)) + SHR(GET_ARY8(dic, (GLOBAL_VAR(dicPos) == 0 ? GLOBAL_VAR(dicBufSize) : GLOBAL_VAR(dicPos)) - 1), (8 - GLOBAL_VAR(lc)))));
       }
 
       if (LOCAL_VAR(stateLocal) < kNumLitStates) {
         LOCAL_INIT(UInt32, symbol, 1);
         goto do11; while (LOCAL_VAR(symbol) < 0x100) { do11: ;
-          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(symbol)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) + 1; ;; }
+          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(symbol)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) + 1; ;; }
         }
       } else {
         LOCAL_INIT(UInt32, matchByte, GET_ARY8(dic, GLOBAL_VAR(dicPos) - GLOBAL_VAR(rep0) + ((GLOBAL_VAR(dicPos) < GLOBAL_VAR(rep0)) ? GLOBAL_VAR(dicBufSize) : 0)));
@@ -725,7 +750,7 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
           LOCAL_VAR(matchByte) <<= 1;
           LOCAL_VAR(localBit) = (LOCAL_VAR(matchByte) & LOCAL_VAR(offs));
           LOCAL_VAR(probLitIdx) = LOCAL_VAR(probIdx) + LOCAL_VAR(offs) + LOCAL_VAR(localBit) + LOCAL_VAR(symbol);
-          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLitIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)); LOCAL_VAR(offs) &= ~LOCAL_VAR(localBit); } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) + 1; LOCAL_VAR(offs) &= LOCAL_VAR(localBit); }
+          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLitIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)); LOCAL_VAR(offs) &= ~LOCAL_VAR(localBit); } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) + 1; LOCAL_VAR(offs) &= LOCAL_VAR(localBit); }
         }
       }
       LOCAL_VAR(res) = DUMMY_LIT;
@@ -733,7 +758,7 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
       LOCAL(UInt32, localLen);
       LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound);
       LOCAL_VAR(probIdx) = IsRep + LOCAL_VAR(stateLocal);
-      LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+      LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
        if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
         LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound);
         LOCAL_VAR(stateLocal) = 0;
@@ -743,11 +768,11 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
         LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound);
         LOCAL_VAR(res) = DUMMY_REP;
         LOCAL_VAR(probIdx) = IsRepG0 + LOCAL_VAR(stateLocal);
-        LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+        LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
         if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
           LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound);
           LOCAL_VAR(probIdx) = IsRep0Long + (LOCAL_VAR(stateLocal) << (kNumPosBitsMax)) + LOCAL_VAR(posState);
-          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
           if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
             LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound);
             if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); };
@@ -758,13 +783,13 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
         } else {
           LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound);
           LOCAL_VAR(probIdx) = IsRepG1 + LOCAL_VAR(stateLocal);
-          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
           if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
             LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound);
           } else {
             LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound);
             LOCAL_VAR(probIdx) = IsRepG2 + LOCAL_VAR(stateLocal);
-            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
             if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
               LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound);
             } else {
@@ -779,7 +804,7 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
         LOCAL(UInt32, limitSub);
         LOCAL(UInt32, offset);
         LOCAL_INIT(UInt32, probLenIdx, LOCAL_VAR(probIdx) + LenChoice);
-        LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLenIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+        LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLenIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
         if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
           LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound);
           LOCAL_VAR(probLenIdx) = LOCAL_VAR(probIdx) + LenLow + (LOCAL_VAR(posState) << (kLenNumLowBits));
@@ -788,7 +813,7 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
         } else {
           LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound);
           LOCAL_VAR(probLenIdx) = LOCAL_VAR(probIdx) + LenChoice2;
-          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLenIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt);
+          LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLenIdx)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt);
           if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) {
             LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound);
             LOCAL_VAR(probLenIdx) = LOCAL_VAR(probIdx) + LenMid + (LOCAL_VAR(posState) << (kLenNumMidBits));
@@ -804,7 +829,7 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
         {
           LOCAL_VAR(localLen) = 1;
           goto do13; while (LOCAL_VAR(localLen) < LOCAL_VAR(limitSub)) { do13: ;
-            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLenIdx) + LOCAL_VAR(localLen)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); LOCAL_VAR(localLen) = (LOCAL_VAR(localLen) + LOCAL_VAR(localLen)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(localLen) = (LOCAL_VAR(localLen) + LOCAL_VAR(localLen)) + 1; ;; }
+            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probLenIdx) + LOCAL_VAR(localLen)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); LOCAL_VAR(localLen) = (LOCAL_VAR(localLen) + LOCAL_VAR(localLen)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(localLen) = (LOCAL_VAR(localLen) + LOCAL_VAR(localLen)) + 1; ;; }
           }
           LOCAL_VAR(localLen) -= LOCAL_VAR(limitSub);
         };
@@ -817,20 +842,20 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
         {
           LOCAL_VAR(posSlot) = 1;
           goto do14; while (LOCAL_VAR(posSlot) < ENSURE_32BIT(1) << (kNumPosSlotBits)) { do14: ;
-            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(posSlot)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); LOCAL_VAR(posSlot) = (LOCAL_VAR(posSlot) + LOCAL_VAR(posSlot)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(posSlot) = (LOCAL_VAR(posSlot) + LOCAL_VAR(posSlot)) + 1; ;; }
+            LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(posSlot)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); LOCAL_VAR(posSlot) = (LOCAL_VAR(posSlot) + LOCAL_VAR(posSlot)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(posSlot) = (LOCAL_VAR(posSlot) + LOCAL_VAR(posSlot)) + 1; ;; }
           }
           LOCAL_VAR(posSlot) -= ENSURE_32BIT(1) << (kNumPosSlotBits);
         };
         if (LOCAL_VAR(posSlot) >= kStartPosModelIndex) {
-          LOCAL_INIT(UInt32, numDirectBits, (LOCAL_VAR(posSlot) >> 1) - 1);
+          LOCAL_INIT(UInt32, numDirectBits, SHR_SMALL(LOCAL_VAR(posSlot), 1) - 1);
           if (LOCAL_VAR(posSlot) < kEndPosModelIndex) {
             LOCAL_VAR(probIdx) = SpecPos + ((2 | (LOCAL_VAR(posSlot) & 1)) << LOCAL_VAR(numDirectBits)) - LOCAL_VAR(posSlot) - 1;
           } else {
             LOCAL_VAR(numDirectBits) -= kNumAlignBits;
             goto do15; while (--LOCAL_VAR(numDirectBits) != 0) { do15: ;
               if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }
-              LOCAL_VAR(rangeLocal) >>= 1;
-              LOCAL_VAR(codeLocal) -= LOCAL_VAR(rangeLocal) & (((LOCAL_VAR(codeLocal) - LOCAL_VAR(rangeLocal)) >> 31) - 1);
+              SET_SHR(LOCAL_VAR(rangeLocal), 1);
+              LOCAL_VAR(codeLocal) -= LOCAL_VAR(rangeLocal) & (SHR((LOCAL_VAR(codeLocal) - LOCAL_VAR(rangeLocal)), 31) - 1);
             }
             LOCAL_VAR(probIdx) = Align;
             LOCAL_VAR(numDirectBits) = kNumAlignBits;
@@ -838,7 +863,7 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
           {
             LOCAL_INIT(UInt32, localI, 1);
             goto do16; while (--LOCAL_VAR(numDirectBits) != 0) { do16: ;
-              LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = (LOCAL_VAR(rangeLocal) >> kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; ;; };
+              LOCAL_VAR(ttt) = GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI)); if (LOCAL_VAR(rangeLocal) < kTopValue) { if (LOCAL_VAR(bufDummyCur) >= LOCAL_VAR(bufLimit)) { return DUMMY_ERROR; } LOCAL_VAR(rangeLocal) <<= 8; LOCAL_VAR(codeLocal) = (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++)); }; LOCAL_VAR(bound) = SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt); if (LOCAL_VAR(codeLocal) < LOCAL_VAR(bound)) { LOCAL_VAR(rangeLocal) = LOCAL_VAR(bound); LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)); ;; } else { LOCAL_VAR(rangeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(codeLocal) -= LOCAL_VAR(bound); LOCAL_VAR(localI) = (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1; ;; };
             }
           }
         }
@@ -913,7 +938,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, srcLen)
       LOCAL_INIT(UInt32, numProbs, Literal + (ENSURE_32BIT(LZMA_LIT_SIZE) << (GLOBAL_VAR(lc) + GLOBAL_VAR(lp))));
       LOCAL(UInt32, probIdx);
       for (LOCAL_VAR(probIdx) = 0; LOCAL_VAR(probIdx) < LOCAL_VAR(numProbs); LOCAL_VAR(probIdx)++) {
-        SET_ARY16(probs, LOCAL_VAR(probIdx), kBitModelTotal >> 1);
+        SET_ARY16(probs, LOCAL_VAR(probIdx), SHR_SMALL(kBitModelTotal, 1));
       }
       GLOBAL_VAR(rep0) = GLOBAL_VAR(rep1) = GLOBAL_VAR(rep2) = GLOBAL_VAR(rep3) = 1;
       GLOBAL_VAR(state) = 0;
@@ -1238,7 +1263,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
           }
           LzmaDec_InitDicAndState(LOCAL_VAR(initDic), FALSE);
         } else {  /* LZMA chunk. */
-          LOCAL_INIT(const Byte, mode, (((LOCAL_VAR(control)) >> 5) & 3));
+          LOCAL_INIT(const Byte, mode, (SHR_SMALL((LOCAL_VAR(control)), 5) & 3));
           LOCAL_INIT(const Bool, initDic, LOCAL_VAR(mode) == 3);
           LOCAL_INIT(const Bool, initState, LOCAL_VAR(mode) > 0);
           LOCAL_INIT(const Bool, isProp, (LOCAL_VAR(control) & 64) != 0);
@@ -1333,6 +1358,9 @@ FUNC_ARG0(SRes, Decompress)
   CLEAR_ARY8(dic);
   return LOCAL_VAR(res);
 ENDFUNC
+
+my $res = Decompress();
+die "PERL_ERROR:$res\n" if $res;
 #endif  /* CONFIG_LANG_PERL */
 
 #ifdef CONFIG_LANG_PERL
