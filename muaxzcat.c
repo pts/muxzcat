@@ -171,7 +171,7 @@ struct IntegerTypeAsserts {
 /* !! Use *_SMALL more, wherever it works. */
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
 #ifdef CONFIG_LANG_C
-#ifdef CONFIG_UINT64
+#if defined(CONFIG_UINT64) || defined(CONFIG_INT64)
 #define SHR(x, y) ((x & 0xffffffff) >> (y))
 #define SHR_SMALL(x, y) SHR(x, y)
 #define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> (y))
@@ -396,8 +396,13 @@ sub DumpVars();
 /* --- */
 
 #ifdef CONFIG_LANG_C
-#if CONFIG_UINT64  /* Make everything 64-bit, for compatibility tests before porting to other languages. */
-/* !! This breaks, fix it! */
+#ifdef CONFIG_INT64  /* Specify -fwrapv for correct results. */
+typedef int64_t UInt32;
+typedef int64_t Byte;
+typedef int64_t SRes;
+typedef int64_t Bool;
+#else
+#ifdef CONFIG_UINT64  /* Make everything 64-bit, for compatibility tests before porting to other languages. */
 typedef uint64_t UInt32;
 typedef uint64_t Byte;
 typedef uint64_t SRes;
@@ -413,6 +418,7 @@ typedef uint32_t UInt32;
 typedef uint8_t Byte;
 typedef uint8_t SRes;
 typedef uint8_t Bool;
+#endif
 #endif
 #endif
 #endif  /* CONFIG_LANG_C */
