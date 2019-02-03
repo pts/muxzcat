@@ -162,6 +162,33 @@ struct IntegerTypeAsserts {
 #define kNumLenToPosStates 4
 #define kNumAlignBits 4
 #define kMatchMinLen 2
+#define kTopValue 16777216
+#define kBitModelTotal 2048
+#define kNumPosStatesMax 16
+#define kLenNumLowSymbols 8
+#define kLenNumMidSymbols 8
+#define kLenNumHighSymbols 256
+#define LenChoice 0
+#define LenChoice2 1
+#define LenLow 2
+#define LenMid 130
+#define LenHigh 258
+#define kNumLenProbs 514
+#define kNumFullDistances 128
+#define kAlignTableSize 16
+#define kMatchSpecLenStart 274
+#define IsMatch 0
+#define IsRep 192
+#define IsRepG0 204
+#define IsRepG1 216
+#define IsRepG2 228
+#define IsRep0Long 240
+#define PosSlot 432
+#define SpecPos 688
+#define Align 802
+#define LenCoder 818
+#define RepLenCoder 1332
+#define Literal 1846
 
 /* 6 is maximum LZMA chunk header size.
  * 65536 is maximum cs (compressed size) of LZMA2 chunk.
@@ -240,34 +267,6 @@ struct {
 } global;
 
 /* --- */
-
-#define kTopValue ((UInt32)1 << kNumTopBits)
-#define kBitModelTotal (1 << kNumBitModelTotalBits)
-#define kNumPosStatesMax (1 << kNumPosBitsMax)
-#define kLenNumLowSymbols (1 << kLenNumLowBits)
-#define kLenNumMidSymbols (1 << kLenNumMidBits)
-#define kLenNumHighSymbols (1 << kLenNumHighBits)
-#define LenChoice 0
-#define LenChoice2 (LenChoice + 1)
-#define LenLow (LenChoice2 + 1)
-#define LenMid (LenLow + (kNumPosStatesMax << kLenNumLowBits))
-#define LenHigh (LenMid + (kNumPosStatesMax << kLenNumMidBits))
-#define kNumLenProbs (LenHigh + kLenNumHighSymbols)
-#define kNumFullDistances (1 << (kEndPosModelIndex >> 1))
-#define kAlignTableSize (1 << kNumAlignBits)
-#define kMatchSpecLenStart (kMatchMinLen + kLenNumLowSymbols + kLenNumMidSymbols + kLenNumHighSymbols)
-#define IsMatch 0
-#define IsRep (IsMatch + (kNumStates << kNumPosBitsMax))
-#define IsRepG0 (IsRep + kNumStates)
-#define IsRepG1 (IsRepG0 + kNumStates)
-#define IsRepG2 (IsRepG1 + kNumStates)
-#define IsRep0Long (IsRepG2 + kNumStates)
-#define PosSlot (IsRep0Long + (kNumStates << kNumPosBitsMax))
-#define SpecPos (PosSlot + (kNumLenToPosStates << kNumPosSlotBits))
-#define Align (SpecPos + kNumFullDistances - kEndPosModelIndex)
-#define LenCoder (Align + kAlignTableSize)
-#define RepLenCoder (LenCoder + kNumLenProbs)
-#define Literal (RepLenCoder + kNumLenProbs)
 
 #define NORMALIZE if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }
 #define NORMALIZE_CHECK if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }
