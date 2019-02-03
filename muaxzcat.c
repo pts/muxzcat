@@ -59,6 +59,7 @@ typedef uint16_t UInt16;
 typedef uint8_t  Byte;
 
 #define TRUNCATE_TO_16BIT(x) ((UInt16)(x))
+#define TRUNCATE_TO_8BIT(x) ((Byte)(x))
 
 /* This fails to compile if any condition after the : is false. */
 struct IntegerTypeAsserts {
@@ -89,6 +90,17 @@ struct IntegerTypeAsserts {
 /* Just check that it compiles. */
 #define ASSERT(condition) do {} while (0 && (condition))
 #endif
+
+#define DECLARE_ARY16(a, size) UInt16 a##16[size]
+#define GET_ARY16(a, idx) (+global.a##16[idx])
+/* TRUNCATE_TO_16BIT is must be called on value manually if needed. */
+#define SET_ARY16(a, idx, value) (global.a##16[idx] = value)
+#define DECLARE_ARY8(a, size) Byte a##8[size]
+#define GET_ARY8(a, idx) (+global.a##8[idx])
+/* TRUNCATE_TO_8BIT must be called on value manually if needed. */
+#define SET_ARY8(a, idx, value) (global.a##8[idx] = value)
+#define READ_FROM_STDIN_TO_ARY8(a, fromIdx, size) (read(0, &global.a##8[fromIdx], (size)))
+#define WRITE_TO_STDOUT_FROM_ARY8(a, fromIdx, size) (write(1, &global.a##8[fromIdx], (size)))
 
 /* --- */
 
@@ -211,9 +223,9 @@ struct {
   Bool needInitState;
   Bool needInitProp;
   Byte lc, lp, pb;  /* Configured in prop byte. Also works as UInt32. */
-  UInt16 probs[LZMA2_MAX_NUM_PROBS];  /* Probabilities for bit decoding. */
+  DECLARE_ARY16(probs, LZMA2_MAX_NUM_PROBS);  /* Probabilities for bit decoding. */
   /* The first READBUF_SIZE bytes is readBuf, then the LZMA_REQUIRED_INPUT_MAX bytes is tempBuf. */
-  Byte readBuf[READBUF_SIZE + LZMA_REQUIRED_INPUT_MAX];
+  DECLARE_ARY8(readBuf, READBUF_SIZE + LZMA_REQUIRED_INPUT_MAX);
   /* Contains the uncompressed data.
    *
    * Array size is about 1.61 GB.
@@ -221,7 +233,7 @@ struct {
    * small files, then the operating system won't take the entire array away
    * from other processes.
    */
-  Byte dic[DIC_ARRAY_SIZE];
+  DECLARE_ARY8(dic, DIC_ARRAY_SIZE);
 } global;
 
 /* --- */
@@ -254,21 +266,21 @@ struct {
 #define RepLenCoder (LenCoder + kNumLenProbs)
 #define Literal (RepLenCoder + kNumLenProbs)
 
-#define NORMALIZE if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (global.readBuf[global.bufCur++]); }
-#define NORMALIZE_CHECK if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (global.readBuf[bufDummyCur++]); }
+#define NORMALIZE if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, global.bufCur++)); }
+#define NORMALIZE_CHECK if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); }
 
 #define GET_BIT(probMacroIdx, i) GET_BIT2(probMacroIdx, i, ; , ;)
 #define GET_BIT2(probMacroIdx, i, A0, A1) IF_BIT_0(probMacroIdx) { UPDATE_0(probMacroIdx); i = (i + i); A0; } else { UPDATE_1(probMacroIdx); i = (i + i) + 1; A1; }
 #define GET_BIT2_CHECK(probMacroIdx, i, A0, A1) IF_BIT_0_CHECK(probMacroIdx) { rangeLocal = bound; i = (i + i); A0; } else { rangeLocal -= bound; codeLocal -= bound; i = (i + i) + 1; A1; }
 #define GET_BIT_CHECK(probMacroIdx, i) GET_BIT2_CHECK(probMacroIdx, i, ; , ;)
-#define IF_BIT_0(probMacroIdx) ttt = global.probs[probMacroIdx]; NORMALIZE; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
-#define IF_BIT_0_CHECK(probMacroIdx) ttt = global.probs[probMacroIdx]; NORMALIZE_CHECK; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
+#define IF_BIT_0(probMacroIdx) ttt = GET_ARY16(probs, probMacroIdx); NORMALIZE; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
+#define IF_BIT_0_CHECK(probMacroIdx) ttt = GET_ARY16(probs, probMacroIdx); NORMALIZE_CHECK; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
 #define TREE_6_DECODE(probMacroIdx, i) TREE_DECODE(probMacroIdx, (1 << 6), i)
 #define TREE_DECODE(probMacroIdx, limit, i) { i = 1; do { TREE_GET_BIT(probMacroIdx, i); } while (i < limit); i -= limit; }
 #define TREE_DECODE_CHECK(probMacroIdx, limit, i) { i = 1; do { GET_BIT_CHECK(probMacroIdx + i, i) } while (i < limit); i -= limit; }
 #define TREE_GET_BIT(probMacroIdx, i) { GET_BIT((probMacroIdx + i), i); }
-#define UPDATE_0(probMacroIdx) rangeLocal = bound; global.probs[probMacroIdx] = TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits));
-#define UPDATE_1(probMacroIdx) rangeLocal -= bound; codeLocal -= bound; global.probs[probMacroIdx] = TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits));
+#define UPDATE_0(probMacroIdx) rangeLocal = bound; SET_ARY16(probs, probMacroIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));
+#define UPDATE_1(probMacroIdx) rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probMacroIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));
 
 #define LZMA2_GET_LZMA_MODE(pc) (((pc) >> 5) & 3)
 
@@ -302,7 +314,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
       UPDATE_0(probIdx);
       probIdx = Literal;
       if (global.checkDicSize != 0 || global.processedPos != 0) {
-        probIdx += (LZMA_LIT_SIZE * (((global.processedPos & lpMask) << global.lc) + (global.dic[(global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1] >> (8 - global.lc))));
+        probIdx += (LZMA_LIT_SIZE * (((global.processedPos & lpMask) << global.lc) + (GET_ARY8(dic, (global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1) >> (8 - global.lc))));
       }
 
       if (global.state < kNumLitStates)
@@ -313,7 +325,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
       }
       else
       {
-        UInt32 matchByte = global.dic[(global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)];
+        UInt32 matchByte = GET_ARY8(dic, (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0));
         UInt32 offs = 0x100;
         global.state -= (global.state < 10) ? 3 : 6;
         symbol = 1;
@@ -328,7 +340,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
         }
         while (symbol < 0x100);
       }
-      global.dic[global.dicPos++] = (Byte)symbol;
+      SET_ARY8(dic, global.dicPos++, TRUNCATE_TO_8BIT(symbol));
       global.processedPos++;
       continue;
     }
@@ -355,7 +367,7 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
           IF_BIT_0(probIdx)
           {
             UPDATE_0(probIdx);
-            global.dic[global.dicPos] = global.dic[(global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)];
+            SET_ARY8(dic, global.dicPos, GET_ARY8(dic, (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)));
             global.dicPos++;
             global.processedPos++;
             global.state = global.state < kNumLitStates ? 9 : 11;
@@ -519,13 +531,13 @@ SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
           ASSERT(global.dicPos > pos);
           ASSERT(curLen > 0);
           do {
-            global.dic[global.dicPos++] = global.dic[pos++];
+            SET_ARY8(dic, global.dicPos++, GET_ARY8(dic, pos++));
           } while (--curLen != 0);
         }
         else
         {
           do {
-            global.dic[global.dicPos++] = global.dic[pos++];
+            SET_ARY8(dic, global.dicPos++, GET_ARY8(dic, pos++));
             if (pos == global.dicBufSize) pos = 0;
           } while (--curLen != 0);
         }
@@ -557,7 +569,7 @@ void LzmaDec_WriteRem(UInt32 dicLimit)
     while (len != 0)
     {
       len--;
-      global.dic[global.dicPos] = global.dic[(global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)];
+      SET_ARY8(dic, global.dicPos, GET_ARY8(dic, (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)));
       global.dicPos++;
     }
   }
@@ -613,7 +625,7 @@ Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
 
       probIdx = Literal;
       if (global.checkDicSize != 0 || global.processedPos != 0) {
-        probIdx += (LZMA_LIT_SIZE * ((((global.processedPos) & ((1 << (global.lp)) - 1)) << global.lc) + (global.dic[(global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1] >> (8 - global.lc))));
+        probIdx += (LZMA_LIT_SIZE * ((((global.processedPos) & ((1 << (global.lp)) - 1)) << global.lc) + (GET_ARY8(dic, (global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1) >> (8 - global.lc))));
       }
 
       if (stateLocal < kNumLitStates)
@@ -623,8 +635,7 @@ Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
       }
       else
       {
-        UInt32 matchByte = global.dic[global.dicPos - global.rep0 +
-            ((global.dicPos < global.rep0) ? global.dicBufSize : 0)];
+        UInt32 matchByte = GET_ARY8(dic, global.dicPos - global.rep0 + ((global.dicPos < global.rep0) ? global.dicBufSize : 0));
         UInt32 offs = 0x100;
         UInt32 symbol = 1;
         do
@@ -778,7 +789,7 @@ Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
 
 void LzmaDec_InitRc(UInt32 initRcCur)
 {
-  global.code = ((UInt32)global.readBuf[initRcCur + 1] << 24) | ((UInt32)global.readBuf[initRcCur + 2] << 16) | ((UInt32)global.readBuf[initRcCur + 3] << 8) | ((UInt32)global.readBuf[initRcCur + 4]);
+  global.code = ((UInt32)GET_ARY8(readBuf, initRcCur + 1) << 24) | ((UInt32)GET_ARY8(readBuf, initRcCur + 2) << 16) | ((UInt32)GET_ARY8(readBuf, initRcCur + 3) << 8) | ((UInt32)GET_ARY8(readBuf, initRcCur + 4));
   global.range = 0xFFFFFFFF;
   global.needFlush = FALSE;
 }
@@ -803,15 +814,16 @@ void LzmaDec_InitStateReal(void)
 {
   const UInt32 numProbs = Literal + ((UInt32)LZMA_LIT_SIZE << (global.lc + global.lp));
   UInt32 i;
-  for (i = 0; i < numProbs; i++)
-    global.probs[i] = kBitModelTotal >> 1;
+  for (i = 0; i < numProbs; i++) {
+    SET_ARY16(probs, i, kBitModelTotal >> 1);
+  }
   global.rep0 = global.rep1 = global.rep2 = global.rep3 = 1;
   global.state = 0;
   global.needInitLzma = FALSE;
 }
 
 /* Decompress LZMA stream in
- * global.readBuf[global.readCur : global.readCur + srcLen].
+ * GET_ARY8(readBuf, global.readCur : global.readCur + srcLen).
  * On success (and on some errors as well), adds srcLen to global.readCur.
  */
 SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
@@ -825,15 +837,16 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
 
       if (global.needFlush)
       {
-        for (; decodeLimit > global.readCur && global.tempBufSize < RC_INIT_SIZE;)
-          global.readBuf[READBUF_SIZE + global.tempBufSize++] = global.readBuf[global.readCur++];
+        for (; decodeLimit > global.readCur && global.tempBufSize < RC_INIT_SIZE;) {
+          SET_ARY8(readBuf, READBUF_SIZE + global.tempBufSize++, GET_ARY8(readBuf, global.readCur++));
+        }
         if (global.tempBufSize < RC_INIT_SIZE)
         {
          on_needs_more_input:
           if (decodeLimit != global.readCur) return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL;
           return SZ_ERROR_NEEDS_MORE_INPUT;
         }
-        if (global.readBuf[READBUF_SIZE] != 0)
+        if (GET_ARY8(readBuf, READBUF_SIZE) != 0)
           return SZ_ERROR_DATA;
 
         LzmaDec_InitRc(READBUF_SIZE);  /* tempBuf. */
@@ -871,7 +884,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
             /* This line can be triggered by passing srcLen==1 to LzmaDec_DecodeToDic. */
             global.tempBufSize = 0;
             while (global.readCur != decodeLimit) {
-              global.readBuf[READBUF_SIZE + global.tempBufSize++] = global.readBuf[global.readCur++];
+              SET_ARY8(readBuf, READBUF_SIZE + global.tempBufSize++, GET_ARY8(readBuf, global.readCur++));
             }
             goto on_needs_more_input;
           }
@@ -891,8 +904,9 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
       else
       {
         UInt32 rem = global.tempBufSize, lookAhead = 0;
-        while (rem < LZMA_REQUIRED_INPUT_MAX && lookAhead < decodeLimit - global.readCur)
-          global.readBuf[READBUF_SIZE + rem++] = global.readBuf[global.readCur + lookAhead++];
+        while (rem < LZMA_REQUIRED_INPUT_MAX && lookAhead < decodeLimit - global.readCur) {
+          SET_ARY8(readBuf, READBUF_SIZE + rem++, GET_ARY8(readBuf, global.readCur + lookAhead++));
+        }
         global.tempBufSize = rem;
         if (rem < LZMA_REQUIRED_INPUT_MAX || checkEndMarkNow)
         {
@@ -937,7 +951,7 @@ UInt32 Preread(UInt32 r) {
       /* If no room for r bytes to the end, discard bytes from the beginning. */
       DEBUGF("MEMMOVE size=%d\n", p);
       for (global.readEnd = 0; global.readEnd < p; ++global.readEnd) {
-        global.readBuf[global.readEnd] = global.readBuf[global.readCur + global.readEnd];
+        SET_ARY8(readBuf, global.readEnd, GET_ARY8(readBuf, global.readCur + global.readEnd));
       }
       global.readCur = 0;
     }
@@ -946,7 +960,7 @@ UInt32 Preread(UInt32 r) {
        * global.readEnd) to read as much as the buffer has room for.
        */
       DEBUGF("READ size=%d\n", r - p);
-      const Int32 got = read(0, &global.readBuf[global.readEnd], r - p);
+      const Int32 got = READ_FROM_STDIN_TO_ARY8(readBuf, global.readEnd, r - p);
       if (got <= 0) break;  /* EOF on input. */
       global.readEnd += got;
       p += got;
@@ -957,18 +971,18 @@ UInt32 Preread(UInt32 r) {
 }
 
 void IgnoreVarint(void) {
-  while (global.readBuf[global.readCur++] >= 0x80) {}
+  while (GET_ARY8(readBuf, global.readCur++) >= 0x80) {}
 }
 
 SRes IgnoreZeroBytes(UInt32 c) {
   for (; c > 0; --c) {
-    if (global.readBuf[global.readCur++] != 0) return SZ_ERROR_BAD_PADDING;
+    if (GET_ARY8(readBuf, global.readCur++) != 0) return SZ_ERROR_BAD_PADDING;
   }
   return SZ_OK;
 }
 
 UInt32 GetLE4(UInt32 p) {
-  return global.readBuf[p] | global.readBuf[p + 1] << 8 | global.readBuf[p + 2] << 16 | global.readBuf[p + 3] << 24;
+  return GET_ARY8(readBuf, p) | GET_ARY8(readBuf, p + 1) << 8 | GET_ARY8(readBuf, p + 2) << 16 | GET_ARY8(readBuf, p + 3) << 24;
 }
 
 /* Expects global.dicSize be set already. Can be called before or after InitProp. */
@@ -996,11 +1010,11 @@ SRes InitProp(Byte b) {
   return SZ_OK;
 }
 
-/* Writes uncompressed data (global.dic[fromDicPos : global.dicPos] to stdout. */
+/* Writes uncompressed data (GET_ARY8(dic, fromDicPos : global.dicPos) to stdout. */
 SRes WriteFrom(UInt32 fromDicPos) {
   DEBUGF("WRITE %d dicPos=%d\n", global.dicPos - fromDicPos, global.dicPos);
   while (fromDicPos != global.dicPos) {
-    const Int32 got = write(1, global.dic + fromDicPos, global.dicPos - fromDicPos);
+    const Int32 got = WRITE_TO_STDOUT_FROM_ARY8(dic, fromDicPos, global.dicPos - fromDicPos);
     if (got <= 0) return SZ_ERROR_WRITE;
     fromDicPos += got;
   }
@@ -1022,11 +1036,11 @@ SRes DecompressXzOrLzma(void) {
    */
   if (Preread(12 + 12 + 6) < 12 + 12 + 6) return SZ_ERROR_INPUT_EOF;
   /* readbuf[7] is actually stream flags, should also be 0. */
-  if (global.readBuf[0] == 0xfd && global.readBuf[1] == 0x37 &&
-      global.readBuf[2] == 0x7a && global.readBuf[3] == 0x58 &&
-      global.readBuf[4] == 0x5a && global.readBuf[5] == 0 &&
-      global.readBuf[6] == 0) {  /* .xz: "\xFD""7zXZ\0" */ 
-  } else if (global.readBuf[global.readCur] <= 225 && global.readBuf[global.readCur + 13] == 0 &&  /* .lzma */
+  if (GET_ARY8(readBuf, 0) == 0xfd && GET_ARY8(readBuf, 1) == 0x37 &&
+      GET_ARY8(readBuf, 2) == 0x7a && GET_ARY8(readBuf, 3) == 0x58 &&
+      GET_ARY8(readBuf, 4) == 0x5a && GET_ARY8(readBuf, 5) == 0 &&
+      GET_ARY8(readBuf, 6) == 0) {  /* .xz: "\xFD""7zXZ\0" */ 
+  } else if (GET_ARY8(readBuf, global.readCur) <= 225 && GET_ARY8(readBuf, global.readCur + 13) == 0 &&  /* .lzma */
         /* High 4 bytes of uncompressed size. */
         ((bhf = GetLE4(global.readCur + 9)) == 0 || bhf == ~(UInt32)0) &&
         (global.dicSize = GetLE4(global.readCur + 1)) >= LZMA_DIC_MIN &&
@@ -1041,7 +1055,7 @@ SRes DecompressXzOrLzma(void) {
      * global.probs), thus we are not able to extract some legitimate
      * .lzma files.
      */
-    if ((res = InitProp(global.readBuf[global.readCur])) != SZ_OK) return res;
+    if ((res = InitProp(GET_ARY8(readBuf, global.readCur))) != SZ_OK) return res;
     if (bhf == 0) {
       global.dicBufSize = us = GetLE4(global.readCur + 5);
       if (us > DIC_ARRAY_SIZE) return SZ_ERROR_MEM;
@@ -1073,7 +1087,7 @@ SRes DecompressXzOrLzma(void) {
     return SZ_ERROR_BAD_MAGIC;
   }
   /* Based on https://tukaani.org/xz/xz-file-format-1.0.4.txt */
-  switch (global.readBuf[global.readCur + 7]) {
+  switch (GET_ARY8(readBuf, global.readCur + 7)) {
    case 0: /* None */ checksumSize = 1; break;
    case 1: /* CRC32 */ checksumSize = 4; break;
    case 4: /* CRC64, typical xz output. */ checksumSize = 8; break;
@@ -1089,14 +1103,14 @@ SRes DecompressXzOrLzma(void) {
     UInt32 readAtBlock;
     ASSERT(global.readEnd - global.readCur >= 12);  /* At least 12 bytes preread. */
     readAtBlock = global.readCur;
-    if ((bhs = global.readBuf[global.readCur++]) == 0) break;  /* Last block, index follows. */
+    if ((bhs = GET_ARY8(readBuf, global.readCur++)) == 0) break;  /* Last block, index follows. */
     /* Block header size includes the bhs field above and the CRC32 below. */
     bhs = (bhs + 1) << 2;
     DEBUGF("bhs=%d\n", bhs);
     /* Typically the Preread(12 + 12 + 6) above covers it. */
     if (Preread(bhs) < bhs) return SZ_ERROR_INPUT_EOF;
     readAtBlock = global.readCur;
-    bhf = global.readBuf[global.readCur++];
+    bhf = GET_ARY8(readBuf, global.readCur++);
     if ((bhf & 2) != 0) return SZ_ERROR_UNSUPPORTED_FILTER_COUNT;
     DEBUGF("filter count=%d\n", (bhf & 2) + 1);
     if ((bhf & 20) != 0) return SZ_ERROR_BAD_BLOCK_FLAGS;
@@ -1109,10 +1123,10 @@ SRes DecompressXzOrLzma(void) {
       IgnoreVarint();
     }
     /* This is actually a varint, but it's shorter to read it as a byte. */
-    if (global.readBuf[global.readCur++] != FILTER_ID_LZMA2) return SZ_ERROR_UNSUPPORTED_FILTER_ID;
+    if (GET_ARY8(readBuf, global.readCur++) != FILTER_ID_LZMA2) return SZ_ERROR_UNSUPPORTED_FILTER_ID;
     /* This is actually a varint, but it's shorter to read it as a byte. */
-    if (global.readBuf[global.readCur++] != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
-    dicSizeProp = global.readBuf[global.readCur++];
+    if (GET_ARY8(readBuf, global.readCur++) != 1) return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE;
+    dicSizeProp = GET_ARY8(readBuf, global.readCur++);
     /* Typical large dictionary sizes:
      *
      *  * 35: 805306368 bytes == 768 MiB
@@ -1154,16 +1168,16 @@ SRes DecompressXzOrLzma(void) {
          * aligned and there is no block checksum.
          */
         if (Preread(6) < 6) return SZ_ERROR_INPUT_EOF;
-        control = global.readBuf[global.readCur];
+        control = GET_ARY8(readBuf, global.readCur);
         DEBUGF("CONTROL control=0x%02x at=? inbuf=%d\n", control, global.readCur);
         if (control == 0) {
           DEBUGF("LASTFED\n");
           ++global.readCur;
           break;
-        } else if ((Byte)(control - 3) < 0x80 - 3U) {
+        } else if (TRUNCATE_TO_8BIT(control - 3) < 0x80 - 3U) {
           return SZ_ERROR_BAD_CHUNK_CONTROL_BYTE;
         }
-        us = (global.readBuf[global.readCur + 1] << 8) + global.readBuf[global.readCur + 2] + 1;
+        us = (GET_ARY8(readBuf, global.readCur + 1) << 8) + GET_ARY8(readBuf, global.readCur + 2) + 1;
         if (control < 3) {  /* Uncompressed chunk. */
           const Bool initDic = (control == 1);
           cs = us;
@@ -1182,9 +1196,9 @@ SRes DecompressXzOrLzma(void) {
           const Bool initState = (mode > 0);
           const Bool isProp = (control & 64) != 0;
           us += (control & 31) << 16;
-          cs = (global.readBuf[global.readCur + 3] << 8) + global.readBuf[global.readCur + 4] + 1;
+          cs = (GET_ARY8(readBuf, global.readCur + 3) << 8) + GET_ARY8(readBuf, global.readCur + 4) + 1;
           if (isProp) {
-            if ((res = InitProp(global.readBuf[global.readCur + 5])) != SZ_OK) return res;
+            if ((res = InitProp(GET_ARY8(readBuf, global.readCur + 5))) != SZ_OK) return res;
             ++global.readCur;
             --blockSizePad;
           } else {
@@ -1210,7 +1224,7 @@ SRes DecompressXzOrLzma(void) {
         if (control < 0x80) {  /* Uncompressed chunk. */
           DEBUGF("DECODE uncompressed\n");
           while (global.dicPos != global.dicBufSize) {
-            global.dic[global.dicPos++] = global.readBuf[global.readCur++];
+            SET_ARY8(dic, global.dicPos++, GET_ARY8(readBuf, global.readCur++));
           }
           if (global.checkDicSize == 0 && global.dicSize - global.processedPos <= us)
             global.checkDicSize = global.dicSize;
