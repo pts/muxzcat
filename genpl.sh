@@ -25,5 +25,6 @@ use strict;
     s@^[ \t]*GLOBAL @@mg' >muaxzcat.pl
 # TODO(pts): Unindent some comments.
 # TODO(pts): Remove empty `;' lines (DEBUG).
+# TODO(pts): Keep empty lines above FUNC_ARG0(SRes, Decompress).
 
 : genpl.sh OK.
