@@ -60,6 +60,8 @@ typedef int16_t  Int16;
 typedef uint16_t UInt16;
 typedef uint8_t  Byte;
 
+#define TRUNCATE_TO_16BIT(x) ((UInt16)(x))
+
 /* This fails to compile if any condition after the : is false. */
 struct IntegerTypeAsserts {
   int ByteIsInteger : (Byte)1 / 2 == 0;
@@ -122,16 +124,6 @@ typedef Byte Bool;
 
 #define LZMA_REQUIRED_INPUT_MAX 20
 
-/* CONFIG_PROB32 can increase the speed on some CPUs,
-   but memory usage for global.probs will be doubled in that case
-   CONFIG_PROB32 increases memory usage by 28268 bytes.
-   */
-#if 0  /*#ifdef CONFIG_PROB32*/
-#define CLzmaProb UInt32
-#else
-#define CLzmaProb UInt16
-#endif
-
 #define LZMA_BASE_SIZE 1846
 #define LZMA_LIT_SIZE 768
 #define LZMA2_LCLP_MAX 4
@@ -162,7 +154,7 @@ struct LzmaAsserts {
   int Lzma2MaxNumProbsIsCorrect : LZMA2_MAX_NUM_PROBS == Lzma2Props_GetMaxNumProbs();
 };
 
-typedef struct {
+struct {
   UInt32 bufCur;
   UInt32 dicSize;  /* Configured in prop byte. */
   UInt32 range, code;
@@ -182,7 +174,7 @@ typedef struct {
   Bool needInitState;
   Bool needInitProp;
   Byte lc, lp, pb;  /* Configured in prop byte. Also works as UInt32. */
-  CLzmaProb probs[LZMA2_MAX_NUM_PROBS];  /* Probabilities for bit decoding. */
+  UInt16 probs[LZMA2_MAX_NUM_PROBS];  /* Probabilities for bit decoding. */
   /* The first READBUF_SIZE bytes is readBuf, then the LZMA_REQUIRED_INPUT_MAX bytes is tempBuf. */
   Byte readBuf[READBUF_SIZE + LZMA_REQUIRED_INPUT_MAX];
   /* Contains the uncompressed data.
@@ -193,9 +185,7 @@ typedef struct {
    * from other processes.
    */
   Byte dic[DIC_ARRAY_SIZE];
-} CLzmaDec;
-
-CLzmaDec global;
+} global;
 
 /* --- */
 
@@ -221,8 +211,8 @@ CLzmaDec global;
 #define TREE_DECODE(probMacroIdx, limit, i) { i = 1; do { TREE_GET_BIT(probMacroIdx, i); } while (i < limit); i -= limit; }
 #define TREE_DECODE_CHECK(probMacroIdx, limit, i) { i = 1; do { GET_BIT_CHECK(probMacroIdx + i, i) } while (i < limit); i -= limit; }
 #define TREE_GET_BIT(probMacroIdx, i) { GET_BIT((probMacroIdx + i), i); }
-#define UPDATE_0(probMacroIdx) rangeLocal = bound; global.probs[probMacroIdx] = (CLzmaProb)(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits));
-#define UPDATE_1(probMacroIdx) rangeLocal -= bound; codeLocal -= bound; global.probs[probMacroIdx] = (CLzmaProb)(ttt - (ttt >> kNumMoveBits));
+#define UPDATE_0(probMacroIdx) rangeLocal = bound; global.probs[probMacroIdx] = TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits));
+#define UPDATE_1(probMacroIdx) rangeLocal -= bound; codeLocal -= bound; global.probs[probMacroIdx] = TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits));
 
 #define kNumPosBitsMax 4
 #define kNumPosStatesMax (1 << kNumPosBitsMax)
@@ -887,7 +877,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         }
         else
           bufLimit = decodeLimit - LZMA_REQUIRED_INPUT_MAX;
-        global.bufCur = global.readCur;  /* !! Use readCur instead of global.bufCur? */
+        global.bufCur = global.readCur;
         if (LzmaDec_DecodeReal2(global.dicBufSize, bufLimit) != 0)
           return SZ_ERROR_DATA;
         global.readCur = global.bufCur;
@@ -1040,7 +1030,7 @@ SRes WriteFrom(UInt32 oldDicPos) {
 }
 
 /* Reads .xz or .lzma data from stdin, writes uncompressed bytes to stdout,
- * uses CLzmaDec.dic. It verifies some aspects of the file format (so it
+ * uses global.dic. It verifies some aspects of the file format (so it
  * can't be tricked to an infinite loop etc.), itdoesn't verify checksums
  * (e.g. CRC32).
  */
@@ -1065,7 +1055,7 @@ SRes DecompressXzOrLzma(void) {
     InitDecode();
     /* LZMA restricts lc + lp <= 4. LZMA requires lc + lp <= 12.
      * We apply the LZMA2 restriction here (to save memory in
-     * CLzmaDec.probs), thus we are not able to extract some legitimate
+     * global.probs), thus we are not able to extract some legitimate
      * .lzma files.
      */
     RINOK(InitProp(global.readBuf[global.readCur]));
@@ -1227,7 +1217,7 @@ SRes DecompressXzOrLzma(void) {
         }
         ASSERT(global.dicPos == global.dicBufSize);
         global.dicBufSize += us;
-        /* Decompressed data too long, won't fit to CLzmaDec.dic. */
+        /* Decompressed data too long, won't fit to global.dic. */
         if (global.dicBufSize > DIC_ARRAY_SIZE) return SZ_ERROR_MEM;
         /* Read 6 extra bytes to optimize away a read(...) system call in
          * the Prefetch(6) call in the next chunk header.
