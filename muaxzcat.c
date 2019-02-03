@@ -95,7 +95,6 @@ struct IntegerTypeAsserts {
 /* --- */
 
 #define SZ_OK 0
-
 #define SZ_ERROR_DATA 1
 #define SZ_ERROR_MEM 2
 #define SZ_ERROR_CRC 3
@@ -111,22 +110,78 @@ struct IntegerTypeAsserts {
 /*#define SZ_MAYBE_FINISHED_WITHOUT_MARK SZ_OK*/  /* LzmaDec_DecodeToDic, there is probability that stream was finished without end mark */
 #define SZ_ERROR_CHUNK_NOT_CONSUMED 18
 #define SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL 17      /* LzmaDec_DecodeToDic, more input needed, but existing input was partially processed */
+#define SZ_ERROR_BAD_MAGIC 51
+#define SZ_ERROR_BAD_STREAM_FLAGS 52  /* SZ_ERROR_BAD_MAGIC is reported instead. */
+#define SZ_ERROR_UNSUPPORTED_FILTER_COUNT 53
+#define SZ_ERROR_BAD_BLOCK_FLAGS 54
+#define SZ_ERROR_UNSUPPORTED_FILTER_ID 55
+#define SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE 56
+#define SZ_ERROR_BAD_PADDING 57
+#define SZ_ERROR_BLOCK_HEADER_TOO_LONG 58
+#define SZ_ERROR_BAD_CHUNK_CONTROL_BYTE 59
+#define SZ_ERROR_BAD_CHECKSUM_TYPE 60
+#define SZ_ERROR_BAD_DICTIONARY_SIZE 61
+#define SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE 62
+#define SZ_ERROR_FEED_CHUNK 63
+#define SZ_ERROR_NOT_FINISHED_WITH_MARK 64
+#define SZ_ERROR_BAD_DICPOS 65
+#define SZ_ERROR_MISSING_INITPROP 67
+#define SZ_ERROR_BAD_LCLPPB_PROP 68
 
-typedef UInt32 SRes;
-
-#ifndef RINOK
-#define RINOK(x) { int __result__ = (x); if (__result__ != 0) return __result__; }
-#endif
-
-typedef Byte Bool;
-#define True 1
-#define False 0
+#define TRUE 1
+#define FALSE 0
 
 #define LZMA_REQUIRED_INPUT_MAX 20
 
 #define LZMA_BASE_SIZE 1846
 #define LZMA_LIT_SIZE 768
 #define LZMA2_LCLP_MAX 4
+
+#define LZMA2_MAX_NUM_PROBS 14134
+
+#define DIC_ARRAY_SIZE 1610612736
+
+#define RC_INIT_SIZE 5
+
+#define kNumMoveBits 5
+#define kNumTopBits 24
+#define kNumBitModelTotalBits 11
+#define kNumPosBitsMax 4
+#define kLenNumLowBits 3
+#define kLenNumMidBits 3
+#define kLenNumHighBits 8
+#define kNumStates 12
+#define kNumLitStates 7
+#define kStartPosModelIndex 4
+#define kEndPosModelIndex 14
+#define kNumPosSlotBits 6
+#define kNumLenToPosStates 4
+#define kNumAlignBits 4
+#define kMatchMinLen 2
+
+/* 6 is maximum LZMA chunk header size.
+ * 65536 is maximum cs (compressed size) of LZMA2 chunk.
+ * 6 is maximum LZMA chunk header size for the next chunk.
+ */
+#define READBUF_SIZE (6 + 65536 + 6)
+
+#define LZMA_DIC_MIN (1 << 12)
+
+#define DUMMY_ERROR 0  /* unexpected end of input stream */
+#define DUMMY_LIT 1
+#define DUMMY_MATCH 2
+#define DUMMY_REP 3
+
+#define FILTER_ID_LZMA2 0x21
+
+/* --- */
+
+typedef UInt32 SRes;
+typedef Byte Bool;
+
+#ifndef RINOK
+#define RINOK(x) { SRes __result__ = (x); if (__result__ != 0) return __result__; }
+#endif
 
 /* For LZMA streams, lc + lp <= 8 + 4 <= 12.
  * For LZMA2 streams, lc + lp <= 4.
@@ -135,23 +190,11 @@ typedef Byte Bool;
  * Maximum value for LZMA2 streams: 1846 + (768 << 4) == 14134.
  * Memory usage of prob: sizeof(global.probs[0]) * value == (2 or 4) * value bytes.
  */
-#define LzmaProps_GetNumProbs(p) ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp)))
-/* 14134 */
-#define Lzma2Props_GetMaxNumProbs() ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << LZMA2_LCLP_MAX))
-
-#define LZMA2_MAX_NUM_PROBS 14134
-
-#define DIC_ARRAY_SIZE 1610612736
-
-/* 6 is maximum LZMA chunk header size.
- * 65536 is maximum cs (compressed size) of LZMA2 chunk.
- * 6 is maximum LZMA chunk header size for the next chunk.
- */
-#define READBUF_SIZE (6 + 65536 + 6)
+/*#define LzmaProps_GetNumProbs(p) ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp))) */
 
 /* This fails to compile if any condition after the : is false. */
 struct LzmaAsserts {
-  int Lzma2MaxNumProbsIsCorrect : LZMA2_MAX_NUM_PROBS == Lzma2Props_GetMaxNumProbs();
+  int Lzma2MaxNumProbsIsCorrect : LZMA2_MAX_NUM_PROBS == ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << LZMA2_LCLP_MAX));
 };
 
 struct {
@@ -189,14 +232,33 @@ struct {
 
 /* --- */
 
-#define kNumTopBits 24
 #define kTopValue ((UInt32)1 << kNumTopBits)
-
-#define kNumBitModelTotalBits 11
 #define kBitModelTotal (1 << kNumBitModelTotalBits)
-#define kNumMoveBits 5
-
-#define RC_INIT_SIZE 5
+#define kNumPosStatesMax (1 << kNumPosBitsMax)
+#define kLenNumLowSymbols (1 << kLenNumLowBits)
+#define kLenNumMidSymbols (1 << kLenNumMidBits)
+#define kLenNumHighSymbols (1 << kLenNumHighBits)
+#define LenChoice 0
+#define LenChoice2 (LenChoice + 1)
+#define LenLow (LenChoice2 + 1)
+#define LenMid (LenLow + (kNumPosStatesMax << kLenNumLowBits))
+#define LenHigh (LenMid + (kNumPosStatesMax << kLenNumMidBits))
+#define kNumLenProbs (LenHigh + kLenNumHighSymbols)
+#define kNumFullDistances (1 << (kEndPosModelIndex >> 1))
+#define kAlignTableSize (1 << kNumAlignBits)
+#define kMatchSpecLenStart (kMatchMinLen + kLenNumLowSymbols + kLenNumMidSymbols + kLenNumHighSymbols)
+#define IsMatch 0
+#define IsRep (IsMatch + (kNumStates << kNumPosBitsMax))
+#define IsRepG0 (IsRep + kNumStates)
+#define IsRepG1 (IsRepG0 + kNumStates)
+#define IsRepG2 (IsRepG1 + kNumStates)
+#define IsRep0Long (IsRepG2 + kNumStates)
+#define PosSlot (IsRep0Long + (kNumStates << kNumPosBitsMax))
+#define SpecPos (PosSlot + (kNumLenToPosStates << kNumPosSlotBits))
+#define Align (SpecPos + kNumFullDistances - kEndPosModelIndex)
+#define LenCoder (Align + kAlignTableSize)
+#define RepLenCoder (LenCoder + kNumLenProbs)
+#define Literal (RepLenCoder + kNumLenProbs)
 
 #define NORMALIZE if (rangeLocal < kTopValue) { rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (global.readBuf[global.bufCur++]); }
 #define NORMALIZE_CHECK if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) return DUMMY_ERROR; rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (global.readBuf[bufDummyCur++]); }
@@ -214,58 +276,15 @@ struct {
 #define UPDATE_0(probMacroIdx) rangeLocal = bound; global.probs[probMacroIdx] = TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits));
 #define UPDATE_1(probMacroIdx) rangeLocal -= bound; codeLocal -= bound; global.probs[probMacroIdx] = TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits));
 
-#define kNumPosBitsMax 4
-#define kNumPosStatesMax (1 << kNumPosBitsMax)
+#define LZMA2_GET_LZMA_MODE(pc) (((pc) >> 5) & 3)
 
-#define kLenNumLowBits 3
-#define kLenNumLowSymbols (1 << kLenNumLowBits)
-#define kLenNumMidBits 3
-#define kLenNumMidSymbols (1 << kLenNumMidBits)
-#define kLenNumHighBits 8
-#define kLenNumHighSymbols (1 << kLenNumHighBits)
+/* Works if p <= 39, doesn't work for p == 40. */
+#define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
 
-#define LenChoice 0
-#define LenChoice2 (LenChoice + 1)
-#define LenLow (LenChoice2 + 1)
-#define LenMid (LenLow + (kNumPosStatesMax << kLenNumLowBits))
-#define LenHigh (LenMid + (kNumPosStatesMax << kLenNumMidBits))
-#define kNumLenProbs (LenHigh + kLenNumHighSymbols)
-
-
-#define kNumStates 12
-#define kNumLitStates 7
-
-#define kStartPosModelIndex 4
-#define kEndPosModelIndex 14
-#define kNumFullDistances (1 << (kEndPosModelIndex >> 1))
-
-#define kNumPosSlotBits 6
-#define kNumLenToPosStates 4
-
-#define kNumAlignBits 4
-#define kAlignTableSize (1 << kNumAlignBits)
-
-#define kMatchMinLen 2
-#define kMatchSpecLenStart (kMatchMinLen + kLenNumLowSymbols + kLenNumMidSymbols + kLenNumHighSymbols)
-
-#define IsMatch 0
-#define IsRep (IsMatch + (kNumStates << kNumPosBitsMax))
-#define IsRepG0 (IsRep + kNumStates)
-#define IsRepG1 (IsRepG0 + kNumStates)
-#define IsRepG2 (IsRepG1 + kNumStates)
-#define IsRep0Long (IsRepG2 + kNumStates)
-#define PosSlot (IsRep0Long + (kNumStates << kNumPosBitsMax))
-#define SpecPos (PosSlot + (kNumLenToPosStates << kNumPosSlotBits))
-#define Align (SpecPos + kNumFullDistances - kEndPosModelIndex)
-#define LenCoder (Align + kAlignTableSize)
-#define RepLenCoder (LenCoder + kNumLenProbs)
-#define Literal (RepLenCoder + kNumLenProbs)
-
-#if Literal != LZMA_BASE_SIZE
-#error StopCompilingDueBUG
-#endif
-
-#define LZMA_DIC_MIN (1 << 12)
+/* This fails to compile if any condition after the : is false. */
+struct ProbsAsserts {
+  int LiteralCode : Literal == LZMA_BASE_SIZE;
+};
 
 SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
 {
@@ -576,11 +595,6 @@ SRes LzmaDec_DecodeReal2(UInt32 dicLimit, UInt32 bufLimit)
   return SZ_OK;
 }
 
-#define DUMMY_ERROR 0  /* unexpected end of input stream */
-#define DUMMY_LIT 1
-#define DUMMY_MATCH 2
-#define DUMMY_REP 3
-
 /* Replace pointer argument buf here with an UInt32 argument. */
 Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
 {
@@ -771,12 +785,12 @@ void LzmaDec_InitRc(UInt32 initRcCur)
 {
   global.code = ((UInt32)global.readBuf[initRcCur + 1] << 24) | ((UInt32)global.readBuf[initRcCur + 2] << 16) | ((UInt32)global.readBuf[initRcCur + 3] << 8) | ((UInt32)global.readBuf[initRcCur + 4]);
   global.range = 0xFFFFFFFF;
-  global.needFlush = False;
+  global.needFlush = FALSE;
 }
 
 void LzmaDec_InitDicAndState(Bool initDic, Bool initState)
 {
-  global.needFlush = True;
+  global.needFlush = TRUE;
   global.remainLen = 0;
   global.tempBufSize = 0;
 
@@ -784,10 +798,10 @@ void LzmaDec_InitDicAndState(Bool initDic, Bool initState)
   {
     global.processedPos = 0;
     global.checkDicSize = 0;
-    global.needInitLzma = True;
+    global.needInitLzma = TRUE;
   }
   if (initState)
-    global.needInitLzma = True;
+    global.needInitLzma = TRUE;
 }
 
 void LzmaDec_InitStateReal(void)
@@ -798,7 +812,7 @@ void LzmaDec_InitStateReal(void)
     global.probs[i] = kBitModelTotal >> 1;
   global.rep0 = global.rep1 = global.rep2 = global.rep3 = 1;
   global.state = 0;
-  global.needInitLzma = False;
+  global.needInitLzma = FALSE;
 }
 
 /* Decompress LZMA stream in
@@ -831,7 +845,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         global.tempBufSize = 0;
       }
 
-      checkEndMarkNow = False;
+      checkEndMarkNow = FALSE;
       if (global.dicPos >= global.dicBufSize)
       {
         if (global.remainLen == 0 && global.code == 0)
@@ -843,7 +857,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         {
           return SZ_ERROR_NOT_FINISHED;
         }
-        checkEndMarkNow = True;
+        checkEndMarkNow = TRUE;
       }
 
       if (global.needInitLzma) {
@@ -912,11 +926,6 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
   return SZ_ERROR_FINISHED_WITH_MARK;
 }
 
-#define LZMA2_GET_LZMA_MODE(pc) (((pc) >> 5) & 3)
-
-/* Works if p <= 39. */
-#define LZMA2_DIC_SIZE_FROM_SMALL_PROP(p) (((UInt32)2 | ((p) & 1)) << ((p) / 2 + 11))
-
 /* Tries to preread r bytes to the read buffer. Returns the number of bytes
  * available in the read buffer. If smaller than r, that indicates EOF.
  *
@@ -954,24 +963,6 @@ UInt32 Preread(UInt32 r) {
   return p;
 }
 
-#define SZ_ERROR_BAD_MAGIC 51
-#define SZ_ERROR_BAD_STREAM_FLAGS 52  /* SZ_ERROR_BAD_MAGIC is reported instead. */
-#define SZ_ERROR_UNSUPPORTED_FILTER_COUNT 53
-#define SZ_ERROR_BAD_BLOCK_FLAGS 54
-#define SZ_ERROR_UNSUPPORTED_FILTER_ID 55
-#define SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE 56
-#define SZ_ERROR_BAD_PADDING 57
-#define SZ_ERROR_BLOCK_HEADER_TOO_LONG 58
-#define SZ_ERROR_BAD_CHUNK_CONTROL_BYTE 59
-#define SZ_ERROR_BAD_CHECKSUM_TYPE 60
-#define SZ_ERROR_BAD_DICTIONARY_SIZE 61
-#define SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE 62
-#define SZ_ERROR_FEED_CHUNK 63
-#define SZ_ERROR_NOT_FINISHED_WITH_MARK 64
-#define SZ_ERROR_BAD_DICPOS 65
-#define SZ_ERROR_MISSING_INITPROP 67
-#define SZ_ERROR_BAD_LCLPPB_PROP 68
-
 void IgnoreVarint(void) {
   while (global.readBuf[global.readCur++] >= 0x80) {}
 }
@@ -991,11 +982,11 @@ UInt32 GetLE4(UInt32 p) {
 void InitDecode(void) {
   /* global.lc = global.pb = global.lp = 0; */  /* needinitprop will initialize it */
   global.dicBufSize = 0;  /* We'll increment it later. */
-  global.needInitDic = True;
-  global.needInitState = True;
-  global.needInitProp = True;
+  global.needInitDic = TRUE;
+  global.needInitState = TRUE;
+  global.needInitProp = TRUE;
   global.dicPos = 0;
-  LzmaDec_InitDicAndState(True, True);
+  LzmaDec_InitDicAndState(TRUE, TRUE);
 }
 
 SRes InitProp(Byte b) {
@@ -1008,11 +999,9 @@ SRes InitProp(Byte b) {
   if (lc + lp > LZMA2_LCLP_MAX) return SZ_ERROR_BAD_LCLPPB_PROP;
   global.lc = lc;
   global.lp = lp;
-  global.needInitProp = False;
+  global.needInitProp = FALSE;
   return SZ_OK;
 }
-
-#define FILTER_ID_LZMA2 0x21
 
 /* Writes uncompressed data (global.dic[oldDicPos : global.dicPos] to stdout. */
 SRes WriteFrom(UInt32 oldDicPos) {
@@ -1184,12 +1173,12 @@ SRes DecompressXzOrLzma(void) {
           global.readCur += 3;
           blockSizePad -= 3;
           if (initDic) {
-            global.needInitProp = global.needInitState = True;
-            global.needInitDic = False;
+            global.needInitProp = global.needInitState = TRUE;
+            global.needInitDic = FALSE;
           } else if (global.needInitDic) {
             return SZ_ERROR_DATA;
           }
-          LzmaDec_InitDicAndState(initDic, False);
+          LzmaDec_InitDicAndState(initDic, FALSE);
         } else {  /* LZMA chunk. */
           const Byte mode = LZMA2_GET_LZMA_MODE(control);
           const Bool initDic = (mode == 3);
@@ -1209,8 +1198,8 @@ SRes DecompressXzOrLzma(void) {
           if ((!initDic && global.needInitDic) || (!initState && global.needInitState))
             return SZ_ERROR_DATA;
           LzmaDec_InitDicAndState(initDic, initState);
-          global.needInitDic = False;
-          global.needInitState = False;
+          global.needInitDic = FALSE;
+          global.needInitState = FALSE;
         }
         ASSERT(global.dicPos == global.dicBufSize);
         global.dicBufSize += us;
