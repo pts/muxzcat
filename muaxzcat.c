@@ -11,7 +11,7 @@
  * languages:
  *
  * * It doesn't use sizeof.
- * * !! TODO(pts): It doesn't use pointers. (It uses arrays and array indexes.)
+ * * It doesn't use pointers. (It uses arrays and array indexes.)
  * * !! TODO(pts): It doesn't use macros (except for constants).
  * * !! TODO(pts): It has more state in global variables (rather than function
  *   arguments).
@@ -274,8 +274,8 @@ struct {
 #define IF_BIT_0(probMacroIdx) ttt = GET_ARY16(probs, probMacroIdx); NORMALIZE; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
 #define IF_BIT_0_CHECK(probMacroIdx) ttt = GET_ARY16(probs, probMacroIdx); NORMALIZE_CHECK; bound = (rangeLocal >> kNumBitModelTotalBits) * ttt; if (codeLocal < bound)
 #define TREE_6_DECODE(probMacroIdx, i) TREE_DECODE(probMacroIdx, (1 << 6), i)
-#define TREE_DECODE(probMacroIdx, limit, i) { i = 1; do { TREE_GET_BIT(probMacroIdx, i); } while (i < limit); i -= limit; }
-#define TREE_DECODE_CHECK(probMacroIdx, limit, i) { i = 1; do { GET_BIT_CHECK(probMacroIdx + i, i) } while (i < limit); i -= limit; }
+#define TREE_DECODE(probMacroIdx, limitMacro, i) { i = 1; do { TREE_GET_BIT(probMacroIdx, i); } while (i < limitMacro); i -= limitMacro; }
+#define TREE_DECODE_CHECK(probMacroIdx, limitMacro, i) { i = 1; do { GET_BIT_CHECK(probMacroIdx + i, i) } while (i < limitMacro); i -= limitMacro; }
 #define TREE_GET_BIT(probMacroIdx, i) { GET_BIT((probMacroIdx + i), i); }
 #define UPDATE_0(probMacroIdx) rangeLocal = bound; SET_ARY16(probs, probMacroIdx, TRUNCATE_TO_16BIT(ttt + ((kBitModelTotal - ttt) >> kNumMoveBits)));
 #define UPDATE_1(probMacroIdx) rangeLocal -= bound; codeLocal -= bound; SET_ARY16(probs, probMacroIdx, TRUNCATE_TO_16BIT(ttt - (ttt >> kNumMoveBits)));
@@ -289,267 +289,6 @@ struct {
 struct ProbsAsserts {
   int LiteralCode : Literal == LZMA_BASE_SIZE;
 };
-
-SRes LzmaDec_DecodeReal(UInt32 limit, UInt32 bufLimit)
-{
-  const UInt32 pbMask = ((UInt32)1 << (global.pb)) - 1;
-  const UInt32 lpMask = ((UInt32)1 << (global.lp)) - 1;
-  UInt32 len = 0;
-  UInt32 rangeLocal = global.range;
-  UInt32 codeLocal = global.code;
-
-  do
-  {
-    UInt32 probIdx;
-    UInt32 bound;
-    UInt32 ttt;
-    UInt32 posState = global.processedPos & pbMask;
-
-    probIdx = IsMatch + (global.state << kNumPosBitsMax) + posState;
-    IF_BIT_0(probIdx)
-    {
-      UInt32 symbol;
-      UPDATE_0(probIdx);
-      probIdx = Literal;
-      if (global.checkDicSize != 0 || global.processedPos != 0) {
-        probIdx += (LZMA_LIT_SIZE * (((global.processedPos & lpMask) << global.lc) + (GET_ARY8(dic, (global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1) >> (8 - global.lc))));
-      }
-
-      if (global.state < kNumLitStates)
-      {
-        global.state -= (global.state < 4) ? global.state : 3;
-        symbol = 1;
-        do { GET_BIT(probIdx + symbol, symbol) } while (symbol < 0x100);
-      }
-      else
-      {
-        UInt32 matchByte = GET_ARY8(dic, (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0));
-        UInt32 offs = 0x100;
-        global.state -= (global.state < 10) ? 3 : 6;
-        symbol = 1;
-        do
-        {
-          UInt32 bit;
-          UInt32 probLitIdx;
-          matchByte <<= 1;
-          bit = (matchByte & offs);
-          probLitIdx = probIdx + offs + bit + symbol;
-          GET_BIT2(probLitIdx, symbol, offs &= ~bit, offs &= bit)
-        }
-        while (symbol < 0x100);
-      }
-      SET_ARY8(dic, global.dicPos++, TRUNCATE_TO_8BIT(symbol));
-      global.processedPos++;
-      continue;
-    }
-    else
-    {
-      UPDATE_1(probIdx);
-      probIdx = IsRep + global.state;
-      IF_BIT_0(probIdx)
-      {
-        UPDATE_0(probIdx);
-        global.state += kNumStates;
-        probIdx = LenCoder;
-      }
-      else
-      {
-        UPDATE_1(probIdx);
-        if (global.checkDicSize == 0 && global.processedPos == 0)
-          return SZ_ERROR_DATA;
-        probIdx = IsRepG0 + global.state;
-        IF_BIT_0(probIdx)
-        {
-          UPDATE_0(probIdx);
-          probIdx = IsRep0Long + (global.state << kNumPosBitsMax) + posState;
-          IF_BIT_0(probIdx)
-          {
-            UPDATE_0(probIdx);
-            SET_ARY8(dic, global.dicPos, GET_ARY8(dic, (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)));
-            global.dicPos++;
-            global.processedPos++;
-            global.state = global.state < kNumLitStates ? 9 : 11;
-            continue;
-          }
-          UPDATE_1(probIdx);
-        }
-        else
-        {
-          UInt32 distance;
-          UPDATE_1(probIdx);
-          probIdx = IsRepG1 + global.state;
-          IF_BIT_0(probIdx)
-          {
-            UPDATE_0(probIdx);
-            distance = global.rep1;
-          }
-          else
-          {
-            UPDATE_1(probIdx);
-            probIdx = IsRepG2 + global.state;
-            IF_BIT_0(probIdx)
-            {
-              UPDATE_0(probIdx);
-              distance = global.rep2;
-            }
-            else
-            {
-              UPDATE_1(probIdx);
-              distance = global.rep3;
-              global.rep3 = global.rep2;
-            }
-            global.rep2 = global.rep1;
-          }
-          global.rep1 = global.rep0;
-          global.rep0 = distance;
-        }
-        global.state = global.state < kNumLitStates ? 8 : 11;
-        probIdx = RepLenCoder;
-      }
-      {
-        UInt32 limit, offset;
-        UInt32 probLenIdx = probIdx + LenChoice;
-        IF_BIT_0(probLenIdx)
-        {
-          UPDATE_0(probLenIdx);
-          probLenIdx = probIdx + LenLow + (posState << kLenNumLowBits);
-          offset = 0;
-          limit = (1 << kLenNumLowBits);
-        }
-        else
-        {
-          UPDATE_1(probLenIdx);
-          probLenIdx = probIdx + LenChoice2;
-          IF_BIT_0(probLenIdx)
-          {
-            UPDATE_0(probLenIdx);
-            probLenIdx = probIdx + LenMid + (posState << kLenNumMidBits);
-            offset = kLenNumLowSymbols;
-            limit = (1 << kLenNumMidBits);
-          }
-          else
-          {
-            UPDATE_1(probLenIdx);
-            probLenIdx = probIdx + LenHigh;
-            offset = kLenNumLowSymbols + kLenNumMidSymbols;
-            limit = (1 << kLenNumHighBits);
-          }
-        }
-        TREE_DECODE(probLenIdx, limit, len);
-        len += offset;
-      }
-
-      if (global.state >= kNumStates)
-      {
-        UInt32 distance;
-        probIdx = PosSlot + ((len < kNumLenToPosStates ? len : kNumLenToPosStates - 1) << kNumPosSlotBits);
-        TREE_6_DECODE(probIdx, distance);
-        if (distance >= kStartPosModelIndex)
-        {
-          UInt32 posSlot = (UInt32)distance;
-          int numDirectBits = (int)(((distance >> 1) - 1));
-          distance = (2 | (distance & 1));
-          if (posSlot < kEndPosModelIndex)
-          {
-            distance <<= numDirectBits;
-            probIdx = SpecPos + distance - posSlot - 1;
-            {
-              UInt32 mask = 1;
-              UInt32 i = 1;
-              do
-              {
-                GET_BIT2(probIdx + i, i, ; , distance |= mask);
-                mask <<= 1;
-              }
-              while (--numDirectBits != 0);
-            }
-          }
-          else
-          {
-            numDirectBits -= kNumAlignBits;
-            do
-            {
-              NORMALIZE
-              rangeLocal >>= 1;
-
-              {
-                UInt32 t;
-                codeLocal -= rangeLocal;
-                t = (0 - ((UInt32)codeLocal >> 31));
-                distance = (distance << 1) + (t + 1);
-                codeLocal += rangeLocal & t;
-              }
-            }
-            while (--numDirectBits != 0);
-            probIdx = Align;
-            distance <<= kNumAlignBits;
-            {
-              UInt32 i = 1;
-              GET_BIT2(probIdx + i, i, ; , distance |= 1);
-              GET_BIT2(probIdx + i, i, ; , distance |= 2);
-              GET_BIT2(probIdx + i, i, ; , distance |= 4);
-              GET_BIT2(probIdx + i, i, ; , distance |= 8);
-            }
-            if (distance == (UInt32)0xFFFFFFFF)
-            {
-              len += kMatchSpecLenStart;
-              global.state -= kNumStates;
-              break;
-            }
-          }
-        }
-        global.rep3 = global.rep2;
-        global.rep2 = global.rep1;
-        global.rep1 = global.rep0;
-        global.rep0 = distance + 1;
-        if (global.checkDicSize == 0)
-        {
-          if (distance >= global.processedPos)
-            return SZ_ERROR_DATA;
-        }
-        else if (distance >= global.checkDicSize)
-          return SZ_ERROR_DATA;
-        global.state = (global.state < kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3;
-      }
-
-      len += kMatchMinLen;
-
-      if (limit == global.dicPos)
-        return SZ_ERROR_DATA;
-      {
-        UInt32 rem = limit - global.dicPos;
-        UInt32 curLen = ((rem < len) ? (UInt32)rem : len);
-        UInt32 pos = (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0);
-
-        global.processedPos += curLen;
-
-        len -= curLen;
-        if (pos + curLen <= global.dicBufSize)
-        {
-          ASSERT(global.dicPos > pos);
-          ASSERT(curLen > 0);
-          do {
-            SET_ARY8(dic, global.dicPos++, GET_ARY8(dic, pos++));
-          } while (--curLen != 0);
-        }
-        else
-        {
-          do {
-            SET_ARY8(dic, global.dicPos++, GET_ARY8(dic, pos++));
-            if (pos == global.dicBufSize) pos = 0;
-          } while (--curLen != 0);
-        }
-      }
-    }
-  }
-  while (global.dicPos < limit && global.bufCur < bufLimit);
-  NORMALIZE;
-  global.range = rangeLocal;
-  global.code = codeLocal;
-  global.remainLen = len;
-
-  return SZ_OK;
-}
 
 void LzmaDec_WriteRem(UInt32 dicLimit)
 {
@@ -574,24 +313,266 @@ void LzmaDec_WriteRem(UInt32 dicLimit)
 }
 
 /* Modifies global.bufCur etc. */
-SRes LzmaDec_DecodeReal2(UInt32 dicLimit, UInt32 bufLimit)
+SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit)
 {
-  SRes res;
-  do
-  {
-    UInt32 dicLimit2 = dicLimit;
-    if (global.checkDicSize == 0)
-    {
-      UInt32 rem = global.dicSize - global.processedPos;
-      if (dicLimit - global.dicPos > rem)
-        dicLimit2 = global.dicPos + rem;
-    }
-    if ((res = LzmaDec_DecodeReal(dicLimit2, bufLimit)) != SZ_OK) return res;
+  const UInt32 pbMask = ((UInt32)1 << (global.pb)) - 1;
+  const UInt32 lpMask = ((UInt32)1 << (global.lp)) - 1;
+  do {
+    const UInt32 dicLimit2 = global.checkDicSize == 0 && global.dicSize - global.processedPos < dicLimit - global.dicPos ? global.dicPos + (global.dicSize - global.processedPos) : dicLimit;
+    UInt32 len = 0;
+    UInt32 rangeLocal = global.range;
+    UInt32 codeLocal = global.code;
+    do {
+      UInt32 probIdx;
+      UInt32 bound;
+      UInt32 ttt;
+      UInt32 posState = global.processedPos & pbMask;
+
+      probIdx = IsMatch + (global.state << kNumPosBitsMax) + posState;
+      IF_BIT_0(probIdx)
+      {
+        UInt32 symbol;
+        UPDATE_0(probIdx);
+        probIdx = Literal;
+        if (global.checkDicSize != 0 || global.processedPos != 0) {
+          probIdx += (LZMA_LIT_SIZE * (((global.processedPos & lpMask) << global.lc) + (GET_ARY8(dic, (global.dicPos == 0 ? global.dicBufSize : global.dicPos) - 1) >> (8 - global.lc))));
+        }
+
+        if (global.state < kNumLitStates)
+        {
+          global.state -= (global.state < 4) ? global.state : 3;
+          symbol = 1;
+          do { GET_BIT(probIdx + symbol, symbol) } while (symbol < 0x100);
+        }
+        else
+        {
+          UInt32 matchByte = GET_ARY8(dic, (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0));
+          UInt32 offs = 0x100;
+          global.state -= (global.state < 10) ? 3 : 6;
+          symbol = 1;
+          do
+          {
+            UInt32 bit;
+            UInt32 probLitIdx;
+            matchByte <<= 1;
+            bit = (matchByte & offs);
+            probLitIdx = probIdx + offs + bit + symbol;
+            GET_BIT2(probLitIdx, symbol, offs &= ~bit, offs &= bit)
+          }
+          while (symbol < 0x100);
+        }
+        SET_ARY8(dic, global.dicPos++, TRUNCATE_TO_8BIT(symbol));
+        global.processedPos++;
+        continue;
+      }
+      else
+      {
+        UPDATE_1(probIdx);
+        probIdx = IsRep + global.state;
+        IF_BIT_0(probIdx)
+        {
+          UPDATE_0(probIdx);
+          global.state += kNumStates;
+          probIdx = LenCoder;
+        }
+        else
+        {
+          UPDATE_1(probIdx);
+          if (global.checkDicSize == 0 && global.processedPos == 0)
+            return SZ_ERROR_DATA;
+          probIdx = IsRepG0 + global.state;
+          IF_BIT_0(probIdx)
+          {
+            UPDATE_0(probIdx);
+            probIdx = IsRep0Long + (global.state << kNumPosBitsMax) + posState;
+            IF_BIT_0(probIdx)
+            {
+              UPDATE_0(probIdx);
+              SET_ARY8(dic, global.dicPos, GET_ARY8(dic, (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0)));
+              global.dicPos++;
+              global.processedPos++;
+              global.state = global.state < kNumLitStates ? 9 : 11;
+              continue;
+            }
+            UPDATE_1(probIdx);
+          }
+          else
+          {
+            UInt32 distance;
+            UPDATE_1(probIdx);
+            probIdx = IsRepG1 + global.state;
+            IF_BIT_0(probIdx)
+            {
+              UPDATE_0(probIdx);
+              distance = global.rep1;
+            }
+            else
+            {
+              UPDATE_1(probIdx);
+              probIdx = IsRepG2 + global.state;
+              IF_BIT_0(probIdx)
+              {
+                UPDATE_0(probIdx);
+                distance = global.rep2;
+              }
+              else
+              {
+                UPDATE_1(probIdx);
+                distance = global.rep3;
+                global.rep3 = global.rep2;
+              }
+              global.rep2 = global.rep1;
+            }
+            global.rep1 = global.rep0;
+            global.rep0 = distance;
+          }
+          global.state = global.state < kNumLitStates ? 8 : 11;
+          probIdx = RepLenCoder;
+        }
+        {
+          UInt32 limitSub, offset;
+          UInt32 probLenIdx = probIdx + LenChoice;
+          IF_BIT_0(probLenIdx)
+          {
+            UPDATE_0(probLenIdx);
+            probLenIdx = probIdx + LenLow + (posState << kLenNumLowBits);
+            offset = 0;
+            limitSub = (1 << kLenNumLowBits);
+          }
+          else
+          {
+            UPDATE_1(probLenIdx);
+            probLenIdx = probIdx + LenChoice2;
+            IF_BIT_0(probLenIdx)
+            {
+              UPDATE_0(probLenIdx);
+              probLenIdx = probIdx + LenMid + (posState << kLenNumMidBits);
+              offset = kLenNumLowSymbols;
+              limitSub = (1 << kLenNumMidBits);
+            }
+            else
+            {
+              UPDATE_1(probLenIdx);
+              probLenIdx = probIdx + LenHigh;
+              offset = kLenNumLowSymbols + kLenNumMidSymbols;
+              limitSub = (1 << kLenNumHighBits);
+            }
+          }
+          TREE_DECODE(probLenIdx, limitSub, len);
+          len += offset;
+        }
+
+        if (global.state >= kNumStates)
+        {
+          UInt32 distance;
+          probIdx = PosSlot + ((len < kNumLenToPosStates ? len : kNumLenToPosStates - 1) << kNumPosSlotBits);
+          TREE_6_DECODE(probIdx, distance);
+          if (distance >= kStartPosModelIndex)
+          {
+            UInt32 posSlot = (UInt32)distance;
+            int numDirectBits = (int)(((distance >> 1) - 1));
+            distance = (2 | (distance & 1));
+            if (posSlot < kEndPosModelIndex)
+            {
+              distance <<= numDirectBits;
+              probIdx = SpecPos + distance - posSlot - 1;
+              {
+                UInt32 mask = 1;
+                UInt32 i = 1;
+                do
+                {
+                  GET_BIT2(probIdx + i, i, ; , distance |= mask);
+                  mask <<= 1;
+                }
+                while (--numDirectBits != 0);
+              }
+            }
+            else
+            {
+              numDirectBits -= kNumAlignBits;
+              do
+              {
+                NORMALIZE
+                rangeLocal >>= 1;
+
+                {
+                  UInt32 t;
+                  codeLocal -= rangeLocal;
+                  t = (0 - ((UInt32)codeLocal >> 31));
+                  distance = (distance << 1) + (t + 1);
+                  codeLocal += rangeLocal & t;
+                }
+              }
+              while (--numDirectBits != 0);
+              probIdx = Align;
+              distance <<= kNumAlignBits;
+              {
+                UInt32 i = 1;
+                GET_BIT2(probIdx + i, i, ; , distance |= 1);
+                GET_BIT2(probIdx + i, i, ; , distance |= 2);
+                GET_BIT2(probIdx + i, i, ; , distance |= 4);
+                GET_BIT2(probIdx + i, i, ; , distance |= 8);
+              }
+              if (distance == (UInt32)0xFFFFFFFF)
+              {
+                len += kMatchSpecLenStart;
+                global.state -= kNumStates;
+                break;
+              }
+            }
+          }
+          global.rep3 = global.rep2;
+          global.rep2 = global.rep1;
+          global.rep1 = global.rep0;
+          global.rep0 = distance + 1;
+          if (global.checkDicSize == 0)
+          {
+            if (distance >= global.processedPos)
+              return SZ_ERROR_DATA;
+          }
+          else if (distance >= global.checkDicSize)
+            return SZ_ERROR_DATA;
+          global.state = (global.state < kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3;
+        }
+
+        len += kMatchMinLen;
+
+        if (dicLimit2 == global.dicPos)
+          return SZ_ERROR_DATA;
+        {
+          UInt32 rem = dicLimit2 - global.dicPos;
+          UInt32 curLen = ((rem < len) ? (UInt32)rem : len);
+          UInt32 pos = (global.dicPos - global.rep0) + ((global.dicPos < global.rep0) ? global.dicBufSize : 0);
+
+          global.processedPos += curLen;
+
+          len -= curLen;
+          if (pos + curLen <= global.dicBufSize)
+          {
+            ASSERT(global.dicPos > pos);
+            ASSERT(curLen > 0);
+            do {
+              SET_ARY8(dic, global.dicPos++, GET_ARY8(dic, pos++));
+            } while (--curLen != 0);
+          }
+          else
+          {
+            do {
+              SET_ARY8(dic, global.dicPos++, GET_ARY8(dic, pos++));
+              if (pos == global.dicBufSize) pos = 0;
+            } while (--curLen != 0);
+          }
+        }
+      }
+    } while (global.dicPos < dicLimit2 && global.bufCur < bufLimit);
+    NORMALIZE;
+    global.range = rangeLocal;
+    global.code = codeLocal;
+    global.remainLen = len;
     if (global.processedPos >= global.dicSize)
       global.checkDicSize = global.dicSize;
     LzmaDec_WriteRem(dicLimit);
-  }
-  while (global.dicPos < dicLimit && global.bufCur < bufLimit && global.remainLen < kMatchSpecLenStart);
+  } while (global.dicPos < dicLimit && global.bufCur < bufLimit && global.remainLen < kMatchSpecLenStart);
 
   if (global.remainLen > kMatchSpecLenStart)
   {
@@ -708,14 +689,14 @@ Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
         probIdx = RepLenCoder;
       }
       {
-        UInt32 limit, offset;
+        UInt32 limitSub, offset;
         UInt32 probLenIdx = probIdx + LenChoice;
         IF_BIT_0_CHECK(probLenIdx)
         {
           rangeLocal = bound;
           probLenIdx = probIdx + LenLow + (posState << kLenNumLowBits);
           offset = 0;
-          limit = 1 << kLenNumLowBits;
+          limitSub = 1 << kLenNumLowBits;
         }
         else
         {
@@ -726,17 +707,17 @@ Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
             rangeLocal = bound;
             probLenIdx = probIdx + LenMid + (posState << kLenNumMidBits);
             offset = kLenNumLowSymbols;
-            limit = 1 << kLenNumMidBits;
+            limitSub = 1 << kLenNumMidBits;
           }
           else
           {
             rangeLocal -= bound; codeLocal -= bound;
             probLenIdx = probIdx + LenHigh;
             offset = kLenNumLowSymbols + kLenNumMidSymbols;
-            limit = 1 << kLenNumHighBits;
+            limitSub = 1 << kLenNumHighBits;
           }
         }
-        TREE_DECODE_CHECK(probLenIdx, limit, len);
+        TREE_DECODE_CHECK(probLenIdx, limitSub, len);
         len += offset;
       }
 
