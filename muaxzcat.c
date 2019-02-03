@@ -52,24 +52,20 @@ ssize_t write(int fd, const void *buf, size_t count);
 #endif  /* __XTINY__ */
 #endif  /* __TINYC__ */
 
-typedef uint32_t UInt32;
-typedef uint16_t UInt16;
-typedef uint8_t  Byte;
-
-#define TRUNCATE_TO_16BIT(x) ((UInt16)(x))
-#define TRUNCATE_TO_8BIT(x) ((Byte)(x))
+#define TRUNCATE_TO_16BIT(x) ((uint16_t)(x))
+#define TRUNCATE_TO_8BIT(x) ((uint8_t)(x))
 
 /* This fails to compile if any condition after the : is false. */
 struct IntegerTypeAsserts {
-  int ByteIsInteger : (Byte)1 / 2 == 0;
-  int ByteIs8Bits : sizeof(Byte) == 1;
-  int ByteIsUnsigned : (Byte)-1 > 0;
-  int UInt16IsInteger : (UInt16)1 / 2 == 0;
-  int UInt16Is16Bits : sizeof(UInt16) == 2;
-  int UInt16IsUnsigned : (UInt16)-1 > 0;
-  int UInt32IsInteger : (UInt32)1 / 2 == 0;
-  int UInt32Is32Bits : sizeof(UInt32) == 4;
-  int UInt32IsUnsigned : (UInt32)-1 > 0;
+  int UInt8TIsInteger : (uint8_t)1 / 2 == 0;
+  int UInt8TIs8Bits : sizeof(uint8_t) == 1;
+  int UInt8TIsUnsigned : (uint8_t)-1 > 0;
+  int UInt16TIsInteger : (uint16_t)1 / 2 == 0;
+  int UInt16TIs16Bits : sizeof(uint16_t) == 2;
+  int UInt16TIsUnsigned : (uint16_t)-1 > 0;
+  int UInt32TIsInteger : (uint32_t)1 / 2 == 0;
+  int UInt32TIs32Bits : sizeof(uint32_t) == 4;
+  int UInt32TIsUnsigned : (uint32_t)-1 > 0;
 };
 
 /* --- */
@@ -89,11 +85,11 @@ struct IntegerTypeAsserts {
 #define ASSERT(condition) do {} while (0 && (condition))
 #endif
 
-#define DECLARE_ARY16(a, size) UInt16 a##16[size]
+#define DECLARE_ARY16(a, size) uint16_t a##16[size]
 #define GET_ARY16(a, idx) (+global.a##16[idx])
 /* TRUNCATE_TO_16BIT is must be called on value manually if needed. */
 #define SET_ARY16(a, idx, value) (global.a##16[idx] = value)
-#define DECLARE_ARY8(a, size) Byte a##8[size]
+#define DECLARE_ARY8(a, size) uint8_t a##8[size]
 #define GET_ARY8(a, idx) (+global.a##8[idx])
 /* TRUNCATE_TO_8BIT must be called on value manually if needed. */
 #define SET_ARY8(a, idx, value) (global.a##8[idx] = value)
@@ -184,8 +180,10 @@ struct IntegerTypeAsserts {
 
 /* --- */
 
-typedef UInt32 SRes;
-typedef Byte Bool;
+typedef uint32_t UInt32;
+typedef uint8_t Byte;
+typedef uint8_t SRes;
+typedef uint8_t Bool;
 
 /* For LZMA streams, lc + lp <= 8 + 4 <= 12.
  * For LZMA2 streams, lc + lp <= 4.
