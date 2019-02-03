@@ -781,18 +781,6 @@ void LzmaDec_InitDicAndState(Bool initDic, Bool initState)
     global.needInitLzma = TRUE;
 }
 
-void LzmaDec_InitStateReal(void)
-{
-  const UInt32 numProbs = Literal + ((UInt32)LZMA_LIT_SIZE << (global.lc + global.lp));
-  UInt32 i;
-  for (i = 0; i < numProbs; i++) {
-    SET_ARY16(probs, i, kBitModelTotal >> 1);
-  }
-  global.rep0 = global.rep1 = global.rep2 = global.rep3 = 1;
-  global.state = 0;
-  global.needInitLzma = FALSE;
-}
-
 /* Decompress LZMA stream in
  * GET_ARY8(readBuf, global.readCur : global.readCur + srcLen).
  * On success (and on some errors as well), adds srcLen to global.readCur.
@@ -844,7 +832,14 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
       }
 
       if (global.needInitLzma) {
-        LzmaDec_InitStateReal();
+        const UInt32 numProbs = Literal + ((UInt32)LZMA_LIT_SIZE << (global.lc + global.lp));
+        UInt32 i;
+        for (i = 0; i < numProbs; i++) {
+          SET_ARY16(probs, i, kBitModelTotal >> 1);
+        }
+        global.rep0 = global.rep1 = global.rep2 = global.rep3 = 1;
+        global.state = 0;
+        global.needInitLzma = FALSE;
       }
 
       if (global.tempBufSize == 0)
