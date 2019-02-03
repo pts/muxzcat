@@ -6,6 +6,8 @@ gcc -C -E -DCONFIG_LANG_PERL -ansi -O2 -W -Wall -Wextra -Werror muaxzcat.c >muax
 (
 echo '#! /usr/bin/env perl
 BEGIN { $^W = 1 }
+# Silence warning about goto-into-while.
+BEGIN { eval { require warnings; unimport warnings qw(deprecated) }; }
 use integer;
 use strict;
 
