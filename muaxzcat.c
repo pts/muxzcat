@@ -30,7 +30,6 @@ typedef short int16_t;
 typedef unsigned short uint16_t;
 typedef unsigned char uint8_t;
 
-int memcmp(const void *s1, const void *s2, size_t n);
 ssize_t read(int fd, void *buf, size_t count);
 ssize_t write(int fd, const void *buf, size_t count);
 
@@ -42,7 +41,6 @@ ssize_t write(int fd, const void *buf, size_t count);
 #else  /* Not __XTINY__. */
 
 #define CONFIG_DEBUG 1
-#include <string.h>  /* memcmp() */
 #include <unistd.h>  /* read(), write() */
 #ifdef _WIN32
 #  include <windows.h>
@@ -1027,7 +1025,10 @@ SRes DecompressXzOrLzma(void) {
    */
   if (Preread(12 + 12 + 6) < 12 + 12 + 6) return SZ_ERROR_INPUT_EOF;
   /* readbuf[7] is actually stream flags, should also be 0. */
-  if (0 == memcmp(&global.readBuf[global.readCur], "\xFD""7zXZ\0", 7)) {  /* .xz */
+  if (global.readBuf[0] == 0xfd && global.readBuf[1] == 0x37 &&
+      global.readBuf[2] == 0x7a && global.readBuf[3] == 0x58 &&
+      global.readBuf[4] == 0x5a && global.readBuf[5] == 0 &&
+      global.readBuf[6] == 0) {  /* .xz: "\xFD""7zXZ\0" */ 
   } else if (global.readBuf[global.readCur] <= 225 && global.readBuf[global.readCur + 13] == 0 &&  /* .lzma */
         /* High 4 bytes of uncompressed size. */
         ((bhf = GetLE4(global.readCur + 9)) == 0 || bhf == ~(UInt32)0) &&
