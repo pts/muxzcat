@@ -765,14 +765,6 @@ Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit)
   return res;
 }
 
-
-void LzmaDec_InitRc(UInt32 initRcCur)
-{
-  global.code = ((UInt32)GET_ARY8(readBuf, initRcCur + 1) << 24) | ((UInt32)GET_ARY8(readBuf, initRcCur + 2) << 16) | ((UInt32)GET_ARY8(readBuf, initRcCur + 3) << 8) | ((UInt32)GET_ARY8(readBuf, initRcCur + 4));
-  global.range = 0xFFFFFFFF;
-  global.needFlush = FALSE;
-}
-
 void LzmaDec_InitDicAndState(Bool initDic, Bool initState)
 {
   global.needFlush = TRUE;
@@ -816,6 +808,9 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
 
       if (global.needFlush)
       {
+        /* Read 5 bytes (RC_INIT_SIZE) to tempBuf, first of which must be
+         * 0, initialize the range coder with the 4 bytes after the 0 byte.
+         */
         for (; decodeLimit > global.readCur && global.tempBufSize < RC_INIT_SIZE;) {
           SET_ARY8(readBuf, READBUF_SIZE + global.tempBufSize++, GET_ARY8(readBuf, global.readCur++));
         }
@@ -827,8 +822,9 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
         }
         if (GET_ARY8(readBuf, READBUF_SIZE) != 0)
           return SZ_ERROR_DATA;
-
-        LzmaDec_InitRc(READBUF_SIZE);  /* tempBuf. */
+        global.code = ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 1) << 24) | ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 2) << 16) | ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 3) << 8) | ((UInt32)GET_ARY8(readBuf, READBUF_SIZE + 4));
+        global.range = 0xFFFFFFFF;
+        global.needFlush = FALSE;
         global.tempBufSize = 0;
       }
 
