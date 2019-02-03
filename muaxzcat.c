@@ -1254,7 +1254,7 @@ FUNC_ARG0(SRes, Decompress)
   CLEAR_ARY8(dic);
   binmode(STDIN);
   binmode(STDOUT);
-  LOCAL_VAR(res) = DcompressXzOrLzma();
+  LOCAL_VAR(res) = DecompressXzOrLzma();
   CLEAR_ARY16(probs);
   CLEAR_ARY8(readBuf);
   CLEAR_ARY8(dic);
