@@ -52,9 +52,7 @@ ssize_t write(int fd, const void *buf, size_t count);
 #endif  /* __XTINY__ */
 #endif  /* __TINYC__ */
 
-typedef int32_t  Int32;
 typedef uint32_t UInt32;
-typedef int16_t  Int16;
 typedef uint16_t UInt16;
 typedef uint8_t  Byte;
 
@@ -960,8 +958,8 @@ UInt32 Preread(UInt32 r) {
        * global.readEnd) to read as much as the buffer has room for.
        */
       DEBUGF("READ size=%d\n", r - p);
-      const Int32 got = READ_FROM_STDIN_TO_ARY8(readBuf, global.readEnd, r - p);
-      if (got <= 0) break;  /* EOF on input. */
+      const UInt32 got = READ_FROM_STDIN_TO_ARY8(readBuf, global.readEnd, r - p);
+      if ((UInt32)(got - 1) & 0x80000000) break;  /* EOF or error on input. */
       global.readEnd += got;
       p += got;
     }
@@ -1014,8 +1012,8 @@ SRes InitProp(Byte b) {
 SRes WriteFrom(UInt32 fromDicPos) {
   DEBUGF("WRITE %d dicPos=%d\n", global.dicPos - fromDicPos, global.dicPos);
   while (fromDicPos != global.dicPos) {
-    const Int32 got = WRITE_TO_STDOUT_FROM_ARY8(dic, fromDicPos, global.dicPos - fromDicPos);
-    if (got <= 0) return SZ_ERROR_WRITE;
+    const UInt32 got = WRITE_TO_STDOUT_FROM_ARY8(dic, fromDicPos, global.dicPos - fromDicPos);
+    if (got & 0x80000000) return SZ_ERROR_WRITE;
     fromDicPos += got;
   }
   return SZ_OK;
