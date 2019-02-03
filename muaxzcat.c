@@ -22,6 +22,9 @@
 #undef CONFIG_DEBUG
 #ifdef __TINYC__  /* tcc https://bellard.org/tcc/ , pts-tcc https://github.com/pts/pts-tcc */
 
+#undef  CONFIG_LANG_C
+#define CONFIG_LANG_C 1
+
 typedef unsigned size_t;  /* TODO(pts): Support 64-bit tcc */
 typedef int ssize_t;  /* TODO(pts): Support 64-bit tcc */
 typedef int int32_t;
@@ -29,17 +32,20 @@ typedef unsigned uint32_t;
 typedef short int16_t;
 typedef unsigned short uint16_t;
 typedef unsigned char uint8_t;
-
 ssize_t read(int fd, void *buf, size_t count);
 ssize_t write(int fd, const void *buf, size_t count);
 
 #else
 #ifdef __XTINY__  /* xtiny https://github.com/pts/pts-xtiny */
 
+#undef  CONFIG_LANG_C
+#define CONFIG_LANG_C 1
 #include <xtiny.h>
 
 #else  /* Not __XTINY__. */
 
+#undef  CONFIG_LANG_C
+#define CONFIG_LANG_C 1
 #define CONFIG_DEBUG 1
 #include <unistd.h>  /* read(), write() */
 #ifdef _WIN32
@@ -52,9 +58,7 @@ ssize_t write(int fd, const void *buf, size_t count);
 #endif  /* __XTINY__ */
 #endif  /* __TINYC__ */
 
-#define TRUNCATE_TO_16BIT(x) ((uint16_t)(x))
-#define TRUNCATE_TO_8BIT(x) ((uint8_t)(x))
-
+#ifdef CONFIG_LANG_C
 /* This fails to compile if any condition after the : is false. */
 struct IntegerTypeAsserts {
   int UInt8TIsInteger : (uint8_t)1 / 2 == 0;
@@ -67,6 +71,16 @@ struct IntegerTypeAsserts {
   int UInt32TIs32Bits : sizeof(uint32_t) == 4;
   int UInt32TIsUnsigned : (uint32_t)-1 > 0;
 };
+#endif  /* CONFIG_LANG_C */
+
+#ifdef CONFIG_LANG_C
+#define TRUNCATE_TO_16BIT(x) ((uint16_t)(x))
+#define TRUNCATE_TO_8BIT(x) ((uint8_t)(x))
+#define FUNC_ARG0(return_type, name) return_type name(void) {
+#define FUNC_ARG1(return_type, name, arg1_type, arg1) return_type name(arg1_type arg1) {
+#define FUNC_ARG2(return_type, name, arg1_type, arg1, arg2_type, arg2) return_type name(arg1_type arg1, arg2_type arg2) {
+#define ENDFUNC }
+#endif  /* CONFIG_LANG_C */
 
 /* --- */
 
@@ -228,12 +242,14 @@ typedef uint8_t Bool;
  */
 /*#define LzmaProps_GetNumProbs(p) ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp))) */
 
+#ifdef CONFIG_LANG_C
 /* This fails to compile if any condition after the : is false. */
 struct LzmaAsserts {
   int Lzma2MaxNumProbsIsCorrect : LZMA2_MAX_NUM_PROBS == ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << LZMA2_LCLP_MAX));
 };
+#endif  /* CONFIG_LANG_C */
 
-struct {
+struct Global {
   UInt32 bufCur;
   UInt32 dicSize;  /* Configured in prop byte. */
   UInt32 range, code;
@@ -268,12 +284,14 @@ struct {
 
 /* --- */
 
+#ifdef CONFIG_LANG_C
 /* This fails to compile if any condition after the : is false. */
 struct ProbsAsserts {
   int LiteralCode : Literal == LZMA_BASE_SIZE;
 };
+#endif  /* CONFIG_LANG_C */
 
-void LzmaDec_WriteRem(UInt32 dicLimit) {
+FUNC_ARG1(void, LzmaDec_WriteRem, UInt32, dicLimit)
   if (global.remainLen != 0 && global.remainLen < kMatchSpecLenStart) {
     UInt32 len = global.remainLen;
     if (dicLimit - global.dicPos < len) {
@@ -290,10 +308,10 @@ void LzmaDec_WriteRem(UInt32 dicLimit) {
       global.dicPos++;
     }
   }
-}
+ENDFUNC
 
 /* Modifies global.bufCur etc. */
-SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit) {
+FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLimit)
   const UInt32 pbMask = ((UInt32)1 << (global.pb)) - 1;
   const UInt32 lpMask = ((UInt32)1 << (global.lp)) - 1;
   do {
@@ -525,10 +543,9 @@ SRes LzmaDec_DecodeReal2(const UInt32 dicLimit, const UInt32 bufLimit) {
     global.remainLen = kMatchSpecLenStart;
   }
   return SZ_OK;
-}
+ENDFUNC
 
-/* Replace pointer argument buf here with an UInt32 argument. */
-Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit) {
+FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
   UInt32 rangeLocal = global.range;
   UInt32 codeLocal = global.code;
   UInt32 stateLocal = global.state;
@@ -672,9 +689,9 @@ Byte LzmaDec_TryDummy(UInt32 bufDummyCur, const UInt32 bufLimit) {
   }
   if (rangeLocal < kTopValue) { if (bufDummyCur >= bufLimit) { return DUMMY_ERROR; } rangeLocal <<= 8; codeLocal = (codeLocal << 8) | (GET_ARY8(readBuf, bufDummyCur++)); };
   return res;
-}
+ENDFUNC
 
-void LzmaDec_InitDicAndState(const Bool initDic, const Bool initState) {
+FUNC_ARG2(void, LzmaDec_InitDicAndState, const Bool, initDic, const Bool, initState)
   global.needFlush = TRUE;
   global.remainLen = 0;
   global.tempBufSize = 0;
@@ -687,13 +704,13 @@ void LzmaDec_InitDicAndState(const Bool initDic, const Bool initState) {
   if (initState) {
     global.needInitLzma = TRUE;
   }
-}
+ENDFUNC
 
 /* Decompress LZMA stream in
  * GET_ARY8(readBuf, global.readCur : global.readCur + srcLen).
  * On success (and on some errors as well), adds srcLen to global.readCur.
  */
-SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
+FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, srcLen)
   /* Index limit in global.readBuf. */
   const UInt32 decodeLimit = global.readCur + srcLen;
   LzmaDec_WriteRem(global.dicBufSize);
@@ -799,7 +816,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
   }
   if (global.code != 0) { return SZ_ERROR_DATA; }
   return SZ_ERROR_FINISHED_WITH_MARK;
-}
+ENDFUNC
 
 /* Tries to preread r bytes to the read buffer. Returns the number of bytes
  * available in the read buffer. If smaller than r, that indicates EOF.
@@ -809,7 +826,7 @@ SRes LzmaDec_DecodeToDic(const UInt32 srcLen) {
  *
  * Works only if r <= READBUF_SIZE.
  */
-UInt32 Preread(const UInt32 r) {
+FUNC_ARG1(UInt32, Preread, const UInt32, r)
   UInt32 p = global.readEnd - global.readCur;
   ASSERT(r <= READBUF_SIZE);
   if (p < r) {  /* Not enough pending available. */
@@ -834,27 +851,27 @@ UInt32 Preread(const UInt32 r) {
   }
   DEBUGF("PREREAD r=%d p=%d\n", r, p);
   return p;
-}
+ENDFUNC
 
-void IgnoreVarint(void) {
+FUNC_ARG0(void, IgnoreVarint)
   while (GET_ARY8(readBuf, global.readCur++) >= 0x80) {}
-}
+ENDFUNC
 
-SRes IgnoreZeroBytes(UInt32 c) {
+FUNC_ARG1(SRes, IgnoreZeroBytes, UInt32, c)
   for (; c > 0; --c) {
     if (GET_ARY8(readBuf, global.readCur++) != 0) {
       return SZ_ERROR_BAD_PADDING;
     }
   }
   return SZ_OK;
-}
+ENDFUNC
 
-UInt32 GetLE4(const UInt32 p) {
+FUNC_ARG1(UInt32, GetLE4, const UInt32, p)
   return GET_ARY8(readBuf, p) | GET_ARY8(readBuf, p + 1) << 8 | GET_ARY8(readBuf, p + 2) << 16 | GET_ARY8(readBuf, p + 3) << 24;
-}
+ENDFUNC
 
 /* Expects global.dicSize be set already. Can be called before or after InitProp. */
-void InitDecode(void) {
+FUNC_ARG0(void, InitDecode)
   /* global.lc = global.pb = global.lp = 0; */  /* needInitProp will initialize it */
   global.dicBufSize = 0;  /* We'll increment it later. */
   global.needInitDic = TRUE;
@@ -862,9 +879,9 @@ void InitDecode(void) {
   global.needInitProp = TRUE;
   global.dicPos = 0;
   LzmaDec_InitDicAndState(TRUE, TRUE);
-}
+ENDFUNC
 
-SRes InitProp(Byte b) {
+FUNC_ARG1(SRes, InitProp, Byte, b)
   UInt32 lc, lp;
   if (b >= (9 * 5 * 5)) { return SZ_ERROR_BAD_LCLPPB_PROP; }
   lc = b % 9;
@@ -876,10 +893,10 @@ SRes InitProp(Byte b) {
   global.lp = lp;
   global.needInitProp = FALSE;
   return SZ_OK;
-}
+ENDFUNC
 
 /* Writes uncompressed data (GET_ARY8(dic, fromDicPos : global.dicPos) to stdout. */
-SRes WriteFrom(UInt32 fromDicPos) {
+FUNC_ARG1(SRes, WriteFrom, UInt32, fromDicPos)
   DEBUGF("WRITE %d dicPos=%d\n", global.dicPos - fromDicPos, global.dicPos);
   while (fromDicPos != global.dicPos) {
     const UInt32 got = WRITE_TO_STDOUT_FROM_ARY8(dic, fromDicPos, global.dicPos - fromDicPos);
@@ -887,14 +904,14 @@ SRes WriteFrom(UInt32 fromDicPos) {
     fromDicPos += got;
   }
   return SZ_OK;
-}
+ENDFUNC
 
 /* Reads .xz or .lzma data from stdin, writes uncompressed bytes to stdout,
  * uses global.dic. It verifies some aspects of the file format (so it
  * can't be tricked to an infinite loop etc.), itdoesn't verify checksums
  * (e.g. CRC32).
  */
-SRes DecompressXzOrLzma(void) {
+FUNC_ARG0(SRes, DecompressXzOrLzma)
   Byte checksumSize;
   UInt32 bhf;  /* Block header flags */
   SRes res;
@@ -1129,7 +1146,9 @@ SRes DecompressXzOrLzma(void) {
   }
   /* The .xz input file continues with the index, which we ignore from here. */
   return SZ_OK;
-}
+ENDFUNC
+
+#ifdef CONFIG_LANG_C
 int main(int argc, char **argv) {
   (void)argc; (void)argv;
 #if defined(MSDOS) || defined(_WIN32)  /* Also MinGW. Good. */
@@ -1138,3 +1157,4 @@ int main(int argc, char **argv) {
 #endif
   return DecompressXzOrLzma();
 }
+#endif
