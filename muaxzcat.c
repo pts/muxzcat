@@ -177,10 +177,6 @@ struct IntegerTypeAsserts {
 typedef UInt32 SRes;
 typedef Byte Bool;
 
-#ifndef RINOK
-#define RINOK(x) { SRes __result__ = (x); if (__result__ != 0) return __result__; }
-#endif
-
 /* For LZMA streams, lc + lp <= 8 + 4 <= 12.
  * For LZMA2 streams, lc + lp <= 4.
  * Minimum value: 1846.
@@ -570,6 +566,7 @@ void LzmaDec_WriteRem(UInt32 dicLimit)
 /* Modifies global.bufCur etc. */
 SRes LzmaDec_DecodeReal2(UInt32 dicLimit, UInt32 bufLimit)
 {
+  SRes res;
   do
   {
     UInt32 dicLimit2 = dicLimit;
@@ -579,7 +576,7 @@ SRes LzmaDec_DecodeReal2(UInt32 dicLimit, UInt32 bufLimit)
       if (dicLimit - global.dicPos > rem)
         dicLimit2 = global.dicPos + rem;
     }
-    RINOK(LzmaDec_DecodeReal(dicLimit2, bufLimit));
+    if ((res = LzmaDec_DecodeReal(dicLimit2, bufLimit)) != SZ_OK) return res;
     if (global.processedPos >= global.dicSize)
       global.checkDicSize = global.dicSize;
     LzmaDec_WriteRem(dicLimit);
@@ -1018,6 +1015,8 @@ SRes WriteFrom(UInt32 fromDicPos) {
 SRes DecompressXzOrLzma(void) {
   Byte checksumSize;
   UInt32 bhf;  /* Block header flags */
+  SRes res;
+
   /* 12 for the stream header + 12 for the first block header + 6 for the
    * first chunk header. empty.xz is 32 bytes.
    */
@@ -1042,7 +1041,7 @@ SRes DecompressXzOrLzma(void) {
      * global.probs), thus we are not able to extract some legitimate
      * .lzma files.
      */
-    RINOK(InitProp(global.readBuf[global.readCur]));
+    if ((res = InitProp(global.readBuf[global.readCur])) != SZ_OK) return res;
     if (bhf == 0) {
       global.dicBufSize = us = GetLE4(global.readCur + 5);
       if (us > DIC_ARRAY_SIZE) return SZ_ERROR_MEM;
@@ -1064,7 +1063,7 @@ SRes DecompressXzOrLzma(void) {
       res = LzmaDec_DecodeToDic(srcLen);
       DEBUGF("LZMADEC res=%d\n", res);
       if (global.dicPos > us) global.dicPos = us;
-      RINOK(WriteFrom(fromDicPos));
+      if ((res = WriteFrom(fromDicPos)) != SZ_OK) return res;
       if (res == SZ_ERROR_FINISHED_WITH_MARK) break;
       if (res != SZ_ERROR_NEEDS_MORE_INPUT && res != SZ_OK) return res;
       if (global.dicPos == us) break;
@@ -1139,7 +1138,7 @@ SRes DecompressXzOrLzma(void) {
     bhs2 = global.readCur - readAtBlock + 5;  /* Won't overflow. */
     DEBUGF("bhs=%d bhs2=%d\n", bhs, bhs2);
     if (bhs2 > bhs) return SZ_ERROR_BLOCK_HEADER_TOO_LONG;
-    RINOK(IgnoreZeroBytes(bhs - bhs2));
+    if ((res = IgnoreZeroBytes(bhs - bhs2)) != SZ_OK) return res;
     global.readCur += 4;  /* Ignore CRC32. */
     /* Typically it's offset 24, xz creates it by default, minimal. */
     DEBUGF("LZMA2\n");
@@ -1185,7 +1184,7 @@ SRes DecompressXzOrLzma(void) {
           us += (control & 31) << 16;
           cs = (global.readBuf[global.readCur + 3] << 8) + global.readBuf[global.readCur + 4] + 1;
           if (isProp) {
-            RINOK(InitProp(global.readBuf[global.readCur + 5]));
+            if ((res = InitProp(global.readBuf[global.readCur + 5])) != SZ_OK) return res;
             ++global.readCur;
             --blockSizePad;
           } else {
@@ -1219,10 +1218,10 @@ SRes DecompressXzOrLzma(void) {
         } else {  /* Compressed chunk. */
           DEBUGF("DECODE call\n");
           /* This call doesn't change global.dicBufSize. */
-          RINOK(LzmaDec_DecodeToDic(cs));
+          if ((res = LzmaDec_DecodeToDic(cs)) != SZ_OK) return res;
         }
         if (global.dicPos != global.dicBufSize) return SZ_ERROR_BAD_DICPOS;
-        RINOK(WriteFrom(global.dicPos - us));
+        if ((res = WriteFrom(global.dicPos - us)) != SZ_OK) return res;
         blockSizePad -= cs;
         /* We can't discard decompressbuf[:global.dicBufSize] now,
          * because we need it a dictionary in which subsequent calls to
@@ -1236,7 +1235,7 @@ SRes DecompressXzOrLzma(void) {
      */
     if (Preread(7 + 12 + 6) < 7 + 12 + 6) return SZ_ERROR_INPUT_EOF;
     DEBUGF("ALTELL blockSizePad=%d\n", blockSizePad & 3);
-    RINOK(IgnoreZeroBytes(blockSizePad & 3));  /* Ignore block padding. */
+    if ((res = IgnoreZeroBytes(blockSizePad & 3)) != SZ_OK) return res;  /* Ignore block padding. */
     global.readCur += checksumSize;  /* Ignore CRC32, CRC64 etc. */
   }
   /* The .xz input file continues with the index, which we ignore from here. */
