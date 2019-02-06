@@ -28,11 +28,12 @@ gcc -C -E -DCONFIG_LANG_PERL "$@" -ansi -O2 -W -Wall -Wextra -Werror muaxzcat.c 
 BEGIN { $^W = 1 }
 # Silence warning about goto-into-while.
 BEGIN { eval { require warnings; unimport warnings qw(deprecated) }; }
-use integer;
-use strict;
+use integer;  # This is required.
+use strict;   # Optional.
 # Older versions of Perl lose the value of my $x between nested gotos.
 die "fatal: your Perl is too old, upgrade to >=5.8.4\n" if !sub {
     goto a; for (;;) { a: my $x = 1; goto b; for (;;) { b: return $x } } }->();
+die "fatal: your Perl does not support integer arithmetics\n" if 1 / 2 * 2;
 ' &&
 <muaxzcat.pl.tmp2 perl -0777 -pe 's@^#(?!!).*\n@@gm; sub cont($) { my $s = $_[0]; $s =~ s@\A\s+@@; $s =~ s@\s+\Z(?!\n)@@; $s =~ s@\n[ \t]?([ \t]*)@\n$1# @g; $s } s@/[*](.*?)[*]/\n*@ "# " . cont($1) . "\n" @gse;
     s@([^\s#]) (#.*)|(#.*)@ defined($1) ? "$1  $2" : $3 @ge;
