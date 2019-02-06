@@ -173,7 +173,6 @@ struct IntegerTypeAsserts {
 #ifdef CONFIG_LANG_C
 #if defined(CONFIG_UINT64) || defined(CONFIG_INT64)
 #define SHR(x, y) ((x & 0xffffffff) >> (y))
-#define SHR_SMALL(x, y) SHR(x, y)
 #define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> (y))
 #define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
 #define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
@@ -181,6 +180,7 @@ struct IntegerTypeAsserts {
 #define LE(x, y) (((x) & 0xffffffff) <= ((y) & 0xffffffff))
 #define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
 #define GE(x, y) (((x) & 0xffffffff) >= ((y) & 0xffffffff))
+#define SHR_SMALL(x, y) SHR(x, y)
 #define EQ_SMALL(x, y) EQ(x, y)
 #define NE_SMALL(x, y) NE(x, y)
 #define LT_SMALL(x, y) LT(x, y)
@@ -207,7 +207,6 @@ struct IntegerTypeAsserts {
 #endif  /* CONFIG_LANG_C */
 #ifdef CONFIG_LANG_PERL
 #define SHR(x, y) ((x & 0xffffffff) >> (y))
-#define SHR_SMALL(x, y) ((x) >> (y))
 #define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> (y))
 #define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
 #define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
@@ -216,6 +215,7 @@ struct IntegerTypeAsserts {
 #define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
 #define GE(x, y) (((x) & 0xffffffff) >= ((y) & 0xffffffff))
 #if 0  /* !! */
+#define SHR_SMALL(x, y) ((x) >> (y))
 #define EQ_SMALL(x, y) ((x) == (y))
 #define NE_SMALL(x, y) ((x) < (y))
 #define LT_SMALL(x, y) ((x) < (y))
@@ -223,6 +223,7 @@ struct IntegerTypeAsserts {
 #define GT_SMALL(x, y) ((x) > (y))
 #define GE_SMALL(x, y) ((x) >= (y))
 #else
+#define SHR_SMALL(x, y) SHR(x, y)
 #define EQ_SMALL(x, y) EQ(x, y)
 #define NE_SMALL(x, y) NE(x, y)
 #define LT_SMALL(x, y) LT(x, y)
