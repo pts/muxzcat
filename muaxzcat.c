@@ -172,7 +172,7 @@ struct IntegerTypeAsserts {
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
 #ifdef CONFIG_LANG_C
 #if defined(CONFIG_UINT64) || defined(CONFIG_INT64)
-#define SHR(x, y) ((x & 0xffffffff) >> (y))
+#define SHR(x, y) (((x) & 0xffffffff) >> (y))
 #define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> (y))
 #define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
 #define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
@@ -206,14 +206,34 @@ struct IntegerTypeAsserts {
 #endif
 #endif  /* CONFIG_LANG_C */
 #ifdef CONFIG_LANG_PERL
-#define SHR(x, y) ((x & 0xffffffff) >> (y))
-#define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> (y))
 #define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
 #define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
+#if 0  /* This is for 64-bit Perl only. !! Autodetect 64-bit Perl. */
+#define SHR(x, y) ((x & 0xffffffff) >> ((y) & 31))  /* !! No need for 31. */
+#define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> ((y) & 31))
 #define LT(x, y) (((x) & 0xffffffff) <  ((y) & 0xffffffff))
 #define LE(x, y) (((x) & 0xffffffff) <= ((y) & 0xffffffff))
 #define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
 #define GE(x, y) (((x) & 0xffffffff) >= ((y) & 0xffffffff))
+#else
+/* This works in both 32-bit a 64-bit Perl with `use integer'. */
+sub lt32($$) {
+  my $a = $_[0] & 0xffffffff;
+  my $b = $_[1] & 0xffffffff;
+  ($a < 0 ? $b >= 0 : $b < 0) ? $b < 0 : $a < $b
+}
+/* This works in both 32-bit a 64-bit Perl with `use integer'. */
+sub shr32($$) {
+  my $b = $_[1] & 31;  /* !! Make sure we are not doing more. */
+  $b ? ($_[0] >> $b) & (0x7fffffff >> ($b - 1)) : $_[0]
+}
+#define SHR(x, y) shr32(x, y)
+#define SET_SHR(x, y) ((x) = shr32(x, y))
+#define LT(x, y) lt32(x, y)
+#define LE(x, y) (!lt32(y, x))
+#define GT(x, y) lt32(y, x)
+#define GE(x, y) (!lt32(x, y))
+#endif
 #if 0  /* !! */
 #define SHR_SMALL(x, y) ((x) >> (y))
 #define EQ_SMALL(x, y) ((x) == (y))
