@@ -254,6 +254,8 @@ static void DumpVars(void);
 #ifdef CONFIG_DEBUG
 #define DEBUGF(...) printf(STDERR "DEBUG: " . __VA_ARGS__)
 #define ASSERT(condition) die "ASSERT: " . #condition if !(condition)
+/* ${...} produced by SET_ARY16 and SET_ARY16. */
+BEGIN { eval { require warnings; unimport warnings qw(void) }; }
 sub DumpVars();
 #undef  SET_LOCALB
 #define SET_LOCALB(name, setid, op, value) ${ $##name op value; DEBUGF("SET_LOCAL @%d %s=%u\n", setid, #name, TRUNCATE_TO_32BIT($##name)); \$##name; }
@@ -1056,7 +1058,7 @@ FUNC_ARG1(UInt32, Preread, const UInt32, prereadSize)
   if (LT_SMALL(LOCAL_VAR(prereadPos), LOCAL_VAR(prereadSize))) {  /* Not enough pending available. */
     if (LT_SMALL(READBUF_SIZE - GLOBAL_VAR(readCur), LOCAL_VAR(prereadSize))) {
       /* If no room for LOCAL_VAR(prereadSize) bytes to the end, discard bytes from the beginning. */
-      DEBUGF("MEMMOVE size=%d\n", (int)LOCAL_VAR(prereadPos));
+      DEBUGF("MEMMOVE size=%d\n", ENSURE_32BIT(LOCAL_VAR(prereadPos)));
       for (GLOBAL_VAR(readEnd) = 0; LT_SMALL(GLOBAL_VAR(readEnd), LOCAL_VAR(prereadPos)); ++GLOBAL_VAR(readEnd)) {
         SET_ARY8(readBuf, GLOBAL_VAR(readEnd), GET_ARY8(readBuf, GLOBAL_VAR(readCur) + GLOBAL_VAR(readEnd)));
       }
@@ -1066,14 +1068,14 @@ FUNC_ARG1(UInt32, Preread, const UInt32, prereadSize)
       /* Instead of (LOCAL_VAR(prereadSize) - LOCAL_VAR(prereadPos)) we could use (GLOBAL_VAR(readBuf) + READBUF_SIZE -
        * GLOBAL_VAR(readEnd)) to read as much as the buffer has room for.
        */
-      DEBUGF("READ size=%d\n", (int)(LOCAL_VAR(prereadSize) - LOCAL_VAR(prereadPos)));
+      DEBUGF("READ size=%d\n", ENSURE_32BIT(LOCAL_VAR(prereadSize) - LOCAL_VAR(prereadPos)));
       LOCAL_INIT(UInt32, got, READ_FROM_STDIN_TO_ARY8(readBuf, GLOBAL_VAR(readEnd), LOCAL_VAR(prereadSize) - LOCAL_VAR(prereadPos)));
       if (TRUNCATE_TO_32BIT(LOCAL_VAR(got) - 1) & 0x80000000) { BREAK; }  /* EOF or error on input. */
       GLOBAL_VAR(readEnd) += LOCAL_VAR(got);
       LOCAL_VAR(prereadPos) += LOCAL_VAR(got);
     }
   }
-  DEBUGF("PREREAD r=%d p=%d\n", (int)LOCAL_VAR(prereadSize), (int)LOCAL_VAR(prereadPos));
+  DEBUGF("PREREAD r=%d p=%d\n", ENSURE_32BIT(LOCAL_VAR(prereadSize)), ENSURE_32BIT(LOCAL_VAR(prereadPos)));
   return LOCAL_VAR(prereadPos);
 ENDFUNC
 
@@ -1119,7 +1121,7 @@ ENDFUNC
 
 /* Writes uncompressed data dic[LOCAL_VAR(fromDicPos) : GLOBAL_VAR(dicPos)] to stdout. */
 FUNC_ARG1(SRes, WriteFrom, UInt32, fromDicPos)
-  DEBUGF("WRITE %d dicPos=%d\n", (int)(GLOBAL_VAR(dicPos) - LOCAL_VAR(fromDicPos)), (int)GLOBAL_VAR(dicPos));
+  DEBUGF("WRITE %d dicPos=%d\n", ENSURE_32BIT(GLOBAL_VAR(dicPos) - LOCAL_VAR(fromDicPos)), ENSURE_32BIT(GLOBAL_VAR(dicPos)));
   while (NE_SMALL(LOCAL_VAR(fromDicPos), GLOBAL_VAR(dicPos))) {
     LOCAL_INIT(UInt32, got, WRITE_TO_STDOUT_FROM_ARY8(dic, LOCAL_VAR(fromDicPos), GLOBAL_VAR(dicPos) - LOCAL_VAR(fromDicPos)));
     if (LOCAL_VAR(got) & 0x80000000) { return SZ_ERROR_WRITE; }
@@ -1173,7 +1175,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
       GLOBAL_VAR(dicBufSize) = DIC_ARRAY_SIZE;
     }
     GLOBAL_VAR(readCur) += 13;  /* Start decompressing the 0 byte. */
-    DEBUGF("LZMA dicSize=0x%x us=%d bhf=%d\n", (int)GLOBAL_VAR(dicSize), (int)LOCAL_VAR(readBufUS), (int)LOCAL_VAR(bhf));
+    DEBUGF("LZMA dicSize=0x%x us=%d bhf=%d\n", ENSURE_32BIT(GLOBAL_VAR(dicSize)), ENSURE_32BIT(LOCAL_VAR(readBufUS)), ENSURE_32BIT(LOCAL_VAR(bhf)));
     /* TODO(pts): Limit on uncompressed size unless 8 bytes of -1 is
      * specified.
      */
@@ -1184,7 +1186,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
       LOCAL(SRes, res);
       LOCAL_VAR(fromDicPos) = GLOBAL_VAR(dicPos);
       LOCAL_VAR(res) = LzmaDec_DecodeToDic(LOCAL_VAR(srcLen));
-      DEBUGF("LZMADEC res=%d\n", (int)LOCAL_VAR(res));
+      DEBUGF("LZMADEC res=%d\n", ENSURE_32BIT(LOCAL_VAR(res)));
       if (GT_SMALL(GLOBAL_VAR(dicPos), LOCAL_VAR(readBufUS))) { GLOBAL_VAR(dicPos) = LOCAL_VAR(readBufUS); }
       if (NE_SMALL((LOCAL_VAR(res) = WriteFrom(LOCAL_VAR(fromDicPos))), SZ_OK)) { return LOCAL_VAR(res); }
       if (EQ_SMALL(LOCAL_VAR(res), SZ_ERROR_FINISHED_WITH_MARK)) { BREAK; }
@@ -1216,13 +1218,13 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
     if (EQ_SMALL((LOCAL_VAR(bhs) = GET_ARY8(readBuf, GLOBAL_VAR(readCur)++)), 0)) { BREAK; }
     /* Block header size includes the LOCAL_VAR(bhs) field above and the CRC32 below. */
     LOCAL_VAR(bhs) = (LOCAL_VAR(bhs) + 1) << 2;
-    DEBUGF("bhs=%d\n", (int)LOCAL_VAR(bhs));
+    DEBUGF("bhs=%d\n", ENSURE_32BIT(LOCAL_VAR(bhs)));
     /* Typically the Preread(12 + 12 + 6) above covers it. */
     if (LT_SMALL(Preread(LOCAL_VAR(bhs)), LOCAL_VAR(bhs))) { return SZ_ERROR_INPUT_EOF; }
     LOCAL_VAR(readAtBlock) = GLOBAL_VAR(readCur);
     LOCAL_VAR(bhf) = GET_ARY8(readBuf, GLOBAL_VAR(readCur)++);
     if (NE_SMALL((LOCAL_VAR(bhf) & 2), 0)) { return SZ_ERROR_UNSUPPORTED_FILTER_COUNT; }
-    DEBUGF("filter count=%d\n", (int)((LOCAL_VAR(bhf) & 2) + 1));
+    DEBUGF("filter count=%d\n", ENSURE_32BIT((LOCAL_VAR(bhf) & 2) + 1));
     if (NE_SMALL((LOCAL_VAR(bhf) & 20), 0)) { return SZ_ERROR_BAD_BLOCK_FLAGS; }
     if (LOCAL_VAR(bhf) & 64) {  /* Compressed size present. */
       /* Usually not present, just ignore it. */
@@ -1246,7 +1248,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
      *  * 39: 3221225472 bytes == 3 GiB
      *  * 40: 4294967295 bytes, largest supported by .xz
      */
-    DEBUGF("dicSizeProp=0x%02x\n", (int)LOCAL_VAR(dicSizeProp));
+    DEBUGF("dicSizeProp=0x%02x\n", ENSURE_32BIT(LOCAL_VAR(dicSizeProp)));
     if (GT_SMALL(LOCAL_VAR(dicSizeProp), 40)) { return SZ_ERROR_BAD_DICTIONARY_SIZE; }
     /* LZMA2 and .xz support it, we don't (for simpler memory management on
      * 32-bit systems).
@@ -1260,7 +1262,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
     DEBUGF("dicSize36=%u\n", ((ENSURE_32BIT(2) | ((36) & 1)) << ((36) / 2 + 11)));
     DEBUGF("dicSize35=%u\n", ((ENSURE_32BIT(2) | ((35) & 1)) << ((35) / 2 + 11)));
     LOCAL_VAR(bhs2) = GLOBAL_VAR(readCur) - LOCAL_VAR(readAtBlock) + 5;  /* Won't overflow. */
-    DEBUGF("bhs=%d bhs2=%d\n", (int)LOCAL_VAR(bhs), (int)LOCAL_VAR(bhs2));
+    DEBUGF("bhs=%d bhs2=%d\n", ENSURE_32BIT(LOCAL_VAR(bhs)), ENSURE_32BIT(LOCAL_VAR(bhs2)));
     if (GT_SMALL(LOCAL_VAR(bhs2), LOCAL_VAR(bhs))) { return SZ_ERROR_BLOCK_HEADER_TOO_LONG; }
     if (NE_SMALL((LOCAL_VAR(res) = IgnoreZeroBytes(LOCAL_VAR(bhs) - LOCAL_VAR(bhs2))), SZ_OK)) { return LOCAL_VAR(res); }
     GLOBAL_VAR(readCur) += 4;  /* Ignore CRC32. */
@@ -1280,7 +1282,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
          */
         if (LT_SMALL(Preread(6), 6)) { return SZ_ERROR_INPUT_EOF; }
         LOCAL_VAR(control) = GET_ARY8(readBuf, GLOBAL_VAR(readCur));
-        DEBUGF("CONTROL control=0x%02x at=? inbuf=%d\n", (int)LOCAL_VAR(control), (int)GLOBAL_VAR(readCur));
+        DEBUGF("CONTROL control=0x%02x at=? inbuf=%d\n", ENSURE_32BIT(LOCAL_VAR(control)), ENSURE_32BIT(GLOBAL_VAR(readCur)));
         if (EQ_SMALL(LOCAL_VAR(control), 0)) {
           DEBUGF("LASTFED\n");
           ++GLOBAL_VAR(readCur);
@@ -1335,7 +1337,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
          * the Prefetch(6) call in the next chunk header.
          */
         if (LT_SMALL(Preread(LOCAL_VAR(chunkCS) + 6), LOCAL_VAR(chunkCS))) { return SZ_ERROR_INPUT_EOF; }
-        DEBUGF("FEED us=%d cs=%d dicPos=%d\n", (int)LOCAL_VAR(chunkUS), (int)LOCAL_VAR(chunkCS), (int)GLOBAL_VAR(dicPos));
+        DEBUGF("FEED us=%d cs=%d dicPos=%d\n", ENSURE_32BIT(LOCAL_VAR(chunkUS)), ENSURE_32BIT(LOCAL_VAR(chunkCS)), ENSURE_32BIT(GLOBAL_VAR(dicPos)));
         if (LT_SMALL(LOCAL_VAR(control), 0x80)) {  /* Uncompressed chunk. */
           DEBUGF("DECODE uncompressed\n");
           while (NE_SMALL(GLOBAL_VAR(dicPos), GLOBAL_VAR(dicBufSize))) {
@@ -1364,7 +1366,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
      * chunk header.
      */
     if (LT_SMALL(Preread(7 + 12 + 6), 7 + 12 + 6)) { return SZ_ERROR_INPUT_EOF; }
-    DEBUGF("ALTELL blockSizePad=%d\n", (int)LOCAL_VAR(blockSizePad) & 3);
+    DEBUGF("ALTELL blockSizePad=%d\n", ENSURE_32BIT(LOCAL_VAR(blockSizePad) & 3));
     /* Ignore block padding. */
     if (NE_SMALL((LOCAL_VAR(res) = IgnoreZeroBytes(LOCAL_VAR(blockSizePad) & 3)), SZ_OK)) { return LOCAL_VAR(res); }
     GLOBAL_VAR(readCur) += LOCAL_VAR(checksumSize);  /* Ignore CRC32, CRC64 etc. */
