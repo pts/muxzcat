@@ -129,11 +129,11 @@ struct IntegerTypeAsserts {
 #define GLOBAL_ARY8(a, size) GLOBAL my($##a) = ''
 #define ENDGLOBALS
 #define GLOBAL_VAR(name) $##name
-#define GET_ARY16(a, idx) vec($##a, (idx), 16)
-#define SET_ARY16(a, idx, value) vec($##a, (idx), 16) = value
+#define GET_ARY16(a, idx) vec($##a, TRUNCATE_TO_32BIT(idx), 16)
+#define SET_ARY16(a, idx, value) vec($##a, TRUNCATE_TO_32BIT(idx), 16) = value
 #define CLEAR_ARY16(a) $##a = ''
-#define GET_ARY8(a, idx) vec($##a, (idx), 8)
-#define SET_ARY8(a, idx, value) vec($##a, (idx), 8) = value
+#define GET_ARY8(a, idx) vec($##a, TRUNCATE_TO_32BIT(idx), 8)
+#define SET_ARY8(a, idx, value) vec($##a, TRUNCATE_TO_32BIT(idx), 8) = value
 #define CLEAR_ARY8(a) $##a = ''
 #define READ_FROM_STDIN_TO_ARY8(a, fromIdx, size) UndefToMinus1(sysread(STDIN, $##a, (size), (fromIdx)))
 #define WRITE_TO_STDOUT_FROM_ARY8(a, fromIdx, size) UndefToMinus1(syswrite(STDOUT, $##a, (size), (fromIdx)))
