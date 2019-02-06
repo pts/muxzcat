@@ -96,7 +96,7 @@ struct IntegerTypeAsserts {
 #define TRUNCATE_TO_8BIT(x) ((uint8_t)(x))
 #endif  /* CONFIG_LANG_C */
 #ifdef CONFIG_LANG_PERL
-#define ENSURE_32BIT(x) x
+#define ENSURE_32BIT(x) (x)
 #define TRUNCATE_TO_32BIT(x) ((x) & 0xffffffff)
 #define TRUNCATE_TO_16BIT(x) ((x) & 0xffff)
 #define TRUNCATE_TO_8BIT(x) ((x) & 0xff)
