@@ -11,7 +11,9 @@ BEGIN { $^W = 1 }
 BEGIN { eval { require warnings; unimport warnings qw(deprecated) }; }
 use integer;
 use strict;
-
+# Older versions of Perl lose the value of my $x between nested gotos.
+die "fatal: your Perl is too old, upgrade to >=5.8.4\n" if !sub {
+    goto a; for (;;) { a: my $x = 1; goto b; for (;;) { b: return $x } } }->();
 ' &&
 <muaxzcat.c perl -ne '
     $_ = join("", <STDIN>);
