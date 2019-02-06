@@ -36,9 +36,10 @@ die "fatal: your Perl is too old, upgrade to >=5.8.4\n" if !sub {
 ' &&
 <muaxzcat.pl.tmp2 perl -0777 -pe 's@^#(?!!).*\n@@gm; sub cont($) { my $s = $_[0]; $s =~ s@\A\s+@@; $s =~ s@\s+\Z(?!\n)@@; $s =~ s@\n[ \t]?([ \t]*)@\n$1# @g; $s } s@/[*](.*?)[*]/\n*@ "# " . cont($1) . "\n" @gse;
     s@(\S) (#.*)|(#.*)@ defined($1) ? "$1  $2" : $3 @ge;
+    s@^[ \t]*do \{\} while \(0 && .*\n@@mg;
+    s@^[ \t]*;[ \t]*\n@@mg;
     s@^[ \t]*GLOBAL @@mg') >muaxzcat.pl || exit "$?"
 # TODO(pts): Better multiline comments with * continuation.
-# TODO(pts): Remove empty `;' lines (DEBUG).
 # TODO(pts): Keep empty lines above FUNC_ARG0(SRes, Decompress).
 
 : genpl.sh OK.
