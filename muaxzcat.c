@@ -1362,8 +1362,3 @@ ENDFUNC
 my $res = Decompress();
 die "PERL_ERROR:$res\n" if $res;
 #endif  /* CONFIG_LANG_PERL */
-
-#ifdef CONFIG_LANG_PERL
-my $res = Decompress();
-die "PERL_ERROR:$res" if $res;
-#endif
