@@ -2,7 +2,8 @@
 # by pts@fazekas.hu at Sun Feb  3 14:50:42 CET 2019
 
 set -ex
-gcc -C -E -DCONFIG_LANG_PERL -ansi -O2 -W -Wall -Wextra -Werror muaxzcat.c >muaxzcat.pl.tmp1
+# Example #1: -DCONFIG_DEBUG
+gcc -C -E -DCONFIG_LANG_PERL "$@" -ansi -O2 -W -Wall -Wextra -Werror muaxzcat.c >muaxzcat.pl.tmp1
 (
 echo '#! /usr/bin/env perl
 BEGIN { $^W = 1 }
