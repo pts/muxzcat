@@ -111,6 +111,7 @@ struct IntegerTypeAsserts {
 #define GLOBAL_ARY8(a, size) uint8_t a##8[size]
 #define ENDGLOBALS } global;
 #define GLOBAL_VAR(name) global.name  /* Get or set a global variable. */
+#define SET_GLOBAL(name, setid, op) global.name op
 #define GET_ARY16(a, idx) (+global.a##16[idx])
 /* TRUNCATE_TO_16BIT is must be called on value manually if needed. */
 #define SET_ARY16(a, idx, value) (global.a##16[idx] = value)
@@ -129,6 +130,7 @@ struct IntegerTypeAsserts {
 #define GLOBAL_ARY8(a, size) GLOBAL my($##a) = ''
 #define ENDGLOBALS
 #define GLOBAL_VAR(name) $##name
+#define SET_GLOBAL(name, setid, op) $##name op
 #define GET_ARY16(a, idx) vec($##a, TRUNCATE_TO_32BIT(idx), 16)
 #define SET_ARY16(a, idx, value) vec($##a, TRUNCATE_TO_32BIT(idx), 16) = value
 #define CLEAR_ARY16(a) $##a = ''
@@ -143,11 +145,13 @@ struct IntegerTypeAsserts {
 #define LOCAL(type, name) type LOCAL_##name
 #define LOCAL_INIT(type, name, value) type LOCAL_##name = value
 #define LOCAL_VAR(name) LOCAL_##name  /* Get or set a local variable or function argument. */
+#define SET_LOCALB(name, setid, op, value) LOCAL_##name op value
 #endif  /* CONFIG_LANG_C */
 #ifdef CONFIG_LANG_PERL
 #define LOCAL(type, name) my $##name
 #define LOCAL_INIT(type, name, value) my $##name = value
 #define LOCAL_VAR(name) $##name  /* Get or set a local variable or function argument. */
+#define SET_LOCALB(name, setid, op, value) $##name op value
 #endif  /* CONFIG_LANG_PERL */
 
 #ifdef CONFIG_LANG_C
@@ -174,6 +178,15 @@ struct IntegerTypeAsserts {
 #include <stdio.h>
 #define DEBUGF(...) fprintf(stderr, "DEBUG: " __VA_ARGS__)
 #define ASSERT(condition) assert(condition)
+static void DumpVars(void);
+#undef  SET_LOCALB
+#define SET_LOCALB(name, setid, op, value) ({ LOCAL_##name op value; DEBUGF("SET_LOCAL @%d %s=%u\n", setid, #name, LOCAL_##name); LOCAL_##name; })
+#undef  SET_GLOBAL
+#define SET_GLOBAL(name, setid, op) *({ DumpVars(); DEBUGF("SET_GLOBAL %s @%d\n", #name, setid); &global.name; }) op
+#undef  SET_ARY16
+#define SET_ARY16(a, idx, value) ({ const UInt32 idx2 = idx; global.a##16[idx2] = value; DEBUGF("SET_ARY16 %s[%d]=%d\n", #a, idx2, global.a##16[idx2]); global.a##16[idx2]; })
+#undef  SET_ARY8
+#define SET_ARY8(a, idx, value) ({ const UInt32 idx2 = idx; global.a##8[idx2] = value; DEBUGF("SET_ARY8 %s[%d]=%d\n", #a, idx2, global.a##8[idx2]); global.a##8[idx2];  })
 #else
 #define DEBUGF(...)
 /* Just check that it compiles. */
@@ -362,6 +375,16 @@ GLOBALS
    */
   GLOBAL_ARY8(dic, DIC_ARRAY_SIZE);
 ENDGLOBALS
+
+#ifdef CONFIG_DEBUG
+FUNC_ARG0(void, DumpVars)
+  DEBUGF("GLOBALS bufCur=%u dicSize=%u range=%u code=%u dicPos=%u dicBufSize=%u processedPos=%u checkDicSize=%u state=%u rep0=%u rep1=%u rep2=%u rep3=%u remainLen=%u tempBufSize=%u readCur=%u readEnd=%u needFlush=%u needInitLzma=%u needInitDic=%u needInitState=%u needInitProp=%u lc=%u lp=%u pb=%u\n",
+      TRUNCATE_TO_32BIT(GLOBAL_VAR(bufCur)), TRUNCATE_TO_32BIT(GLOBAL_VAR(dicSize)), TRUNCATE_TO_32BIT(GLOBAL_VAR(range)), TRUNCATE_TO_32BIT(GLOBAL_VAR(code)), TRUNCATE_TO_32BIT(GLOBAL_VAR(dicPos)), TRUNCATE_TO_32BIT(GLOBAL_VAR(dicBufSize)), TRUNCATE_TO_32BIT(GLOBAL_VAR(processedPos)), TRUNCATE_TO_32BIT(GLOBAL_VAR(checkDicSize)), TRUNCATE_TO_32BIT(GLOBAL_VAR(state)), TRUNCATE_TO_32BIT(GLOBAL_VAR(rep0)), TRUNCATE_TO_32BIT(GLOBAL_VAR(rep1)), TRUNCATE_TO_32BIT(GLOBAL_VAR(rep2)), TRUNCATE_TO_32BIT(GLOBAL_VAR(rep3)), TRUNCATE_TO_32BIT(GLOBAL_VAR(remainLen)), TRUNCATE_TO_32BIT(GLOBAL_VAR(tempBufSize)), TRUNCATE_TO_32BIT(GLOBAL_VAR(readCur)), TRUNCATE_TO_32BIT(GLOBAL_VAR(readEnd)), TRUNCATE_TO_32BIT(GLOBAL_VAR(needFlush)), TRUNCATE_TO_32BIT(GLOBAL_VAR(needInitLzma)), TRUNCATE_TO_32BIT(GLOBAL_VAR(needInitDic)), TRUNCATE_TO_32BIT(GLOBAL_VAR(needInitState)), TRUNCATE_TO_32BIT(GLOBAL_VAR(needInitProp)), TRUNCATE_TO_32BIT(GLOBAL_VAR(lc)), TRUNCATE_TO_32BIT(GLOBAL_VAR(lp)), TRUNCATE_TO_32BIT(GLOBAL_VAR(pb)));
+ENDFUNC
+#ifdef CONFIG_LANG_C
+void *DumpVarsUsed = (void*)DumpVars;
+#endif  /* CONFIG_LANG_C */
+#endif
 
 #ifdef CONFIG_LANG_C
 /* This fails to compile if any condition after the : is false. */
