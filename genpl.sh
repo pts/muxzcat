@@ -42,7 +42,7 @@ die "fatal: your Perl does not support integer arithmetics\n" if 1 / 2 * 2;
     s@(#.*)|[ \t]+;@ defined($1) ? $1 : ";" @ge;
     s@^[ \t]*GLOBAL @@mg') >muaxzcat.pl || exit "$?"
 # TODO(pts): Better multiline comments with * continuation.
-# TODO(pts): Keep empty lines above FUNC_ARG0(SRes, Decompress).
+# TODO(pts): Keep empty lines above FUNC_ARG0(SRes, Decompress) (gcc -C -E removes it).
 : cp -a muaxzcat.pl muxzcat.pl
 
 : genpl.sh OK.
