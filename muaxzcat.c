@@ -1439,6 +1439,5 @@ FUNC_ARG0(SRes, Decompress)
   return LOCAL_VAR(res);
 ENDFUNC
 
-my $res = Decompress();
-die "PERL_ERROR:$res\n" if $res;
+exit(Decompress());
 #endif  /* CONFIG_LANG_PERL */
