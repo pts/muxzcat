@@ -79,6 +79,9 @@ like possible to improve the speed ratio to 200 by removing some unncessary
 calls to `& 0xffffffff', if restricted to Perls with 64-bit integer
 arithmetic.
 
+muxzcat.pl is compatible with recent versions of Perl 5 (e.g. Perl 5.24) and
+very old versions of Perl 5 (e.g. Perl 5.004_04, released on 1997-10-15).
+
 If you need a tiny decompressor for .gz, .zip and Flate compressed
 files implemented in C, see https://github.com/pts/pts-zcat .
 
