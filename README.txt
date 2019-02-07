@@ -1,11 +1,11 @@
 muxzcat: tiny .xz and .lzma decompression filter
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 muxzcat is decompression filter for .xz and .lzma compressed files
-implemented in C (also works in C++). It's platform independent, but it's
-size-optimized for Linux i386. It's self-contained: it uses only the
-standard C library.
+implemented in C (also works in C++) and Perl 5. muxzcat.c is platform
+independent, but it's size-optimized for Linux i386. muxzcat.c is
+self-contained: it uses only the standard C library.
 
-muxzcat is size-optimized for Linux i386 (also runs on amd64) with `xtiny
+muxzcat.c is size-optimized for Linux i386 (also runs on amd64) with `xtiny
 gcc': the final statically linked executable is 7376 bytes, and with upxbc
 (`upxbc --elftiny -f -o muxzcat.upx muxzcat') it can be compressed to 4678
 bytes. (Compare it with xzcat-only busybox on Linux i386, which is >20 KiB.)
@@ -15,6 +15,15 @@ compiling, run it with any of:
 
   $ ./muxzcat <input.xz >output.bin
   $ ./muxzcat <input.lzma >output.bin
+
+  Error is indicated as a non-zero exit status.
+
+  It ignores command-line flags, so you can specify e.g. `-cd'.
+
+Here is how to use the Perl implementation:
+
+  $ perl muxzcat.pl <input.xz >output.bin
+  $ perl muxzcat.pl <input.lzma >output.bin
 
   Error is indicated as a non-zero exit status.
 
@@ -56,13 +65,22 @@ Limitations of muxzcat:
   uses only 64 MiB dictionary size.)
 
 Based on decompression speed measurements of linux-4.20.5.tar.xz,
-size-optimized muxzcat (on Linux i386) is about 7% slower than
+size-optimized muxzcat.c (on Linux i386) is about 7% slower than
 speed-optimized xzcat (on Linux amd64).
 
-If you need a tiny decompressor for .gz, .zip and Flate compressed
-files, see https://github.com/pts/pts-zcat .
+Based on decompression speed measurements of a ~2 MiB .tar.xz file,
+size-optimized muxzcat.c (on Linux i386) is about 460 times faster than
+muxzcat.pl (on perl compiled for Linux amd64). Currently muxzcat.pl is very
+slow because it does many artihmetic operations conservatively so that it
+will work with Perls with 32-bit and 64-bit integer arithmetic. It looks
+like possible to improve the speed ratio to 200 by removing some unncessary
+calls to `& 0xffffffff', if restricted to Perls with 64-bit integer
+arithmetic.
 
-If you need a tiny extractor and self-extractor for .7z archives, see
-https://github.com/pts/pts-tiny-7z-sfx .
+If you need a tiny decompressor for .gz, .zip and Flate compressed
+files implemented in C, see https://github.com/pts/pts-zcat .
+
+If you need a tiny extractor and self-extractor for .7z archives implemented
+in C, see https://github.com/pts/pts-tiny-7z-sfx .
 
 __END__
