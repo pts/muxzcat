@@ -19,6 +19,10 @@
  *
  *   Error is indicated as a non-zero exit status.
  *
+ * https://github.com/pts/muxzcat
+ *
+ * This is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
+ *
  * muxzcat.c is size-optimized for Linux i386 (also runs on amd64) with
  * `xtiny gcc': the final statically linked executable is 7376 bytes, and with
  * upxbc (`upxbc --elftiny -f -o muxzcat.upx muxzcat') it can be compressed

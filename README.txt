@@ -48,6 +48,8 @@ muzxcat is a drop-in replacement for the following commands:
   $ busybox unlzma -cd  <input.lzma >output.bin
   $ busybox lzmadec -cd <input.lzma >output.bin
 
+muxzcat is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
+
 Limitations of muxzcat:
 
 * It keeps uncompressed data in memory, and it needs 130 KiB of
