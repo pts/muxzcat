@@ -1,0 +1,151 @@
+Reliable integer arithmetic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Our goal is to do to unsigned 32-bit integer arithmetic efficiently where
+only other kinds of integer arithmetic is available.
+
+The full unsigned integer range (FU) is the range of uint32_t: 0 ..
+0xffffffff.
+
+The narrow unsigned integer (NU) range is the common subset of uint32_t,
+int32_t, uint64_t, int64_t: 0 .. 0x7fffffff.
+
+We want to implement all C operators (arithmetic, bitwise and logical) on
+uint32_t: ++(prefix) --(prefix) unary~ unary+ unary- * *= + += - -= << <<= &
+&= | |= ^ ^= ?: ! && || / /= % %= >> >>= < > <= >= == != . We assume that
+the 2nd operand of <<, <=, >>, and >>= is 0 .. 31. To disambiguate, we'll
+use the f prefix, e.g. a fu+ b.
+
+We have the same operators available natively on one of these types (AT):
+uint32_t, int32_t (-fwrapv), uint64_t, int64_t (-fwrapv).
+
+Solution:
+
+* For any values of AT above, the following works:
+
+  * Mask the final output (unless it's used to assign to a variable or to an
+    array element) with `... & 0xffffffff'.
+  * These operators are not implemented: / /= % %= .
+  * fu!a :== (a & 0xffffffff) == 0.
+  * a fu&& b := (a & 0xffffffff) && b.
+  * a fu|| b := (a & 0xffffffff) || b.
+  * fuif(a) := if(a & 0xffffffff)
+  * fuwhile(a) := while(a & 0xffffffff)
+  * fufor(..., a, ...) := for(..., a & 0xffffffff, ...)
+  * a fu>> b := (b & 0xffffffff) ? (a >> (b & 0xffffffff)) & (0x7fffffff >> ((b & 0xffffffff) - 1)) : a.
+  * a fu< b := ((a & 0xffffffff) < 0 ? (b & 0xffffffff) >= 0 : (b & 0xffffffff) < 0) ? (b & 0xffffffff) < 0 : (a & 0xffffffff) < (b & 0xffffffff).
+  * a fu> b := b fu< a.
+  * a fu<= b := !(b fu< a).
+  * a fu>= b := !(a fu< b).
+  * a fu== b := ((a - b) & 0xffffffff) == 0.
+  * a fu!= b := ((a - b) & 0xffffffff) != 0.
+
+  This is what muaxzcat.pl is doing with a few optimizations.
+
+  There is room for more optimization, see below.
+
+* If AT is uint64_t or int64_t, the following works:
+
+  * Mask the final output (unless it's used to assign to a variable or to an
+    array element) with `... & 0xffffffff'.
+  * These operators are not implemented: / /= % %= .
+  * fu!a :== (a & 0xffffffff) == 0.
+  * a fu&& b := (a & 0xffffffff) && b.
+  * a fu|| b := (a & 0xffffffff) || b.
+  * fuif(a) := if(a & 0xffffffff)
+  * fuwhile(a) := while(a & 0xffffffff)
+  * fufor(..., a, ...) := for(..., a & 0xffffffff, ...)
+  * a fu>> b := (a & 0xffffffff) >> (b & 0xffffffff).
+  * a fu< b := (a & 0xffffffff) < (b & 0xffffffff).
+  * a fu> b := (a & 0xffffffff) > (b & 0xffffffff).
+  * a fu<= b := (a & 0xffffffff) <= (b & 0xffffffff).
+  * a fu>= b := (a & 0xffffffff) >= (b & 0xffffffff).
+  * a fu== b := ((a - b) & 0xffffffff) == 0.
+  * a fu!= b := ((a - b) & 0xffffffff) != 0.
+
+  This is what muaxzcat.pl could be doing with some optimizations.
+
+  There is room for optimization, see below.
+
+* If AT is uint32_t, then we can use the native operators directly.
+
+* If AT is int32_t, then we can use these native operators directly: ++ --
+  unary~ unary+ unary- * *= + += - -= << <<= & &= | |= ^ ^= ?: ! && || == !=
+  . We need special handling for these: / /= % %= >> >>= < > <= >= . `>>' is
+  special, because we want ((uint32_t)0xffffffff >> 1) == 0x7fffffff, but
+  (uint32_t)((int32_t)-1 >> 1) == 0xffffffff.
+
+  Special handling:
+
+  * a fu>> b := b ? (a >> b) & (0x7fffffff >> (b - 1)) : a.
+  * a fu< b := (a < 0 ? b >= 0 : b < 0) ? b < 0 : a < b.
+  * a fu> b := b fu< a.
+  * a fu<= b := !(b fu< a).
+  * a fu>= b := !(a fu< b).
+  * a fu/ b := (TODO, complicated).
+  * a fu/= b := (TODO, complicated).
+  * a fu% b := (TODO, complicated).
+  * a fu%= b := (TODO, complicated).
+
+* If AT is uint64_t or int64_t, then we can use the native operators
+  directly, but we need to mask out the high bits. Let's assume that all
+  inputs are in the FU range. These operators need output masking (... &
+  0xffffffff): ++ -- unary~ unary- * *= + += - -= << <<= These operators
+  work without output masking: unary+ & &= | |= ^ ^= ?: ! && || / /= % %= >>
+  >>= < > <= >= == !=. Examples:
+
+  * x & y := x & y.
+  * -fu x := (-x) & 0xffffffff.
+  * x fu+ y := (x + y) & 0xffffffff.
+  * x fu* y := (x * y) & 0xffffffff.
+  * x fu<< y := (x << y) & 0xffffffff.
+  * x fu>> y := x >> y.
+
+  Alternatively, if the inputs aren't in the FU range (but their least
+  significant 32 bits contain the actual value), then we can keep that for
+  the intermediate results as well, and we need the `& 0xffffffff' only for:
+
+  * final result of ++ -- unary~ unary- * *= + += - -= << <<= & &= | |= ^ ^= .
+  * inputs of >> >>= ! && || / /= % %= < > <= >= == != .
+  * 1st input of ?: .
+
+  Examples for the alternative:
+
+  * non-final x fu+ y := x + y.
+  * final x fu+ y := (x + y) & 0xffffffff.
+  * x fu< y := (x & 0xffffffff) < (y & 0xffffffff).
+  * x fu== y := ((x - y) & 0xffffffff) == 0.
+  * x fu!= y := ((x - y) & 0xffffffff) != 0.
+  * non-final x fu+ (y fu* z) := x + y * z.
+  * final x fu+ (y fu* z) := (x + y * z) & 0xffffffff.
+  * x fu< (y fu* z) := x < ((y * z) & 0xffffffff).
+  * x fu>> y := (x & 0xffffffff) >> (y & 0xffffffff).
+  * x fu>>= y := x = (x & 0xffffffff) >> y.
+
+NU optimization. (This works for any AT.) If we know that the inputs of an
+operator in the NU range, then we can use the native operator. Example:
+
+* x nu>> y := x >> y.
+
+NU propagation: (This works for any AT.) If the inputs of an operator are in
+the NU range, then the output is also in the NU range: & &= | |= ^ ^= ?: !
+&& || / /= % %= >> >>= < > <= >= == !=.
+
+FU propagation: (This works for any AT.) If the inputs of an operator are in
+the FU range, then the output is also in the FU range: & &= | |= ^ ^= ?: !
+&& || / /= % %= >> >>= < > <= >= == !=.
+
+NU-FU propagation: (This works for any AT.) If the inputs of an operator are
+in the NU range, then the output is in the FU range: +, ++.
+
+---
+
+In muaxzcat.c, the following operators are not used: ^ ^= / /= % %= .
+
+In muaxzcat.c, the bools are need*, checkEndMarkNow, initDic, initState,
+isProp; and `if', `ELSE_IF', `while', `for', `&&', '||', `!' are safe
+without masking.
+
+<muaxzcat.c perl -ne 'while (m@((?:ELSE_IF|if|while|for)\s*\(.*?\))\s*[;{]@g) { print "$1\n" }' | sort | uniq >if.out
+<muaxzcat.c perl -ne 's@((?:ELSE_IF|if|while|for)\s*\(.*?\))\s*[;{]@@g; print if /\|\||&&|!|\?/' >logical.out
+
+__END__
