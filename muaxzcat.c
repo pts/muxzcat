@@ -50,7 +50,6 @@ ssize_t write(int fd, const void *buf, size_t count);
 
 #undef  CONFIG_LANG_C
 #define CONFIG_LANG_C 1
-#define CONFIG_DEBUG 1
 #include <unistd.h>  /* read(), write() */
 #ifdef _WIN32
 #  include <windows.h>
