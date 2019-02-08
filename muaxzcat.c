@@ -1270,14 +1270,14 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
     if (LT_SMALL(Preread(LOCAL_VAR(bhs)), LOCAL_VAR(bhs))) { return SZ_ERROR_INPUT_EOF; }
     SET_LOCALB(readAtBlock, 721, =, GLOBAL_VAR(readCur)) ;
     SET_LOCALB(bhf, 723, =, GET_ARY8(readBuf, GLOBAL_VAR(readCur)++)) ;
-    if (NE_SMALL((LOCAL_VAR(bhf) & 2), 0)) { return SZ_ERROR_UNSUPPORTED_FILTER_COUNT; }
+    if (NE_SMALL(LOCAL_VAR(bhf) & 2, 0)) { return SZ_ERROR_UNSUPPORTED_FILTER_COUNT; }
     DEBUGF("filter count=%d\n", ENSURE_32BIT((LOCAL_VAR(bhf) & 2) + 1));
-    if (NE_SMALL((LOCAL_VAR(bhf) & 20), 0)) { return SZ_ERROR_BAD_BLOCK_FLAGS; }
-    if (LOCAL_VAR(bhf) & 64) {  /* Compressed size present. */
+    if (NE_SMALL(LOCAL_VAR(bhf) & 20, 0)) { return SZ_ERROR_BAD_BLOCK_FLAGS; }
+    if (NE_SMALL(LOCAL_VAR(bhf) & 64, 0)) {  /* Compressed size present. */
       /* Usually not present, just ignore it. */
       IgnoreVarint();
     }
-    if (LOCAL_VAR(bhf) & 128) {  /* Uncompressed size present. */
+    if (NE_SMALL(LOCAL_VAR(bhf) & 128, 0)) {  /* Uncompressed size present. */
       /* Usually not present, just ignore it. */
       IgnoreVarint();
     }
