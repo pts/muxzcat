@@ -1095,9 +1095,12 @@ ENDFUNC
  * the future.
  *
  * Works only if LE(prereadPos, READBUF_SIZE).
+ *
+ * Maximum allowed prereadSize is READBUF_SIZE (< 66000).
  */
 FUNC_ARG1(UInt32, Preread, const UInt32, prereadSize)
   LOCAL_INIT(UInt32, prereadPos, GLOBAL_VAR(readEnd) - GLOBAL_VAR(readCur));
+  LOCAL(UInt32, got);
   ASSERT(LE(LOCAL_VAR(prereadSize), READBUF_SIZE));
   if (LT_SMALL(LOCAL_VAR(prereadPos), LOCAL_VAR(prereadSize))) {  /* Not enough pending available. */
     if (LT_SMALL(READBUF_SIZE - GLOBAL_VAR(readCur), LOCAL_VAR(prereadSize))) {
@@ -1113,8 +1116,8 @@ FUNC_ARG1(UInt32, Preread, const UInt32, prereadSize)
        * GLOBAL_VAR(readEnd)) to read as much as the buffer has room for.
        */
       DEBUGF("READ size=%d\n", ENSURE_32BIT(LOCAL_VAR(prereadSize) - LOCAL_VAR(prereadPos)));
-      LOCAL_INIT(UInt32, got, READ_FROM_STDIN_TO_ARY8(readBuf, GLOBAL_VAR(readEnd), LOCAL_VAR(prereadSize) - LOCAL_VAR(prereadPos)));
-      if ((LOCAL_VAR(got) - 1) & 0x80000000) { BREAK; }  /* EOF or error on input. */
+      SET_LOCALB(got, 7071, =, READ_FROM_STDIN_TO_ARY8(readBuf, GLOBAL_VAR(readEnd), LOCAL_VAR(prereadSize) - LOCAL_VAR(prereadPos)));
+      if (LE_SMALL(LOCAL_VAR(got) + 1, 1)) { BREAK; }  /* EOF or error on input. */
       SET_GLOBAL(readEnd, 104, +=) LOCAL_VAR(got);
       SET_LOCALB(prereadPos, 709, +=, LOCAL_VAR(got)) ;
     }
