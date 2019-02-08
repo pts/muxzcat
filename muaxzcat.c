@@ -1131,7 +1131,7 @@ FUNC_ARG0(void, IgnoreVarint)
 ENDFUNC
 
 FUNC_ARG1(SRes, IgnoreZeroBytes, UInt32, zeroByteCount)
-  for (; GT_SMALL(LOCAL_VAR(zeroByteCount), 0); --LOCAL_VAR(zeroByteCount)) {
+  for (; NE_SMALL(LOCAL_VAR(zeroByteCount), 0); --LOCAL_VAR(zeroByteCount)) {
     if (NE_SMALL(GET_ARY8(readBuf, GLOBAL_VAR(readCur)++), 0)) {
       return SZ_ERROR_BAD_PADDING;
     }
