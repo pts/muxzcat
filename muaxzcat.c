@@ -1354,7 +1354,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
         } else {  /* LZMA chunk. */
           LOCAL_INIT(const Byte, mode, (SHR_SMALL((LOCAL_VAR(control)), 5) & 3));
           LOCAL_INIT(const Bool, initDic, EQ_SMALL(LOCAL_VAR(mode), 3));
-          LOCAL_INIT(const Bool, initState, GT(LOCAL_VAR(mode), 0));
+          LOCAL_INIT(const Bool, initState, NE_SMALL(LOCAL_VAR(mode), 0));
           LOCAL_INIT(const Bool, isProp, NE_SMALL((LOCAL_VAR(control) & 64), 0));
           SET_LOCALB(chunkUS, 735, +=, (LOCAL_VAR(control) & 31) << 16) ;
           SET_LOCALB(chunkCS, 737, =, (GET_ARY8(readBuf, GLOBAL_VAR(readCur) + 3) << 8) + GET_ARY8(readBuf, GLOBAL_VAR(readCur) + 4) + 1) ;
