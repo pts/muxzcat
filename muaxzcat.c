@@ -241,7 +241,7 @@ sub shr32($$) {
 #if 0  /* !! */
 #define SHR_SMALL(x, y) ((x) >> (y))
 #define EQ_SMALL(x, y) ((x) == (y))
-#define NE_SMALL(x, y) ((x) < (y))
+#define NE_SMALL(x, y) ((x) != (y))
 #define LT_SMALL(x, y) ((x) < (y))
 #define LE_SMALL(x, y) ((x) <= (y))
 #define GT_SMALL(x, y) ((x) > (y))
