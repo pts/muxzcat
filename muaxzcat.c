@@ -180,6 +180,7 @@ struct IntegerTypeAsserts {
 #ifdef CONFIG_LANG_C
 #if defined(CONFIG_UINT64) || defined(CONFIG_INT64)
 #define SHR(x, y) (((x) & 0xffffffff) >> (y))
+#define SHR_SMALL(x, y) ((x) >> (y))
 #define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> (y))
 #define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
 #define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
@@ -187,7 +188,6 @@ struct IntegerTypeAsserts {
 #define LE(x, y) (((x) & 0xffffffff) <= ((y) & 0xffffffff))
 #define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
 #define GE(x, y) (((x) & 0xffffffff) >= ((y) & 0xffffffff))
-#define SHR_SMALL(x, y) SHR(x, y)
 #define EQ_SMALL(x, y) EQ(x, y)
 #define NE_SMALL(x, y) NE(x, y)
 #define LT_SMALL(x, y) LT(x, y)
@@ -236,6 +236,7 @@ sub shr32($$) {
   ($_[0] >> $_[1]) & (0x7fffffff >> ($_[1] - 1))
 }
 #define SHR(x, y) shr32(x, y)
+#define SHR_SMALL(x, y) ((x) >> (y))
 #define SET_SHR(x, y) ((x) = shr32(x, y))
 #define LT(x, y) lt32(x, y)
 #define LE(x, y) (!lt32(y, x))
@@ -243,7 +244,6 @@ sub shr32($$) {
 #define GE(x, y) (!lt32(x, y))
 #endif
 #if 0  /* !! */
-#define SHR_SMALL(x, y) ((x) >> (y))
 #define EQ_SMALL(x, y) ((x) == (y))
 #define NE_SMALL(x, y) ((x) != (y))
 #define LT_SMALL(x, y) ((x) < (y))
@@ -251,7 +251,6 @@ sub shr32($$) {
 #define GT_SMALL(x, y) ((x) > (y))
 #define GE_SMALL(x, y) ((x) >= (y))
 #else
-#define SHR_SMALL(x, y) SHR(x, y)
 #define EQ_SMALL(x, y) EQ(x, y)
 #define NE_SMALL(x, y) NE(x, y)
 #define LT_SMALL(x, y) LT(x, y)
@@ -952,6 +951,8 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
           } while (LT_SMALL(LOCAL_VAR(posSlot), ENSURE_32BIT(1) << (kNumPosSlotBits)));
           SET_LOCALB(posSlot, 657, -=, ENSURE_32BIT(1) << (kNumPosSlotBits)) ;
         }
+        /* Small enough for SHR_SMALL(LOCAL_VAR(posSlot), ...). */
+        ASSERT(LT(LOCAL_VAR(posSlot), ENSURE_32BIT(1) << (kNumPosSlotBits)));
         if (GE(LOCAL_VAR(posSlot), kStartPosModelIndex)) {
           LOCAL_INIT(UInt32, numDirectBits, SHR_SMALL(LOCAL_VAR(posSlot), 1) - 1);
           if (LT(LOCAL_VAR(posSlot), kEndPosModelIndex)) {
