@@ -171,10 +171,11 @@ struct IntegerTypeAsserts {
 #endif  /* CONFIG_LANG_PERL */
 
 /* TODO(pts): Simplify doublings: e.g .LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) */
+/* !! Instrument ++ and -- operators. */
 /* !! Optimized masking of the index of GET_ARY8, GET_ARY16, SET_ARY8, SET_ARY16? */
 /* !! Optimized masking of EQ(x, 0) and NE(x, 0), GT(x, 0) etc. */
 /* !! Use *_SMALL more, wherever it works. */
-/* !! SHR y amounts are: 1, 11, 31, 5, 4 <= lcm8 <= 8 */
+/* !! SHR y amounts are: 1, 11, 5, 4 <= lcm8 <= 8 */
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
 #ifdef CONFIG_LANG_C
 #if defined(CONFIG_UINT64) || defined(CONFIG_INT64)
@@ -730,13 +731,15 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
             } else {
               SET_LOCALB(numDirectBits, 289, -=, kNumAlignBits) ;
               do {
-                LOCAL(UInt32, localT);
                 if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 291, <<=, 8) ; SET_LOCALB(codeLocal, 293, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; }
                 SET_SHR(LOCAL_VAR(rangeLocal), 1);
-                SET_LOCALB(codeLocal, 295, -=, LOCAL_VAR(rangeLocal)) ;
-                SET_LOCALB(localT, 297, =, (0 - (ENSURE_32BIT(SHR(LOCAL_VAR(codeLocal), 31))))) ;
-                SET_LOCALB(distance, 299, =, (LOCAL_VAR(distance) << 1) + (LOCAL_VAR(localT) + 1)) ;
-                SET_LOCALB(codeLocal, 301, +=, LOCAL_VAR(rangeLocal) & LOCAL_VAR(localT)) ;
+                if ((LOCAL_VAR(codeLocal) - LOCAL_VAR(rangeLocal)) & 0x80000000) {
+                  SET_LOCALB(distance, 297, <<=, 1);
+                } else {
+                  SET_LOCALB(codeLocal, 295, -=, LOCAL_VAR(rangeLocal));
+                  /* !! Is <<= 1, ++ faster instead in Perl? */
+                  SET_LOCALB(distance, 301, =, (LOCAL_VAR(distance) << 1) + 1);
+                }
               } while (NE(--LOCAL_VAR(numDirectBits), 0));
               SET_LOCALB(probIdx, 303, =, Align) ;
               SET_LOCALB(distance, 305, <<=, kNumAlignBits) ;
@@ -957,7 +960,9 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
             do {
               if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { if (GE_SMALL(LOCAL_VAR(bufDummyCur), LOCAL_VAR(bufLimit))) { return DUMMY_ERROR; } SET_LOCALB(rangeLocal, 663, <<=, 8) ; SET_LOCALB(codeLocal, 665, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++))) ; }
               SET_SHR(LOCAL_VAR(rangeLocal), 1);
-              SET_LOCALB(codeLocal, 667, -=, LOCAL_VAR(rangeLocal) & (SHR((LOCAL_VAR(codeLocal) - LOCAL_VAR(rangeLocal)), 31) - 1)) ;
+              if (!((LOCAL_VAR(codeLocal) - LOCAL_VAR(rangeLocal)) & 0x80000000)) {
+                SET_LOCALB(codeLocal, 667, -=, LOCAL_VAR(rangeLocal));
+              }
             } while (NE(--LOCAL_VAR(numDirectBits), 0));
             SET_LOCALB(probIdx, 669, =, Align) ;
             SET_LOCALB(numDirectBits, 671, =, kNumAlignBits) ;
