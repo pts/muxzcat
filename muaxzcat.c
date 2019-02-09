@@ -171,8 +171,10 @@ struct IntegerTypeAsserts {
 #endif  /* CONFIG_LANG_PERL */
 
 /* TODO(pts): Simplify doublings: e.g .LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) */
-/* !! Mask the inputs and outputs of GET_ARY8, GET_ARY16, SET_ARY8, SET_ARY16? */
+/* !! Optimized masking of the index of GET_ARY8, GET_ARY16, SET_ARY8, SET_ARY16? */
+/* !! Optimized masking of EQ(x, 0) and NE(x, 0), GT(x, 0) etc. */
 /* !! Use *_SMALL more, wherever it works. */
+/* !! SHR y amounts are: 1, 11, 31, 5, 4 <= lcm8 <= 8 */
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
 #ifdef CONFIG_LANG_C
 #if defined(CONFIG_UINT64) || defined(CONFIG_INT64)
@@ -487,11 +489,25 @@ GLOBALS
   GLOBAL(Bool, needInitDic);
   GLOBAL(Bool, needInitState);
   GLOBAL(Bool, needInitProp);
+  /* lc, lp and pb would fit into a byte, but i386 code is shorter as UInt32.
+   *
+   * Constraints:
+   *
+   * * (0 <= lc <= 8) by LZMA.
+   * * 0 <= lc <= 4 by LZMA2 and muxzcat.
+   * * 0 <= lp <= 4.
+   * * 0 <= pb <= 4.
+   * * (0 <= lc + lp == 8 + 4 <= 12) by LZMA.
+   * * 0 <= lc + lp <= 4 by LZMA2 and muxzcat.
+   */
   GLOBAL(Byte, lc);  /* Configured in prop byte. */
   GLOBAL(Byte, lp);  /* Configured in prop byte. */
   GLOBAL(Byte, pb);  /* Configured in prop byte. */
+  GLOBAL(Byte, lcm8);  /* Cached (8 - lc), for speed. */
   GLOBAL_ARY16(probs, LZMA2_MAX_NUM_PROBS);  /* Probabilities for bit decoding. */
-  /* The first READBUF_SIZE bytes is readBuf, then the LZMA_REQUIRED_INPUT_MAX bytes is tempBuf. */
+  /* The first READBUF_SIZE bytes is readBuf, then the
+   * LZMA_REQUIRED_INPUT_MAX bytes is tempBuf.
+   */
   GLOBAL_ARY8(readBuf, READBUF_SIZE + LZMA_REQUIRED_INPUT_MAX);
   /* Contains the uncompressed data.
    *
@@ -566,10 +582,10 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
       SET_LOCALB(ttt, 7, =, GET_ARY16(probs, LOCAL_VAR(probIdx))) ; if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 9, <<=, 8) ; SET_LOCALB(codeLocal, 11, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 13, =, SHR(LOCAL_VAR(rangeLocal), kNumBitModelTotalBits) * LOCAL_VAR(ttt)) ;
       if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) {
         LOCAL(UInt32, symbol);
-        SET_LOCALB(rangeLocal, 15, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + (SHR((kBitModelTotal - LOCAL_VAR(ttt)), kNumMoveBits))));
+        SET_LOCALB(rangeLocal, 15, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + (SHR(kBitModelTotal - LOCAL_VAR(ttt), kNumMoveBits))));
         SET_LOCALB(probIdx, 17, =, Literal) ;
         if (NE(GLOBAL_VAR(checkDicSize), 0) || NE(GLOBAL_VAR(processedPos), 0)) {
-          SET_LOCALB(probIdx, 19, +=, (LZMA_LIT_SIZE * (((GLOBAL_VAR(processedPos) & LOCAL_VAR(lpMask)) << GLOBAL_VAR(lc)) + SHR(GET_ARY8(dic, (EQ(GLOBAL_VAR(dicPos), 0) ? GLOBAL_VAR(dicBufSize) : GLOBAL_VAR(dicPos)) - 1), (8 - GLOBAL_VAR(lc)))))) ;
+          SET_LOCALB(probIdx, 19, +=, (LZMA_LIT_SIZE * (((GLOBAL_VAR(processedPos) & LOCAL_VAR(lpMask)) << GLOBAL_VAR(lc)) + SHR_SMALL(GET_ARY8(dic, (EQ(GLOBAL_VAR(dicPos), 0) ? GLOBAL_VAR(dicBufSize) : GLOBAL_VAR(dicPos)) - 1), GLOBAL_VAR(lcm8))))) ;
         }
         if (LT(GLOBAL_VAR(state), kNumLitStates)) {
           SET_GLOBAL(state, 8, -=) (LT(GLOBAL_VAR(state), 4)) ? GLOBAL_VAR(state) : 3;
@@ -818,7 +834,7 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
       SET_LOCALB(rangeLocal, 409, =, LOCAL_VAR(bound)) ;
       SET_LOCALB(probIdx, 411, =, Literal) ;
       if (NE(GLOBAL_VAR(checkDicSize), 0) || NE(GLOBAL_VAR(processedPos), 0)) {
-        SET_LOCALB(probIdx, 413, +=, (LZMA_LIT_SIZE * ((((GLOBAL_VAR(processedPos)) & ((1 << (GLOBAL_VAR(lp))) - 1)) << GLOBAL_VAR(lc)) + SHR(GET_ARY8(dic, (EQ(GLOBAL_VAR(dicPos), 0) ? GLOBAL_VAR(dicBufSize) : GLOBAL_VAR(dicPos)) - 1), (8 - GLOBAL_VAR(lc)))))) ;
+        SET_LOCALB(probIdx, 413, +=, (LZMA_LIT_SIZE * ((((GLOBAL_VAR(processedPos)) & ((1 << (GLOBAL_VAR(lp))) - 1)) << GLOBAL_VAR(lc)) + SHR_SMALL(GET_ARY8(dic, (EQ(GLOBAL_VAR(dicPos), 0) ? GLOBAL_VAR(dicBufSize) : GLOBAL_VAR(dicPos)) - 1), GLOBAL_VAR(lcm8))))) ;
       }
 
       if (LT(LOCAL_VAR(stateLocal), kNumLitStates)) {
@@ -1158,6 +1174,7 @@ ENDFUNC
 FUNC_ARG1(SRes, InitProp, Byte, propByte)
   if (GE_SMALL(LOCAL_VAR(propByte), 9 * 5 * 5)) { return SZ_ERROR_BAD_LCLPPB_PROP; }
   SET_GLOBAL(lc, 122, =) LOCAL_VAR(propByte) % 9;
+  SET_GLOBAL(lcm8, 1222, =) 8 - GLOBAL_VAR(lc);
   SET_LOCALB(propByte, 711, /=, 9) ;
   SET_GLOBAL(pb, 124, =) LOCAL_VAR(propByte) / 5;
   SET_GLOBAL(lp, 126, =) LOCAL_VAR(propByte) % 5;

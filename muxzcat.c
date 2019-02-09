@@ -60,6 +60,8 @@
  *
  *   # Smallest possible dictionary:
  *   $ xz --lzma2=preset=8,dict=4096 <ta8.tar >ta4k.tar.xz
+ *
+ * TODO(pts): Make memory usage smaller: use global.dic as a ring buffer?
  */
 
 #ifdef __TINYC__  /* tcc https://bellard.org/tcc/ , pts-tcc https://github.com/pts/pts-tcc */
@@ -211,9 +213,22 @@ typedef Byte Bool;
 #define Lzma2Props_GetMaxNumProbs() ((UInt32)LZMA_BASE_SIZE + (LZMA_LIT_SIZE << LZMA2_LCLP_MAX))
 
 typedef struct {
-  /* These fields would fit into a byte, but i386 code is shorter as UInt32. */
-  UInt32 lc, lp, pb;  /* Configured in prop byte. */
-  UInt32 dicSize;  /* Configured in prop byte. */
+  /* lc, lp and pb would fit into a byte, but i386 code is shorter as UInt32.
+   *
+   * Constraints:
+   *
+   * * (0 <= lc <= 8) by LZMA.
+   * * 0 <= lc <= 4 by LZMA2 and muxzcat.
+   * * 0 <= lp <= 4.
+   * * 0 <= pb <= 4.
+   * * (0 <= lc + lp == 8 + 4 <= 12) by LZMA.
+   * * 0 <= lc + lp <= 4 by LZMA2 and muxzcat.
+   */
+  UInt32 lc, lp, pb; /* Configured in prop byte. */
+  /* Configured in dicSizeProp byte. Maximum LZMA and LZMA2 supports is 0xffffffff,
+   * maximum we support is sizeof(global.dic) == 1610612736.
+   */
+  UInt32 dicSize;
   const Byte *buf;
   UInt32 range, code;
   UInt32 dicPos;
