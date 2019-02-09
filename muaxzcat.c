@@ -181,7 +181,6 @@ struct IntegerTypeAsserts {
 #if defined(CONFIG_UINT64) || defined(CONFIG_INT64)
 #define SHR(x, y) (((x) & 0xffffffff) >> (y))
 #define SHR_SMALL(x, y) ((x) >> (y))
-#define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> (y))
 #define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
 #define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
 #define LT(x, y) (((x) & 0xffffffff) <  ((y) & 0xffffffff))
@@ -197,7 +196,6 @@ struct IntegerTypeAsserts {
 #else
 #define SHR(x, y) ((x) >> (y))
 #define SHR_SMALL(x, y) ((x) >> (y))  /* When 0 <= x < (2 ** 31). */
-#define SET_SHR(x, y) ((x) >>= (y))
 #define EQ(x, y) ((x) == (y))
 #define NE(x, y) ((x) != (y))
 #define LT(x, y) ((x) < (y))
@@ -217,7 +215,6 @@ struct IntegerTypeAsserts {
 #define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
 #if 0  /* This is for 64-bit Perl only. !! Autodetect 64-bit Perl. */
 #define SHR(x, y) ((x & 0xffffffff) >> ((y) & 31))  /* !! No need for 31. */
-#define SET_SHR(x, y) ((x) = ((x) & 0xffffffff) >> ((y) & 31))
 #define LT(x, y) (((x) & 0xffffffff) <  ((y) & 0xffffffff))
 #define LE(x, y) (((x) & 0xffffffff) <= ((y) & 0xffffffff))
 #define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
@@ -237,7 +234,6 @@ sub shr32($$) {
 }
 #define SHR(x, y) shr32(x, y)
 #define SHR_SMALL(x, y) ((x) >> (y))
-#define SET_SHR(x, y) ((x) = shr32(x, y))
 #define LT(x, y) lt32(x, y)
 #define LE(x, y) (!lt32(y, x))
 #define GT(x, y) lt32(y, x)
@@ -732,7 +728,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
               SET_LOCALB(numDirectBits, 289, -=, kNumAlignBits) ;
               do {
                 if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 291, <<=, 8) ; SET_LOCALB(codeLocal, 293, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; }
-                SET_SHR(LOCAL_VAR(rangeLocal), 1);
+                SET_LOCALB(rangeLocal, 2951, =, SHR(LOCAL_VAR(rangeLocal), 1));
                 if ((LOCAL_VAR(codeLocal) - LOCAL_VAR(rangeLocal)) & 0x80000000) {
                   SET_LOCALB(distance, 297, <<=, 1);
                 } else {
@@ -961,7 +957,7 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
             SET_LOCALB(numDirectBits, 661, -=, kNumAlignBits) ;
             do {
               if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { if (GE_SMALL(LOCAL_VAR(bufDummyCur), LOCAL_VAR(bufLimit))) { return DUMMY_ERROR; } SET_LOCALB(rangeLocal, 663, <<=, 8) ; SET_LOCALB(codeLocal, 665, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(bufDummyCur)++))) ; }
-              SET_SHR(LOCAL_VAR(rangeLocal), 1);
+              SET_LOCALB(rangeLocal, 6651, =, SHR(LOCAL_VAR(rangeLocal), 1));
               if (!((LOCAL_VAR(codeLocal) - LOCAL_VAR(rangeLocal)) & 0x80000000)) {
                 SET_LOCALB(codeLocal, 667, -=, LOCAL_VAR(rangeLocal));
               }
