@@ -737,7 +737,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
                   SET_LOCALB(distance, 297, <<=, 1);
                 } else {
                   SET_LOCALB(codeLocal, 295, -=, LOCAL_VAR(rangeLocal));
-                  /* !! Is <<= 1, ++ faster instead in Perl? */
+                  /* This won't be faster in Perl: <<= 1, ++ */
                   SET_LOCALB(distance, 301, =, (LOCAL_VAR(distance) << 1) + 1);
                 }
               } while (NE(--LOCAL_VAR(numDirectBits), 0));
