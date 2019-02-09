@@ -229,10 +229,11 @@ sub lt32($$) {
   my $b = $_[1] & 0xffffffff;
   ($a < 0 ? $b >= 0 : $b < 0) ? $b < 0 : $a < $b
 }
-/* This works in both 32-bit a 64-bit Perl with `use integer'. */
+/* This works in both 32-bit a 64-bit Perl with `use integer'
+ * if 1 <= $_[0] <= 31.
+ */
 sub shr32($$) {
-  my $b = $_[1] & 31;  /* !! Make sure we are not doing more. */
-  $b ? ($_[0] >> $b) & (0x7fffffff >> ($b - 1)) : $_[0]
+  ($_[0] >> $_[1]) & (0x7fffffff >> ($_[1] - 1))
 }
 #define SHR(x, y) shr32(x, y)
 #define SET_SHR(x, y) ((x) = shr32(x, y))
