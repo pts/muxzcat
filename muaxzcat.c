@@ -214,41 +214,26 @@ struct IntegerTypeAsserts {
 /* The CONFIG_LANG_PERL version would also work for SHR1 and SHR11. */
 #define SHR1(x) (((x) & 0xffffffff) >> 1)
 #define SHR11(x) (((x) & 0xffffffff) >> 11)
-#define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
 #define EQ0(x) (((x) & 0xffffffff) == 0)
-#define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
 #define NE0(x) (((x) & 0xffffffff) != 0)
 #define LT(x, y) (((x) & 0xffffffff) <  ((y) & 0xffffffff))
-#define LE(x, y) (((x) & 0xffffffff) <= ((y) & 0xffffffff))
-#define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
-#define GE(x, y) (((x) & 0xffffffff) >= ((y) & 0xffffffff))
 #else
 #define SHR1(x) ((x) >> 1)
 #define SHR11(x) ((x) >> 11)
-#define EQ(x, y) ((x) == (y))
 #define EQ0(x) ((x) == 0)
-#define NE(x, y) ((x) != (y))
 #define NE0(x) ((x) != 0)
 #define LT(x, y) ((x) < (y))
-#define LE(x, y) ((x) <= (y))
-#define GT(x, y) ((x) > (y))
-#define GE(x, y) ((x) >= (y))
 #endif
 #endif  /* CONFIG_LANG_C */
 #ifdef CONFIG_LANG_PERL
 #define SHR1(x) (((x) >> 1) & 0x7fffffff)
 #define SHR11(x) (((x) >> 11) & (0x7fffffff >> 10))
-#define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
+/* genpl.sh has the 32-bit (slow) and 64-bit (fast) implementations of
+ * EQ0, NE0 and LT.
+ */
 #define EQ0(x) EQ0[x]
 #define NE0(x) NE0[x]
-#define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
-/* genpl.sh has the 32-bit (slow) and 64-bit (fast) implementations of LT,
- * LE, GT, GE. These are just placeholders.
- */
 #define LT(x, y) LT[x],[y]
-#define LE(x, y) LE[x],[y]
-#define GT(x, y) GT[x],[y]
-#define GE(x, y) GE[x],[y]
 #endif  /* CONFIG_LANG_PERL */
 
 /* --- */
@@ -917,7 +902,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, drDicLimit, const UInt32, drB
             }
           }
           /* TODO(pts): Do the 2 instances of SZ_ERROR_DATA below also check this? */
-          ASSERT(IS_SMALL(LOCAL_VAR(distance)) && LE(LOCAL_VAR(distance), DIC_ARRAY_SIZE));
+          ASSERT(IS_SMALL(LOCAL_VAR(distance)) && LE_SMALL(LOCAL_VAR(distance), DIC_ARRAY_SIZE));
           SET_GLOBAL(rep3, 28, =) GLOBAL_VAR(rep2);
           SET_GLOBAL(rep2, 30, =) GLOBAL_VAR(rep1);
           SET_GLOBAL(rep1, 32, =) GLOBAL_VAR(rep0);
@@ -1180,7 +1165,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
       }
       if (LT_SMALL(GLOBAL_VAR(tempBufSize), RC_INIT_SIZE)) {
        on_needs_more_input:
-        if (NE(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
+        if (NE_SMALL(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
         return SZ_ERROR_NEEDS_MORE_INPUT;
       }
       if (NE_SMALL(GET_ARY8(readBuf, READBUF_SIZE), 0)) {
@@ -1195,7 +1180,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
     SET_LOCALB(checkEndMarkNow, 695, =, FALSE) ;
     if (GE_SMALL(GLOBAL_VAR(dicPos), GLOBAL_VAR(dicBufSize))) {
       if (EQ_SMALL(GLOBAL_VAR(remainLen), 0) && EQ0(GLOBAL_VAR(code))) {
-        if (NE(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) { return SZ_ERROR_CHUNK_NOT_CONSUMED; }
+        if (NE_SMALL(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) { return SZ_ERROR_CHUNK_NOT_CONSUMED; }
         return SZ_OK /* MAYBE_FINISHED_WITHOUT_MARK */;
       }
       if (NE_SMALL(GLOBAL_VAR(remainLen), 0)) {
@@ -1222,7 +1207,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
         if (EQ_SMALL(LOCAL_VAR(dummyRes), DUMMY_ERROR)) {
           /* This line can be triggered by passing LOCAL_VAR(ddSrcLen)=1 to LzmaDec_DecodeToDic. */
           SET_GLOBAL(tempBufSize, 84, =) 0;
-          while (NE(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) {
+          while (NE_SMALL(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) {
             SET_ARY8(readBuf, READBUF_SIZE + GLOBAL_VAR(tempBufSize)++, GET_ARY8(readBuf, GLOBAL_VAR(readCur)++));
           }
           goto on_needs_more_input;
@@ -1394,17 +1379,17 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
     LOCAL(UInt32, srcLen);
     LOCAL(UInt32, fromDicPos);
     InitDecode();
-    /* LZMA restricts LE(lc + lp, 4). LZMA requires LE(lc + lp, 12).
-     * We apply the LZMA2 restriction here (to save memory in
+    /* LZMA restricts LE_SMALL(lc + lp, 4). LZMA requires LE_SMALL(lc + lp,
+     * 12). We apply the LZMA2 restriction here (to save memory in
      * GLOBAL_VAR(probs)), thus we are not able to extract some legitimate
      * .lzma files.
      */
     if (NE_SMALL((LOCAL_VAR(dxRes) = InitProp(GET_ARY8(readBuf, GLOBAL_VAR(readCur)))), SZ_OK)) {
       return LOCAL_VAR(dxRes);
     }
-    if (EQ(LOCAL_VAR(bhf), 0)) {
+    if (EQ0(LOCAL_VAR(bhf))) {
       SET_GLOBAL(dicBufSize, 132, =) LOCAL_VAR(readBufUS) = GetLE4(GLOBAL_VAR(readCur) + 5);
-      if (GT(LOCAL_VAR(readBufUS), DIC_ARRAY_SIZE)) { return SZ_ERROR_MEM; }
+      if (!LT(LOCAL_VAR(readBufUS), DIC_ARRAY_SIZE + 1)) { return SZ_ERROR_MEM; }
     } else {
       SET_LOCALB(readBufUS, 715, =, LOCAL_VAR(bhf)) ;  /* max UInt32. */
       SET_GLOBAL(dicBufSize, 134, =) DIC_ARRAY_SIZE;
