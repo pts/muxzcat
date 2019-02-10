@@ -19,7 +19,7 @@
  * Most users should use muxzcat.c instead, because that one runs faster.
  */
 
-#ifdef CONFIG_DEBUG_VARS
+#if defined(CONFIG_DEBUG_VARS) || defined(CONFIG_DEBUG_VAR_RANGES)
 #ifndef CONFIG_DEBUG
 #define CONFIG_DEBUG 1
 #endif
@@ -177,7 +177,7 @@ struct IntegerTypeAsserts {
 #endif  /* CONFIG_LANG_PERL */
 
 /* TODO(pts): Simplify doublings: e.g.
- * LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol))
+ * LOCAL_VAR(drSymbol) = (LOCAL_VAR(drSymbol) + LOCAL_VAR(drSymbol))
  * SET_LOCALB(distance, 251, =, (LOCAL_VAR(distance) + LOCAL_VAR(distance)));
  * SET_LOCALB(distance, 257, =, (LOCAL_VAR(distance) + LOCAL_VAR(distance)) + 1);
   */
@@ -275,7 +275,7 @@ static void DumpVars(void);
 #undef  SET_LOCALB
 #define SET_LOCALB(name, setid, op, value) ({ LOCAL_##name op value; DEBUGF("SET_LOCAL @%d %s=%u\n", setid, #name, (int)TRUNCATE_TO_32BIT(LOCAL_##name)); LOCAL_##name; })
 #undef  SET_GLOBAL
-#define SET_GLOBAL(name, setid, op) *({ DumpVars(); DEBUGF("SET_GLOBAL %s @%d\n", #name, setid); &global.name; }) op
+#define SET_GLOBAL(name, setid, op) ({ DumpVars(); DEBUGF("SET_GLOBAL %s @%d\n", #name, setid); &global.name; })[0] op
 #undef  SET_ARY16
 #define SET_ARY16(a, idx, value) ({ const UInt32 idx2 = idx; global.a##16[idx2] = value; DEBUGF("SET_ARY16 %s[%d]=%u\n", #a, (int)idx2, (int)(global.a##16[idx2])); global.a##16[idx2]; })
 #undef  SET_ARY8
@@ -453,6 +453,154 @@ typedef uint8_t Bool;
 #endif
 #endif  /* CONFIG_LANG_C */
 
+#define NOTICE_LOCAL_RANGE(name)
+#define NOTICE_LOCAL_RANGE_VALUE(name, value)
+#define NOTICE_GLOBAL_RANGE(name)
+#ifdef CONFIG_LANG_C
+#ifdef CONFIG_DEBUG_VAR_RANGES
+/* Only these variables seem to be non-small (outside 31-bit unsigned):
+ * blockSizePad, code, drBound, drCode, drRange, range, tdBound, tdCode,
+ * tdRange.
+ */
+/* gcc -DCONFIG_DEBUG_VAR_RANGES -DCONFIG_INT64 -ansi -O2 -W -Wall -Wextra -Werror -o muxzcat muaxzcat.c */
+#define DECLARE_VRMINMAX(name) int64_t VRMIN_##name = 0, VRMAX_##name = 0
+#undef  NOTICE_GLOBAL_RANGE
+#define NOTICE_GLOBAL_RANGE(name) do { if ((int64_t)global.name < VRMIN_##name) VRMIN_##name = global.name; if ((int64_t)global.name > VRMAX_##name) VRMAX_##name = global.name; } while (0)
+#undef  SET_GLOBAL
+#define SET_GLOBAL(name, setid, op) ({ NOTICE_GLOBAL_RANGE(name); &global.name; })[0] op
+#undef  NOTICE_LOCAL_RANGE
+#define NOTICE_LOCAL_RANGE(name) do { if ((int64_t)LOCAL_##name < VRMIN_##name) VRMIN_##name = LOCAL_##name; if ((int64_t)LOCAL_##name > VRMAX_##name) VRMAX_##name = LOCAL_##name; } while (0)
+#undef  NOTICE_LOCAL_RANGE_VALUE
+#define NOTICE_LOCAL_RANGE_VALUE(name, value) ({ const UInt32 value2 = (value); if ((int64_t)value2 < VRMIN_##name) VRMIN_##name = value2; if (value2 > VRMAX_##name) VRMAX_##name = value2; value2; })
+#undef  LOCAL
+#define LOCAL(type, name) type LOCAL_##name = 0  /* Initialize to 0 to prevent NOTICE_LOCAL_RANGE in LOCAL_VAR from reading an uninitialized value. */
+#undef  LOCAL_INIT
+#define LOCAL_INIT(type, name, value) type LOCAL_##name = NOTICE_LOCAL_RANGE_VALUE(name, value)
+#undef  LOCAL_VAR
+#define LOCAL_VAR(name) ({ NOTICE_LOCAL_RANGE(name); &LOCAL_##name; })[0]
+#undef  SET_LOCALB
+#define SET_LOCALB(name, setid, op, value) ({ LOCAL_##name op value; NOTICE_LOCAL_RANGE(name); LOCAL_##name; })
+/**/
+DECLARE_VRMINMAX(bufCur);
+DECLARE_VRMINMAX(dicSize);
+DECLARE_VRMINMAX(range);
+DECLARE_VRMINMAX(code);
+DECLARE_VRMINMAX(dicPos);
+DECLARE_VRMINMAX(dicBufSize);
+DECLARE_VRMINMAX(processedPos);
+DECLARE_VRMINMAX(checkDicSize);
+DECLARE_VRMINMAX(state);
+DECLARE_VRMINMAX(rep0);
+DECLARE_VRMINMAX(rep1);
+DECLARE_VRMINMAX(rep2);
+DECLARE_VRMINMAX(rep3);
+DECLARE_VRMINMAX(remainLen);
+DECLARE_VRMINMAX(tempBufSize);
+DECLARE_VRMINMAX(readCur);
+DECLARE_VRMINMAX(readEnd);
+DECLARE_VRMINMAX(needFlush);
+DECLARE_VRMINMAX(needInitLzma);
+DECLARE_VRMINMAX(needInitDic);
+DECLARE_VRMINMAX(needInitState);
+DECLARE_VRMINMAX(needInitProp);
+DECLARE_VRMINMAX(lc);
+DECLARE_VRMINMAX(lp);
+DECLARE_VRMINMAX(pb);
+DECLARE_VRMINMAX(lcm8);
+DECLARE_VRMINMAX(umValue);
+DECLARE_VRMINMAX(wrDicLimit);
+DECLARE_VRMINMAX(wrLen);
+DECLARE_VRMINMAX(drDicLimit);
+DECLARE_VRMINMAX(drBufLimit);
+DECLARE_VRMINMAX(pbMask);
+DECLARE_VRMINMAX(lpMask);
+DECLARE_VRMINMAX(drI);
+DECLARE_VRMINMAX(drDicLimit2);
+DECLARE_VRMINMAX(drLen);
+DECLARE_VRMINMAX(drRange);
+DECLARE_VRMINMAX(drCode);
+DECLARE_VRMINMAX(drProbIdx);
+DECLARE_VRMINMAX(drBound);
+DECLARE_VRMINMAX(drTtt);
+DECLARE_VRMINMAX(distance);
+DECLARE_VRMINMAX(drPosState);
+DECLARE_VRMINMAX(drSymbol);
+DECLARE_VRMINMAX(drMatchByte);
+DECLARE_VRMINMAX(drMatchMask);
+DECLARE_VRMINMAX(drBit);
+DECLARE_VRMINMAX(drProbLitIdx);
+DECLARE_VRMINMAX(drLimitSub);
+DECLARE_VRMINMAX(drOffset);
+DECLARE_VRMINMAX(drProbLenIdx);
+DECLARE_VRMINMAX(drPosSlot);
+DECLARE_VRMINMAX(drDirectBitCount);
+DECLARE_VRMINMAX(mask);
+DECLARE_VRMINMAX(drRem);
+DECLARE_VRMINMAX(curLen);
+DECLARE_VRMINMAX(pos);
+DECLARE_VRMINMAX(tdCur);
+DECLARE_VRMINMAX(tdBufLimit);
+DECLARE_VRMINMAX(tdRange);
+DECLARE_VRMINMAX(tdCode);
+DECLARE_VRMINMAX(tdState);
+DECLARE_VRMINMAX(tdRes);
+DECLARE_VRMINMAX(tdProbIdx);
+DECLARE_VRMINMAX(tdBound);
+DECLARE_VRMINMAX(tdTtt);
+DECLARE_VRMINMAX(tdPosState);
+DECLARE_VRMINMAX(tdSymbol);
+DECLARE_VRMINMAX(tdMatchByte);
+DECLARE_VRMINMAX(tdMatchMask);
+DECLARE_VRMINMAX(tdBit);
+DECLARE_VRMINMAX(tdProbLitIdx);
+DECLARE_VRMINMAX(tdLen);
+DECLARE_VRMINMAX(tdLimitSub);
+DECLARE_VRMINMAX(tdOffset);
+DECLARE_VRMINMAX(tdProbLenIdx);
+DECLARE_VRMINMAX(tdPosSlot);
+DECLARE_VRMINMAX(tdDirectBitCount);
+DECLARE_VRMINMAX(tdI);
+DECLARE_VRMINMAX(idInitDic);
+DECLARE_VRMINMAX(idInitState);
+DECLARE_VRMINMAX(ddSrcLen);
+DECLARE_VRMINMAX(decodeLimit);
+DECLARE_VRMINMAX(checkEndMarkNow);
+DECLARE_VRMINMAX(dummyRes);
+DECLARE_VRMINMAX(numProbs);
+DECLARE_VRMINMAX(ddProbIdx);
+DECLARE_VRMINMAX(bufLimit);
+DECLARE_VRMINMAX(ddRem);
+DECLARE_VRMINMAX(lookAhead);
+DECLARE_VRMINMAX(prSize);
+DECLARE_VRMINMAX(prPos);
+DECLARE_VRMINMAX(prGot);
+DECLARE_VRMINMAX(izCount);
+DECLARE_VRMINMAX(glPos);
+DECLARE_VRMINMAX(ipByte);
+DECLARE_VRMINMAX(wfDicPos);
+DECLARE_VRMINMAX(wfGot);
+DECLARE_VRMINMAX(checksumSize);
+DECLARE_VRMINMAX(bhf);
+DECLARE_VRMINMAX(dxRes);
+DECLARE_VRMINMAX(readBufUS);
+DECLARE_VRMINMAX(srcLen);
+DECLARE_VRMINMAX(fromDicPos);
+DECLARE_VRMINMAX(blockSizePad);
+DECLARE_VRMINMAX(bhs);
+DECLARE_VRMINMAX(bhs2);
+DECLARE_VRMINMAX(dicSizeProp);
+DECLARE_VRMINMAX(readAtBlock);
+DECLARE_VRMINMAX(chunkUS);
+DECLARE_VRMINMAX(chunkCS);
+DECLARE_VRMINMAX(initDic);
+DECLARE_VRMINMAX(control);
+DECLARE_VRMINMAX(mode);
+DECLARE_VRMINMAX(initState);
+DECLARE_VRMINMAX(isProp);
+DECLARE_VRMINMAX(deRes);
+#endif /* CONFIG_DEBUG_VAR_RANGES */
+#endif /* CONFIG_LANG_C */
+
 /* For LZMA streams, LE(lc + lp, 8 + 4), LE 12.
  * For LZMA2 streams, LE(lc + lp, 4).
  * Minimum value: 1846.
@@ -541,6 +689,7 @@ struct ProbsAsserts {
 
 #ifdef CONFIG_LANG_PERL
 FUNC_ARG1(UInt32, UndefToMinus1, UInt32, umValue)
+  NOTICE_LOCAL_RANGE(umValue);
   return defined(LOCAL_VAR(umValue)) ? LOCAL_VAR(umValue) : -1;
 ENDFUNC
 #endif  /* CONFIG_LANG_PERL */
@@ -548,6 +697,7 @@ ENDFUNC
 /* --- */
 
 FUNC_ARG1(void, LzmaDec_WriteRem, UInt32, wrDicLimit)
+  NOTICE_LOCAL_RANGE(wrDicLimit);
   if (NE(GLOBAL_VAR(remainLen), 0) && LT(GLOBAL_VAR(remainLen), kMatchSpecLenStart)) {
     LOCAL_INIT(UInt32, wrLen, GLOBAL_VAR(remainLen));
     if (LT(LOCAL_VAR(wrDicLimit) - GLOBAL_VAR(dicPos), LOCAL_VAR(wrLen))) {
@@ -571,6 +721,8 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, drDicLimit, const UInt32, drB
   LOCAL_INIT(const UInt32, pbMask, (ENSURE_32BIT(1) << (GLOBAL_VAR(pb))) - 1);
   LOCAL_INIT(const UInt32, lpMask, (ENSURE_32BIT(1) << (GLOBAL_VAR(lp))) - 1);
   LOCAL(UInt32, drI);
+  NOTICE_LOCAL_RANGE(drDicLimit);
+  NOTICE_LOCAL_RANGE(drBufLimit);
   do {
     LOCAL_INIT(const UInt32, drDicLimit2, EQ(GLOBAL_VAR(checkDicSize), 0) && LT(GLOBAL_VAR(dicSize) - GLOBAL_VAR(processedPos), LOCAL_VAR(drDicLimit) - GLOBAL_VAR(dicPos)) ? GLOBAL_VAR(dicPos) + (GLOBAL_VAR(dicSize) - GLOBAL_VAR(processedPos)) : LOCAL_VAR(drDicLimit));
     LOCAL_INIT(UInt32, drLen, 0);
@@ -838,6 +990,8 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, tdCur, const UInt32, tdBufLimit)
   LOCAL(UInt32, tdBound);
   LOCAL(UInt32, tdTtt);
   LOCAL_INIT(UInt32, tdPosState, (GLOBAL_VAR(processedPos)) & ((1 << GLOBAL_VAR(pb)) - 1));
+  NOTICE_LOCAL_RANGE(tdCur);
+  NOTICE_LOCAL_RANGE(tdBufLimit);
   SET_LOCALB(tdProbIdx, 399, =, IsMatch + (LOCAL_VAR(tdState) << (kNumPosBitsMax)) + LOCAL_VAR(tdPosState)) ;
   SET_LOCALB(tdTtt, 401, =, GET_ARY16(probs, LOCAL_VAR(tdProbIdx))) ; if (LT(LOCAL_VAR(tdRange), kTopValue)) { if (GE_SMALL(LOCAL_VAR(tdCur), LOCAL_VAR(tdBufLimit))) { return DUMMY_ERROR; } SET_LOCALB(tdRange, 403, <<=, 8) ; SET_LOCALB(tdCode, 405, =, (LOCAL_VAR(tdCode) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(tdCur)++))) ; } SET_LOCALB(tdBound, 407, =, SHR11(LOCAL_VAR(tdRange)) * LOCAL_VAR(tdTtt)) ;
   if (LT(LOCAL_VAR(tdCode), LOCAL_VAR(tdBound))) {
@@ -990,6 +1144,8 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, tdCur, const UInt32, tdBufLimit)
 ENDFUNC
 
 FUNC_ARG2(void, LzmaDec_InitDicAndState, const Bool, idInitDic, const Bool, idInitState)
+  NOTICE_LOCAL_RANGE(idInitDic);
+  NOTICE_LOCAL_RANGE(idInitState);
   SET_GLOBAL(needFlush, 50, =) TRUE;
   SET_GLOBAL(remainLen, 52, =) 0;
   SET_GLOBAL(tempBufSize, 54, =) 0;
@@ -1013,6 +1169,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
   LOCAL_INIT(const UInt32, decodeLimit, GLOBAL_VAR(readCur) + LOCAL_VAR(ddSrcLen));
   LOCAL(Bool, checkEndMarkNow);
   LOCAL(SRes, dummyRes);
+  NOTICE_LOCAL_RANGE(ddSrcLen);
   LzmaDec_WriteRem(GLOBAL_VAR(dicBufSize));
 
   while (NE(GLOBAL_VAR(remainLen), kMatchSpecLenStart)) {
@@ -1129,6 +1286,7 @@ ENDFUNC
 FUNC_ARG1(UInt32, Preread, const UInt32, prSize)
   LOCAL_INIT(UInt32, prPos, GLOBAL_VAR(readEnd) - GLOBAL_VAR(readCur));
   LOCAL(UInt32, prGot);
+  NOTICE_LOCAL_RANGE(prSize);
   ASSERT(LE(LOCAL_VAR(prSize), READBUF_SIZE));
   if (LT_SMALL(LOCAL_VAR(prPos), LOCAL_VAR(prSize))) {  /* Not enough pending available. */
     if (LT_SMALL(READBUF_SIZE - GLOBAL_VAR(readCur), LOCAL_VAR(prSize))) {
@@ -1159,6 +1317,7 @@ FUNC_ARG0(void, IgnoreVarint)
 ENDFUNC
 
 FUNC_ARG1(SRes, IgnoreZeroBytes, UInt32, izCount)
+  NOTICE_LOCAL_RANGE(izCount);
   for (; NE_SMALL(LOCAL_VAR(izCount), 0); --LOCAL_VAR(izCount)) {
     if (NE_SMALL(GET_ARY8(readBuf, GLOBAL_VAR(readCur)++), 0)) {
       return SZ_ERROR_BAD_PADDING;
@@ -1168,6 +1327,7 @@ FUNC_ARG1(SRes, IgnoreZeroBytes, UInt32, izCount)
 ENDFUNC
 
 FUNC_ARG1(UInt32, GetLE4, const UInt32, glPos)
+  NOTICE_LOCAL_RANGE(glPos);
   return GET_ARY8(readBuf, LOCAL_VAR(glPos)) | GET_ARY8(readBuf, LOCAL_VAR(glPos) + 1) << 8 | GET_ARY8(readBuf, LOCAL_VAR(glPos) + 2) << 16 | GET_ARY8(readBuf, LOCAL_VAR(glPos) + 3) << 24;
 ENDFUNC
 
@@ -1184,6 +1344,7 @@ FUNC_ARG0(void, InitDecode)
 ENDFUNC
 
 FUNC_ARG1(SRes, InitProp, Byte, ipByte)
+  NOTICE_LOCAL_RANGE(ipByte);
   if (GE_SMALL(LOCAL_VAR(ipByte), 9 * 5 * 5)) { return SZ_ERROR_BAD_LCLPPB_PROP; }
   SET_GLOBAL(lc, 122, =) LOCAL_VAR(ipByte) % 9;
   SET_GLOBAL(lcm8, 1222, =) 8 - GLOBAL_VAR(lc);
@@ -1197,6 +1358,7 @@ ENDFUNC
 
 /* Writes uncompressed data dic[LOCAL_VAR(fromDicPos) : GLOBAL_VAR(dicPos)] to stdout. */
 FUNC_ARG1(SRes, WriteFrom, UInt32, wfDicPos)
+  NOTICE_LOCAL_RANGE(wfDicPos);
   DEBUGF("WRITE %d dicPos=%d\n", ENSURE_32BIT(GLOBAL_VAR(dicPos) - LOCAL_VAR(wfDicPos)), ENSURE_32BIT(GLOBAL_VAR(dicPos)));
   while (NE_SMALL(LOCAL_VAR(wfDicPos), GLOBAL_VAR(dicPos))) {
     LOCAL_INIT(UInt32, wfGot, WRITE_TO_STDOUT_FROM_ARY8(dic, LOCAL_VAR(wfDicPos), GLOBAL_VAR(dicPos) - LOCAL_VAR(wfDicPos)));
@@ -1288,7 +1450,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
     LOCAL(Byte, dicSizeProp);
     LOCAL(UInt32, readAtBlock);
     ASSERT(GE_SMALL(GLOBAL_VAR(readEnd) - GLOBAL_VAR(readCur), 12));  /* At least 12 bytes preread. */
-    LOCAL_VAR(readAtBlock) = GLOBAL_VAR(readCur);
+    SET_LOCALB(readAtBlock, 7191, =, GLOBAL_VAR(readCur)) ;
     /* Last block, index follows. */
     if (EQ_SMALL((LOCAL_VAR(bhs) = GET_ARY8(readBuf, GLOBAL_VAR(readCur)++)), 0)) { BREAK; }
     /* Block header size includes the LOCAL_VAR(bhs) field above and the CRC32 below. */
@@ -1458,7 +1620,159 @@ int main(int argc, char **argv) {
   setmode(0, O_BINARY);
   setmode(1, O_BINARY);
 #endif
+#ifndef CONFIG_DEBUG_VAR_RANGES
   return DecompressXzOrLzma();
+#else
+  return ({ const SRes mainRes = DecompressXzOrLzma();
+#define DUMP_VRMINMAX(name) DEBUGF("VRMINMAX %s min=%lld max=%lld %s\n", #name, (long long)VRMIN_##name, (long long)VRMAX_##name, VRMIN_##name >= 0 && VRMAX_##name <= 0x7fffffff ? "small" : "big")
+  /* TODO(pts): Don't enumerate these again. */
+  NOTICE_GLOBAL_RANGE(bufCur);
+  NOTICE_GLOBAL_RANGE(dicSize);
+  NOTICE_GLOBAL_RANGE(range);
+  NOTICE_GLOBAL_RANGE(code);
+  NOTICE_GLOBAL_RANGE(dicPos);
+  NOTICE_GLOBAL_RANGE(dicBufSize);
+  NOTICE_GLOBAL_RANGE(processedPos);
+  NOTICE_GLOBAL_RANGE(checkDicSize);
+  NOTICE_GLOBAL_RANGE(state);
+  NOTICE_GLOBAL_RANGE(rep0);
+  NOTICE_GLOBAL_RANGE(rep1);
+  NOTICE_GLOBAL_RANGE(rep2);
+  NOTICE_GLOBAL_RANGE(rep3);
+  NOTICE_GLOBAL_RANGE(remainLen);
+  NOTICE_GLOBAL_RANGE(tempBufSize);
+  NOTICE_GLOBAL_RANGE(readCur);
+  NOTICE_GLOBAL_RANGE(readEnd);
+  NOTICE_GLOBAL_RANGE(needFlush);
+  NOTICE_GLOBAL_RANGE(needInitLzma);
+  NOTICE_GLOBAL_RANGE(needInitDic);
+  NOTICE_GLOBAL_RANGE(needInitState);
+  NOTICE_GLOBAL_RANGE(needInitProp);
+  NOTICE_GLOBAL_RANGE(lc);
+  NOTICE_GLOBAL_RANGE(lp);
+  NOTICE_GLOBAL_RANGE(pb);
+  NOTICE_GLOBAL_RANGE(lcm8);
+  /* TODO(pts): Don't enumerate these again, reuse DECLARE_VRMINMAX */
+  DUMP_VRMINMAX(bhf);
+  DUMP_VRMINMAX(bhs);
+  DUMP_VRMINMAX(bhs2);
+  DUMP_VRMINMAX(blockSizePad);
+  DUMP_VRMINMAX(bufCur);
+  DUMP_VRMINMAX(bufLimit);
+  DUMP_VRMINMAX(checkDicSize);
+  DUMP_VRMINMAX(checkEndMarkNow);
+  DUMP_VRMINMAX(checksumSize);
+  DUMP_VRMINMAX(chunkCS);
+  DUMP_VRMINMAX(chunkUS);
+  DUMP_VRMINMAX(code);
+  DUMP_VRMINMAX(control);
+  DUMP_VRMINMAX(curLen);
+  DUMP_VRMINMAX(ddProbIdx);
+  DUMP_VRMINMAX(ddRem);
+  DUMP_VRMINMAX(ddSrcLen);
+  DUMP_VRMINMAX(deRes);
+  DUMP_VRMINMAX(decodeLimit);
+  DUMP_VRMINMAX(dicBufSize);
+  DUMP_VRMINMAX(dicPos);
+  DUMP_VRMINMAX(dicSize);
+  DUMP_VRMINMAX(dicSizeProp);
+  DUMP_VRMINMAX(distance);
+  DUMP_VRMINMAX(drBit);
+  DUMP_VRMINMAX(drBound);
+  DUMP_VRMINMAX(drBufLimit);
+  DUMP_VRMINMAX(drCode);
+  DUMP_VRMINMAX(drDicLimit);
+  DUMP_VRMINMAX(drDicLimit2);
+  DUMP_VRMINMAX(drDirectBitCount);
+  DUMP_VRMINMAX(drI);
+  DUMP_VRMINMAX(drLen);
+  DUMP_VRMINMAX(drLimitSub);
+  DUMP_VRMINMAX(drMatchByte);
+  DUMP_VRMINMAX(drMatchMask);
+  DUMP_VRMINMAX(drOffset);
+  DUMP_VRMINMAX(drPosSlot);
+  DUMP_VRMINMAX(drPosState);
+  DUMP_VRMINMAX(drProbIdx);
+  DUMP_VRMINMAX(drProbLenIdx);
+  DUMP_VRMINMAX(drProbLitIdx);
+  DUMP_VRMINMAX(drRange);
+  DUMP_VRMINMAX(drRem);
+  DUMP_VRMINMAX(drSymbol);
+  DUMP_VRMINMAX(drTtt);
+  DUMP_VRMINMAX(dummyRes);
+  DUMP_VRMINMAX(dxRes);
+  DUMP_VRMINMAX(fromDicPos);
+  DUMP_VRMINMAX(glPos);
+  DUMP_VRMINMAX(idInitDic);
+  DUMP_VRMINMAX(idInitState);
+  DUMP_VRMINMAX(initDic);
+  DUMP_VRMINMAX(initState);
+  DUMP_VRMINMAX(ipByte);
+  DUMP_VRMINMAX(isProp);
+  DUMP_VRMINMAX(izCount);
+  DUMP_VRMINMAX(lc);
+  DUMP_VRMINMAX(lcm8);
+  DUMP_VRMINMAX(lookAhead);
+  DUMP_VRMINMAX(lp);
+  DUMP_VRMINMAX(lpMask);
+  DUMP_VRMINMAX(mask);
+  DUMP_VRMINMAX(mode);
+  DUMP_VRMINMAX(needFlush);
+  DUMP_VRMINMAX(needInitDic);
+  DUMP_VRMINMAX(needInitLzma);
+  DUMP_VRMINMAX(needInitProp);
+  DUMP_VRMINMAX(needInitState);
+  DUMP_VRMINMAX(numProbs);
+  DUMP_VRMINMAX(pb);
+  DUMP_VRMINMAX(pbMask);
+  DUMP_VRMINMAX(pos);
+  DUMP_VRMINMAX(prGot);
+  DUMP_VRMINMAX(prPos);
+  DUMP_VRMINMAX(prSize);
+  DUMP_VRMINMAX(processedPos);
+  DUMP_VRMINMAX(range);
+  DUMP_VRMINMAX(readAtBlock);
+  DUMP_VRMINMAX(readBufUS);
+  DUMP_VRMINMAX(readCur);
+  DUMP_VRMINMAX(readEnd);
+  DUMP_VRMINMAX(remainLen);
+  DUMP_VRMINMAX(rep0);
+  DUMP_VRMINMAX(rep1);
+  DUMP_VRMINMAX(rep2);
+  DUMP_VRMINMAX(rep3);
+  DUMP_VRMINMAX(srcLen);
+  DUMP_VRMINMAX(state);
+  DUMP_VRMINMAX(tdBit);
+  DUMP_VRMINMAX(tdBound);
+  DUMP_VRMINMAX(tdBufLimit);
+  DUMP_VRMINMAX(tdCode);
+  DUMP_VRMINMAX(tdCur);
+  DUMP_VRMINMAX(tdDirectBitCount);
+  DUMP_VRMINMAX(tdI);
+  DUMP_VRMINMAX(tdLen);
+  DUMP_VRMINMAX(tdLimitSub);
+  DUMP_VRMINMAX(tdMatchByte);
+  DUMP_VRMINMAX(tdMatchMask);
+  DUMP_VRMINMAX(tdOffset);
+  DUMP_VRMINMAX(tdPosSlot);
+  DUMP_VRMINMAX(tdPosState);
+  DUMP_VRMINMAX(tdProbIdx);
+  DUMP_VRMINMAX(tdProbLenIdx);
+  DUMP_VRMINMAX(tdProbLitIdx);
+  DUMP_VRMINMAX(tdRange);
+  DUMP_VRMINMAX(tdRes);
+  DUMP_VRMINMAX(tdState);
+  DUMP_VRMINMAX(tdSymbol);
+  DUMP_VRMINMAX(tdTtt);
+  DUMP_VRMINMAX(tempBufSize);
+  DUMP_VRMINMAX(umValue);
+  DUMP_VRMINMAX(wfDicPos);
+  DUMP_VRMINMAX(wfGot);
+  DUMP_VRMINMAX(wrDicLimit);
+  DUMP_VRMINMAX(wrLen);
+  /**/
+  mainRes; });
+#endif /* CONFIG_DEBUG_VAR_RANGES */
 }
 #endif
 
