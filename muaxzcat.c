@@ -176,7 +176,11 @@ struct IntegerTypeAsserts {
 #define ENDFUNC }
 #endif  /* CONFIG_LANG_PERL */
 
-/* TODO(pts): Simplify doublings: e.g .LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol)) */
+/* TODO(pts): Simplify doublings: e.g.
+ * LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol))
+ * SET_LOCALB(distance, 251, =, (LOCAL_VAR(distance) + LOCAL_VAR(distance)));
+ * SET_LOCALB(distance, 257, =, (LOCAL_VAR(distance) + LOCAL_VAR(distance)) + 1);
+  */
 /* !! Instrument ++ and -- operators. */
 /* !! Optimized masking of the index of GET_ARY8, GET_ARY16, SET_ARY8, SET_ARY16? */
 /* !! Optimized masking of EQ(x, 0) and NE(x, 0), GT(x, 0) etc. */
@@ -188,6 +192,7 @@ struct IntegerTypeAsserts {
  */
 /* !! Use comparison *_SMALL more, wherever it works. */
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
+#define IS_SMALL(x) (((x) & ~0x7fffffff) == 0)
 #ifdef CONFIG_LANG_C
 #if defined(CONFIG_UINT64) || defined(CONFIG_INT64)
 #define SHR_SMALL(x, y) ((x) >> (y))
@@ -279,7 +284,7 @@ sub lt32($$) {
 #define DEBUGF(...) fprintf(stderr, "DEBUG: " __VA_ARGS__)
 #define ASSERT(condition) assert(condition)
 #undef  SHR_SMALL
-#define SHR_SMALL(x, y) ({ const UInt32 x2 = (x); ASSERT((x2 & ~0x7fffffff) == 0); x2 >> (y); })
+#define SHR_SMALL(x, y) ({ const UInt32 x2 = (x); ASSERT(IS_SMALL(x2)); x2 >> (y); })
 #ifdef CONFIG_DEBUG_VARS
 static void DumpVars(void);
 /* ++ and -- operators for global and local variables could be instrumented
@@ -598,7 +603,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
       SET_LOCALB(ttt, 7, =, GET_ARY16(probs, LOCAL_VAR(probIdx))) ; if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 9, <<=, 8) ; SET_LOCALB(codeLocal, 11, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 13, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ;
       if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) {
         LOCAL(UInt32, symbol);
-        ASSERT(LE(LOCAL_VAR(ttt), kBitModelTotal));
+        ASSERT(IS_SMALL(LOCAL_VAR(ttt)) && LE(LOCAL_VAR(ttt), kBitModelTotal));
         SET_LOCALB(rangeLocal, 15, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + (SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5))));
         SET_LOCALB(probIdx, 17, =, Literal) ;
         if (NE(GLOBAL_VAR(checkDicSize), 0) || NE(GLOBAL_VAR(processedPos), 0)) {
@@ -632,7 +637,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
         SET_LOCALB(probIdx, 75, =, IsRep + GLOBAL_VAR(state)) ;
         SET_LOCALB(ttt, 77, =, GET_ARY16(probs, LOCAL_VAR(probIdx))) ; if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 79, <<=, 8) ; SET_LOCALB(codeLocal, 81, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 83, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ;
         if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) {
-          ASSERT(LE(LOCAL_VAR(ttt), kBitModelTotal));
+          ASSERT(IS_SMALL(LOCAL_VAR(ttt)) && LE(LOCAL_VAR(ttt), kBitModelTotal));
           SET_LOCALB(rangeLocal, 85, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5)));
           SET_GLOBAL(state, 12, +=) kNumStates;
           SET_LOCALB(probIdx, 87, =, LenCoder) ;
@@ -644,7 +649,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
           SET_LOCALB(probIdx, 93, =, IsRepG0 + GLOBAL_VAR(state)) ;
           SET_LOCALB(ttt, 95, =, GET_ARY16(probs, LOCAL_VAR(probIdx))) ; if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 97, <<=, 8) ; SET_LOCALB(codeLocal, 99, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 101, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ;
           if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) {
-            ASSERT(LE(LOCAL_VAR(ttt), kBitModelTotal));
+            ASSERT(IS_SMALL(LOCAL_VAR(ttt)) && LE(LOCAL_VAR(ttt), kBitModelTotal));
             SET_LOCALB(rangeLocal, 103, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5)));
             SET_LOCALB(probIdx, 105, =, IsRep0Long + (GLOBAL_VAR(state) << (kNumPosBitsMax)) + LOCAL_VAR(posState)) ;
             SET_LOCALB(ttt, 107, =, GET_ARY16(probs, LOCAL_VAR(probIdx))) ; if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 109, <<=, 8) ; SET_LOCALB(codeLocal, 111, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 113, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ;
@@ -691,7 +696,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
           LOCAL_INIT(UInt32, probLenIdx, LOCAL_VAR(probIdx) + LenChoice);
           SET_LOCALB(ttt, 165, =, GET_ARY16(probs, LOCAL_VAR(probLenIdx))) ; if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 167, <<=, 8) ; SET_LOCALB(codeLocal, 169, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 171, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ;
           if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) {
-            ASSERT(LE(LOCAL_VAR(ttt), kBitModelTotal));
+            ASSERT(IS_SMALL(LOCAL_VAR(ttt)) && LE(LOCAL_VAR(ttt), kBitModelTotal));
             SET_LOCALB(rangeLocal, 173, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probLenIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5)));
             SET_LOCALB(probLenIdx, 175, =, LOCAL_VAR(probIdx) + LenLow + (LOCAL_VAR(posState) << (kLenNumLowBits))) ;
             SET_LOCALB(offset, 177, =, 0) ;
@@ -701,7 +706,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
             SET_LOCALB(probLenIdx, 185, =, LOCAL_VAR(probIdx) + LenChoice2) ;
             SET_LOCALB(ttt, 187, =, GET_ARY16(probs, LOCAL_VAR(probLenIdx))) ; if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 189, <<=, 8) ; SET_LOCALB(codeLocal, 191, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 193, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ;
             if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) {
-              ASSERT(LE(LOCAL_VAR(ttt), kBitModelTotal));
+              ASSERT(IS_SMALL(LOCAL_VAR(ttt)) && LE(LOCAL_VAR(ttt), kBitModelTotal));
               SET_LOCALB(rangeLocal, 195, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probLenIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5)));
               SET_LOCALB(probLenIdx, 197, =, LOCAL_VAR(probIdx) + LenMid + (LOCAL_VAR(posState) << (kLenNumMidBits))) ;
               SET_LOCALB(offset, 199, =, kLenNumLowSymbols) ;
@@ -765,10 +770,10 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
               SET_LOCALB(distance, 305, <<=, kNumAlignBits) ;
               {
                 LOCAL_INIT(UInt32, localI, 1);
-                SET_LOCALB(ttt, 307, =, GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI))); ASSERT(LE(LOCAL_VAR(ttt), kBitModelTotal)); if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 309, <<=, 8) ; SET_LOCALB(codeLocal, 311, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 313, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ; if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) { SET_LOCALB(rangeLocal, 315, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 317, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI))); } else { SET_LOCALB(rangeLocal, 319, -=, LOCAL_VAR(bound)) ; SET_LOCALB(codeLocal, 321, -=, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR_SMALL(LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 323, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1) ; SET_LOCALB(distance, 325, |=, 1) ; }
-                SET_LOCALB(ttt, 327, =, GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI))); ASSERT(LE(LOCAL_VAR(ttt), kBitModelTotal)); if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 329, <<=, 8) ; SET_LOCALB(codeLocal, 331, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 333, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ; if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) { SET_LOCALB(rangeLocal, 335, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 337, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI))); } else { SET_LOCALB(rangeLocal, 339, -=, LOCAL_VAR(bound)) ; SET_LOCALB(codeLocal, 341, -=, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR_SMALL(LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 343, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1) ; SET_LOCALB(distance, 345, |=, 2) ; }
-                SET_LOCALB(ttt, 347, =, GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI))); ASSERT(LE(LOCAL_VAR(ttt), kBitModelTotal)); if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 349, <<=, 8) ; SET_LOCALB(codeLocal, 351, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 353, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ; if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) { SET_LOCALB(rangeLocal, 355, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 357, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI))); } else { SET_LOCALB(rangeLocal, 359, -=, LOCAL_VAR(bound)) ; SET_LOCALB(codeLocal, 361, -=, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR_SMALL(LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 363, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1) ; SET_LOCALB(distance, 365, |=, 4) ; }
-                SET_LOCALB(ttt, 367, =, GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI))); ASSERT(LE(LOCAL_VAR(ttt), kBitModelTotal)); if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 369, <<=, 8) ; SET_LOCALB(codeLocal, 371, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 373, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ; if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) { SET_LOCALB(rangeLocal, 375, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 377, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI))); } else { SET_LOCALB(rangeLocal, 379, -=, LOCAL_VAR(bound)) ; SET_LOCALB(codeLocal, 381, -=, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR_SMALL(LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 383, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1) ; SET_LOCALB(distance, 385, |=, 8) ; }
+                SET_LOCALB(ttt, 307, =, GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI))); ASSERT(IS_SMALL(LOCAL_VAR(ttt)) && LE(LOCAL_VAR(ttt), kBitModelTotal)); if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 309, <<=, 8) ; SET_LOCALB(codeLocal, 311, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 313, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ; if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) { SET_LOCALB(rangeLocal, 315, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 317, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI))); } else { SET_LOCALB(rangeLocal, 319, -=, LOCAL_VAR(bound)) ; SET_LOCALB(codeLocal, 321, -=, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR_SMALL(LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 323, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1) ; SET_LOCALB(distance, 325, |=, 1) ; }
+                SET_LOCALB(ttt, 327, =, GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI))); ASSERT(IS_SMALL(LOCAL_VAR(ttt)) && LE(LOCAL_VAR(ttt), kBitModelTotal)); if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 329, <<=, 8) ; SET_LOCALB(codeLocal, 331, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 333, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ; if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) { SET_LOCALB(rangeLocal, 335, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 337, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI))); } else { SET_LOCALB(rangeLocal, 339, -=, LOCAL_VAR(bound)) ; SET_LOCALB(codeLocal, 341, -=, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR_SMALL(LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 343, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1) ; SET_LOCALB(distance, 345, |=, 2) ; }
+                SET_LOCALB(ttt, 347, =, GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI))); ASSERT(IS_SMALL(LOCAL_VAR(ttt)) && LE(LOCAL_VAR(ttt), kBitModelTotal)); if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 349, <<=, 8) ; SET_LOCALB(codeLocal, 351, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 353, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ; if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) { SET_LOCALB(rangeLocal, 355, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 357, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI))); } else { SET_LOCALB(rangeLocal, 359, -=, LOCAL_VAR(bound)) ; SET_LOCALB(codeLocal, 361, -=, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR_SMALL(LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 363, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1) ; SET_LOCALB(distance, 365, |=, 4) ; }
+                SET_LOCALB(ttt, 367, =, GET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI))); ASSERT(IS_SMALL(LOCAL_VAR(ttt)) && LE(LOCAL_VAR(ttt), kBitModelTotal)); if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 369, <<=, 8) ; SET_LOCALB(codeLocal, 371, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(bound, 373, =, SHR11(LOCAL_VAR(rangeLocal)) * LOCAL_VAR(ttt)) ; if (LT(LOCAL_VAR(codeLocal), LOCAL_VAR(bound))) { SET_LOCALB(rangeLocal, 375, =, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 377, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI))); } else { SET_LOCALB(rangeLocal, 379, -=, LOCAL_VAR(bound)) ; SET_LOCALB(codeLocal, 381, -=, LOCAL_VAR(bound)) ; SET_ARY16(probs, LOCAL_VAR(probIdx) + LOCAL_VAR(localI), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) - SHR_SMALL(LOCAL_VAR(ttt), 5))); SET_LOCALB(localI, 383, =, (LOCAL_VAR(localI) + LOCAL_VAR(localI)) + 1) ; SET_LOCALB(distance, 385, |=, 8) ; }
               }
               if (EQ(~LOCAL_VAR(distance), 0)) {
                 SET_LOCALB(localLen, 387, +=, kMatchSpecLenStart) ;
@@ -972,7 +977,7 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, bufDummyCur, const UInt32, bufLimit)
           SET_LOCALB(posSlot, 657, -=, ENSURE_32BIT(1) << (kNumPosSlotBits)) ;
         }
         /* Small enough for SHR_SMALL(LOCAL_VAR(posSlot), ...). */
-        ASSERT(LT(LOCAL_VAR(posSlot), ENSURE_32BIT(1) << (kNumPosSlotBits)));
+        ASSERT(IS_SMALL(LOCAL_VAR(posSlot)) && LT(LOCAL_VAR(posSlot), ENSURE_32BIT(1) << (kNumPosSlotBits)));
         if (GE(LOCAL_VAR(posSlot), kStartPosModelIndex)) {
           LOCAL_INIT(UInt32, numDirectBits, SHR_SMALL(LOCAL_VAR(posSlot), 1) - 1);
           if (LT(LOCAL_VAR(posSlot), kEndPosModelIndex)) {
