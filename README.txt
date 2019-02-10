@@ -78,9 +78,9 @@ unsigned arithmetic, and perl compiled for Linux amd64 can do 64-bit signed
 arithmetic, so the inputs of some operations (e.g. >>, <, =) need to be
 bit-masked to get correct results. (Fortunately % and / are not used in LZMA
 decompression, because they would be even slower when emulated on the wrong
-signedness.) muxzcat.pl is even slower than that on Perls which can do
-32-bit signed aritmetic, because special handling is needed for negative
-inputs of <.
+signedness.) muxzcat.pl is even slower (by a factor of 1.1017) than that on
+Perls which can do 32-bit signed aritmetic, because special handling is
+needed for negative inputs of <.
 
 muxzcat.pl is compatible with recent versions of Perl 5 (e.g. Perl 5.24) and
 very old versions of Perl 5 (e.g. Perl 5.004_04, released on 1997-10-15).
