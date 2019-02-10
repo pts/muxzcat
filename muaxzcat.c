@@ -191,7 +191,7 @@ struct IntegerTypeAsserts {
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
 #define IS_SMALL(x) (((x) & ~0x7fffffff) == 0)
 #ifdef CONFIG_DEUBG
-#define SHR_SMALLX(x, y) (ASSERT_IS_SMALL(x) >> (y))
+#define SHR_SMALLX(x, y) (ASSERT_IS_SMALL(x) >> ASSERT_IS_5BIT(y))
 #define EQ_SMALL(x, y) (ASSERT_IS_SMALL(x) == ASSERT_IS_SMALL(y))
 #define NE_SMALL(x, y) (ASSERT_IS_SMALL(x) != ASSERT_IS_SMALL(y))
 #define LT_SMALL(x, y) (ASSERT_IS_SMALL(x) < ASSERT_IS_SMALL(y))
@@ -249,6 +249,7 @@ struct IntegerTypeAsserts {
 #define DEBUGF(...) fprintf(stderr, "DEBUG: " __VA_ARGS__)
 #define ASSERT(condition) assert(condition)
 #define ASSERT_IS_SMALL(x) ({ const UInt32 x2 = (x); ASSERT(IS_SMALL(x2)); x2; })
+#define ASSERT_IS_5BIT(x) ({ const UInt32 x2 = (x); ASSERT((x2 & ~31) == 0); x2; })
 #ifdef CONFIG_DEBUG_VARS
 static void DumpVars(void);
 /* ++ and -- operators for global and local variables could be instrumented
@@ -268,11 +269,13 @@ static void DumpVars(void);
 /* Just check that it compiles. */
 #define ASSERT(condition) do {} while (0 && (condition))
 #define ASSERT_IS_SMALL(x) (x)
+#define ASSERT_IS_5BIT(x) (x)
 #endif  /* !CONFIG_DEBUG */
 #endif  /* CONFIG_LANG_C */
 
 #ifdef CONFIG_LANG_PERL
 #define ASSERT_IS_SMALL(x) (x)
+#define ASSERT_IS_5BIT(x) (x)
 #ifdef CONFIG_DEBUG
 #define DEBUGF(...) printf(STDERR "DEBUG: " . __VA_ARGS__)
 #define ASSERT(condition) die "ASSERT: " . #condition if !(condition)
