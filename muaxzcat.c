@@ -184,6 +184,7 @@ struct IntegerTypeAsserts {
 /* !! Optimized masking of the index of GET_ARY8, GET_ARY16, SET_ARY8, SET_ARY16? */
 /* !! Optimized masking of EQ(x, 0) and NE(x, 0), GT(x, 0) etc. */
 /* !! Use comparison *_SMALL more, wherever it works. */
+/* !! Add EQ0, NE0 (== GT0), which is a bit optimized. */
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
 #define IS_SMALL(x) (((x) & ~0x7fffffff) == 0)
 #ifdef CONFIG_LANG_C
@@ -197,6 +198,7 @@ struct IntegerTypeAsserts {
 #define LE(x, y) (((x) & 0xffffffff) <= ((y) & 0xffffffff))
 #define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
 #define GE(x, y) (((x) & 0xffffffff) >= ((y) & 0xffffffff))
+/* !! CONFIG_DEBUG should do bounds checking for x and y. */
 #define EQ_SMALL(x, y) EQ(x, y)
 #define NE_SMALL(x, y) NE(x, y)
 #define LT_SMALL(x, y) LT(x, y)
@@ -222,31 +224,18 @@ struct IntegerTypeAsserts {
 #endif
 #endif  /* CONFIG_LANG_C */
 #ifdef CONFIG_LANG_PERL
-#define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
-#define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
-#if 0  /* This is for 64-bit Perl only. !! Autodetect 64-bit Perl. */
-#define SHR_SMALL(x, y) ((x) >> (y))
-#define SHR1(x) (((x) & 0xffffffff) >> 1)
-#define SHR11(x) (((x) & 0xffffffff) >> 11)
-#define LT(x, y) (((x) & 0xffffffff) <  ((y) & 0xffffffff))
-#define LE(x, y) (((x) & 0xffffffff) <= ((y) & 0xffffffff))
-#define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
-#define GE(x, y) (((x) & 0xffffffff) >= ((y) & 0xffffffff))
-#else
-/* This works in both 32-bit a 64-bit Perl with `use integer'. */
-sub lt32($$) {
-  my $a = $_[0] & 0xffffffff;
-  my $b = $_[1] & 0xffffffff;
-  ($a < 0 ? $b >= 0 : $b < 0) ? $b < 0 : $a < $b
-}
 #define SHR_SMALL(x, y) ((x) >> (y))
 #define SHR1(x) (((x) >> 1) & 0x7fffffff)
 #define SHR11(x) (((x) >> 11) & (0x7fffffff >> 10))
-#define LT(x, y) lt32(x, y)
-#define LE(x, y) (!lt32(y, x))
-#define GT(x, y) lt32(y, x)
-#define GE(x, y) (!lt32(x, y))
-#endif
+#define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
+#define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
+/* genpl.sh has the 32-bit (slow) and 64-bit (fast) implementations of LT,
+ * LE, GT, GE. These are just placeholders.
+ */
+#define LT(x, y) LT[x],[y]
+#define LE(x, y) LE[x],[y]
+#define GT(x, y) GT[x],[y]
+#define GE(x, y) GE[x],[y]
 #if 0  /* !! */
 #define EQ_SMALL(x, y) ((x) == (y))
 #define NE_SMALL(x, y) ((x) != (y))
@@ -1492,5 +1481,4 @@ FUNC_ARG0(SRes, Decompress)
   return LOCAL_VAR(res);
 ENDFUNC
 
-exit(Decompress());
 #endif  /* CONFIG_LANG_PERL */

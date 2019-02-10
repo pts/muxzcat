@@ -71,7 +71,7 @@ size-optimized muxzcat.c (on Linux i386) is about 7% slower than
 speed-optimized xzcat (on Linux amd64).
 
 Based on decompression speed measurements of a ~2 MiB .tar.xz file,
-size-optimized muxzcat.c (on Linux i386) is about 460 times faster than
+size-optimized muxzcat.c (on Linux i386) is about 334 times faster than
 muxzcat.pl (on perl compiled for Linux amd64). Currently muxzcat.pl is very
 slow because it does many artihmetic operations conservatively so that it
 will work with Perls with 32-bit and 64-bit integer arithmetic. It looks

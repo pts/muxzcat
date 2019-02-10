@@ -31,13 +31,36 @@ BEGIN { $^W = 1 }
 use integer;  # This is required.
 use strict;   # Optional.
 die "fatal: your Perl does not support integer arithmetic\n" if 1 / 2 * 2;
+die "fatal: your Perl cannot do 32-bit integer arithmetic\n" if
+    abs(1 << 31 >> 31) != 1;
+
+BEGIN { $_ = <<'\''ENDEVAL'\'';
 ' &&
 <muaxzcat.pl.tmp2 perl -0777 -pe 's@^#(?!!).*\n@@gm; sub cont($) { my $s = $_[0]; $s =~ s@\A\s+@@; $s =~ s@\s+\Z(?!\n)@@; $s =~ s@\n[ \t]?([ \t]*)@\n$1# @g; $s } s@/[*](.*?)[*]/\n*@ "# " . cont($1) . "\n" @gse;
     s@([^\s#]) (#.*)|(#.*)@ defined($1) ? "$1  $2" : $3 @ge;
     s@^[ \t]*do \{\} while \(0 && .*\n@@mg;
     s@^[ \t]*;[ \t]*\n@@mg;
     s@(#.*)|[ \t]+;@ defined($1) ? $1 : ";" @ge;
-    s@^[ \t]*GLOBAL @@mg') >muaxzcat.pl || exit "$?"
+    s@^[ \t]*GLOBAL @@mg' &&
+echo 'ENDEVAL
+if ((1 << 31) < 0) {  # 32-bit Perl.
+  sub lt32($$) {
+    my $a = $_[0] & 0xffffffff;
+    my $b = $_[1] & 0xffffffff;
+    ($a < 0 ? $b >= 0 : $b < 0) ? $b < 0 : $a < $b
+  }
+  s@\bLT\[([^\]]+)\],\[([^\]]+)\]@lt32($1, $2)@g;
+  s@\bLE\[([^\]]+)\],\[([^\]]+)\]@!lt32($2, $1)@g;
+  s@\bGT\[([^\]]+)\],\[([^\]]+)\]@lt32($2, $1)@g;
+  s@\bGE\[([^\]]+)\],\[([^\]]+)\]@!lt32($1, $2)@g;
+} else {  # At least 33-bit Perl, typically 64-bit.
+  my %cmph = qw(LT < LE <= GT > GE >=);
+  # This is much faster than lt32 above.
+  s@\b(LT|LE|GT|GE)\[([^\]]+)\],\[([^\]]+)\]@((($2) & 0xffffffff) $cmph{$1} (($3) & 0xffffffff))@g;
+}
+eval; die $@ if $@ }
+
+exit(Decompress())') >muaxzcat.pl || exit "$?"
 # TODO(pts): Better multiline comments with * continuation.
 # TODO(pts): Keep empty lines above FUNC_ARG0(SRes, Decompress) (gcc -C -E removes it).
 : cp -a muaxzcat.pl muxzcat.pl
