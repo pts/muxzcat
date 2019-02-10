@@ -14,7 +14,11 @@
 BEGIN { $^W = 1 }
 use integer;  # This is required.
 use strict;   # Optional.
+BEGIN {
 die "fatal: your Perl does not support integer arithmetic\n" if 1 / 2 * 2;
+die "fatal: your Perl cannot do 32-bit integer arithmetic\n" if
+    abs(1 << 31 >> 31) != 1;
+$_ = <<'ENDEVAL';
 
 sub SZ_OK() { 0 }
 sub SZ_ERROR_DATA() { 1 }
@@ -113,28 +117,21 @@ sub FILTER_ID_LZMA2() { 0x21 }
 # *
 # * !! Is a `for (;;) { ...; last unless ...; }' loop faster than a do-while
 # *    loop in Perl?
-# !! Not all indexes can be more than 32-bit. Optimize away the long ones.
-# TODO(pts): Simplify doublings: e.g .LOCAL_VAR(symbol) = (LOCAL_VAR(symbol) + LOCAL_VAR(symbol))
-# !! Mask the inputs and outputs of GET_ARY8, GET_ARY16, SET_ARY8, SET_ARY16?
-# !! Use *_SMALL more, wherever it works.
+# TODO(pts): Simplify doublings: e.g.
+# * LOCAL_VAR(drSymbol) = (LOCAL_VAR(drSymbol) + LOCAL_VAR(drSymbol))
+# * SET_LOCALB(distance, 251, =, (LOCAL_VAR(distance) + LOCAL_VAR(distance)));
+# * SET_LOCALB(distance, 257, =, (LOCAL_VAR(distance) + LOCAL_VAR(distance)) + 1);
 # The code doesn't have overflowing / /= % %=, so we don't create macros for these.
-# This works in both 32-bit a 64-bit Perl with `use integer'.
-sub lt32($$) {
-  my $a = $_[0] & 0xffffffff;
-  my $b = $_[1] & 0xffffffff;
-  ($a < 0 ? $b >= 0 : $b < 0) ? $b < 0 : $a < $b
-}
-# This works in both 32-bit a 64-bit Perl with `use integer'.
-sub shr32($$) {
-  my $b = $_[1] & 31;  # !! Make sure we are not doing more.
-  $b ? ($_[0] >> $b) & (0x7fffffff >> ($b - 1)) : $_[0]
-}
+# These work only if IS_SMALL(x) and 0 <= y <= 31.
+# These work only if IS_SMALL(x) && IS_SMALL(y).
+# genpl.sh has the 32-bit (slow) and 64-bit (fast) implementations of
+# * EQ0, NE0 and LT.
 # ---
 # Just check that it compiles.
 # ---
 # ---
-# For LZMA streams, LE(lc + lp, 8 + 4), LE 12.
-# * For LZMA2 streams, LE(lc + lp, 4).
+# For LZMA streams, LE_SMALL(lc + lp, 8 + 4), LE 12.
+# * For LZMA2 streams, LE_SMALL(lc + lp, 4).
 # * Minimum value: 1846.
 # * Maximum value for LZMA streams: 1846 + (768 << (8 + 4)) == 3147574.
 # * Maximum value for LZMA2 streams: 1846 + (768 << 4) == 14134.
@@ -162,11 +159,23 @@ my($needInitLzma) = 0;
 my($needInitDic) = 0;
 my($needInitState) = 0;
 my($needInitProp) = 0;
+  # lc, lp and pb would fit into a byte, but i386 code is shorter as UInt32.
+  # *
+  # * Constraints:
+  # *
+  # * * (0 <= lc <= 8) by LZMA.
+  # * * 0 <= lc <= 4 by LZMA2 and muxzcat.
+  # * * 0 <= lp <= 4.
+  # * * 0 <= pb <= 4.
+  # * * (0 <= lc + lp == 8 + 4 <= 12) by LZMA.
+  # * * 0 <= lc + lp <= 4 by LZMA2 and muxzcat.
 my($lc) = 0;  # Configured in prop byte.
 my($lp) = 0;  # Configured in prop byte.
 my($pb) = 0;  # Configured in prop byte.
+my($lcm8) = 0;  # Cached (8 - lc), for speed.
 my($probs) = '';  # Probabilities for bit decoding.
-  # The first READBUF_SIZE bytes is readBuf, then the LZMA_REQUIRED_INPUT_MAX bytes is tempBuf.
+  # The first READBUF_SIZE bytes is readBuf, then the
+  # * LZMA_REQUIRED_INPUT_MAX bytes is tempBuf.
 my($readBuf) = '';
   # Contains the uncompressed data.
   # *
@@ -176,123 +185,122 @@ my($readBuf) = '';
   # * from other processes.
 my($dic) = '';
 
-sub UndefToMinus1($) { my $value = $_[0];
-  return defined($value) ? $value : -1;
+sub UndefToMinus1($) { my $umValue = $_[0];
+  return defined($umValue) ? $umValue : -1;
 }
 
 
 # ---
-sub LzmaDec_WriteRem($) { my $dicLimit = $_[0];
-  if ((((($remainLen) - (0)) & 0xffffffff) != 0) && lt32($remainLen, kMatchSpecLenStart)) {
-    my $localLen = $remainLen;
-    if (lt32($dicLimit - $dicPos, $localLen)) {
-      $localLen = $dicLimit - $dicPos;
+sub LzmaDec_WriteRem($) { my $wrDicLimit = $_[0];
+  if ((($remainLen) != (0)) && (($remainLen) < (kMatchSpecLenStart))) {
+    my $wrLen = $remainLen;
+    if ((($wrDicLimit - $dicPos) < ($wrLen))) {
+      $wrLen = $wrDicLimit - $dicPos;
     }
-    if ((((($checkDicSize) - (0)) & 0xffffffff) == 0) && (!lt32($localLen, $dicSize - $processedPos))) {
+    if ((($checkDicSize) == (0)) && (($dicSize - $processedPos) <= ($wrLen))) {
       $checkDicSize = $dicSize;
     }
-    $processedPos += $localLen;
-    $remainLen -= $localLen;
-    while ((((($localLen) - (0)) & 0xffffffff) != 0)) {
-      $localLen--;
-      vec($dic, (($dicPos) & 0xffffffff), 8) = vec($dic, ((($dicPos - $rep0) + (lt32($dicPos, $rep0) ? $dicBufSize : 0)) & 0xffffffff), 8);
+    $processedPos += $wrLen;
+    $remainLen -= $wrLen;
+    while ((($wrLen) != (0))) {
+      $wrLen--;
+      vec($dic, $dicPos, 8) = vec($dic, ($dicPos - $rep0) + ((($dicPos) < ($rep0)) ? $dicBufSize : 0), 8);
       $dicPos++;
     }
   }
 }
 
 # Modifies GLOBAL_VAR(bufCur) etc.
-sub LzmaDec_DecodeReal2($$) { my($dicLimit, $bufLimit) = @_;
+sub LzmaDec_DecodeReal2($$) { my($drDicLimit, $drBufLimit) = @_;
   my $pbMask = ((1) << ($pb)) - 1;
   my $lpMask = ((1) << ($lp)) - 1;
+  my $drI;
   do {
-    my $dicLimit2 = (((($checkDicSize) - (0)) & 0xffffffff) == 0) && lt32($dicSize - $processedPos, $dicLimit - $dicPos) ? $dicPos + ($dicSize - $processedPos) : $dicLimit;
-    my $localLen = 0;
-    my $rangeLocal = $range;
-    my $codeLocal = $code;
+    my $drDicLimit2 = (($checkDicSize) == (0)) && (($dicSize - $processedPos) < ($drDicLimit - $dicPos)) ? $dicPos + ($dicSize - $processedPos) : $drDicLimit;
+    $remainLen = 0;
     do {
-      my $probIdx;
-      my $bound;
-      my $ttt;
-      my $posState = $processedPos & $pbMask;
+      my $drProbIdx;
+      my $drBound;
+      my $drTtt;  # 0 <= LOCAL_VAR(drTtt) <= kBitModelTotal.
+      my $distance;
+      my $drPosState = $processedPos & $pbMask;
 
-      $probIdx = IsMatch + ($state << (kNumPosBitsMax)) + $posState;
-      $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-      if (lt32($codeLocal, $bound)) {
-        my $symbol;
-        $rangeLocal = $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt + (shr32((kBitModelTotal - $ttt), kNumMoveBits))) & 0xffff);
-        $probIdx = Literal;
-        if ((((($checkDicSize) - (0)) & 0xffffffff) != 0) || (((($processedPos) - (0)) & 0xffffffff) != 0)) {
-          $probIdx += (LZMA_LIT_SIZE * ((($processedPos & $lpMask) << $lc) + shr32(vec($dic, ((((((($dicPos) - (0)) & 0xffffffff) == 0) ? $dicBufSize : $dicPos) - 1) & 0xffffffff), 8), (8 - $lc))));
+      $drProbIdx = IsMatch + ($state << (kNumPosBitsMax)) + $drPosState;
+      $drTtt = vec($probs, $drProbIdx, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt;
+      if (LT[$code],[$drBound]) {
+        my $drSymbol;
+        $range = ($drBound); vec($probs, $drProbIdx, 16) = $drTtt + (((kBitModelTotal - $drTtt) >> (5)));
+        $drProbIdx = Literal;
+        if ((($checkDicSize) != (0)) || (($processedPos) != (0))) {
+          $drProbIdx += (LZMA_LIT_SIZE * ((($processedPos & $lpMask) << $lc) + ((vec($dic, ((($dicPos) == (0)) ? $dicBufSize : $dicPos) - 1, 8)) >> ($lcm8))));
         }
-        if (lt32($state, kNumLitStates)) {
-          $state -= (lt32($state, 4)) ? $state : 3;
-          $symbol = 1;
+        if ((($state) < (kNumLitStates))) {
+          $state -= ((($state) < (4))) ? $state : 3;
+          $drSymbol = 1;
           do {
-            $ttt = vec($probs, (($probIdx + $symbol) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = (shr32($rangeLocal, kNumBitModelTotalBits)) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; vec($probs, (($probIdx + $symbol) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff); $symbol = ($symbol + $symbol); } else { $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx + $symbol) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff); $symbol = ($symbol + $symbol) + 1; }
-          } while (lt32($symbol, 0x100));
+            $drTtt = vec($probs, $drProbIdx + $drSymbol, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = (((($range) >> 11) & (0x7fffffff >> 10))) * $drTtt; if (LT[$code],[$drBound]) { $range = ($drBound); vec($probs, $drProbIdx + $drSymbol, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5)); $drSymbol = ($drSymbol + $drSymbol); } else { $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx + $drSymbol, 16) = $drTtt - (($drTtt) >> (5)); $drSymbol = ($drSymbol + $drSymbol) + 1; }
+          } while ((($drSymbol) < (0x100)));
         } else {
-          my $matchByte = vec($dic, ((($dicPos - $rep0) + (lt32($dicPos, $rep0) ? $dicBufSize : 0)) & 0xffffffff), 8);
-          my $offs = 0x100;
-          $state -= lt32($state, 10) ? 3 : 6;
-          $symbol = 1;
+          my $drMatchByte = vec($dic, ($dicPos - $rep0) + ((($dicPos) < ($rep0)) ? $dicBufSize : 0), 8);
+          my $drMatchMask = 0x100;  # 0 or 0x100.
+          $state -= (($state) < (10)) ? 3 : 6;
+          $drSymbol = 1;
           do {
-            my $localBit;
-            my $probLitIdx;
-            $matchByte <<= 1;
-            $localBit = ($matchByte & $offs);
-            $probLitIdx = $probIdx + $offs + $localBit + $symbol;
-            $ttt = vec($probs, (($probLitIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; vec($probs, (($probLitIdx) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff); $symbol = ($symbol + $symbol); $offs &= ~$localBit; } else { $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probLitIdx) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff); $symbol = ($symbol + $symbol) + 1; $offs &= $localBit; }
-          } while (lt32($symbol, 0x100));
+            my $drBit;
+            my $drProbLitIdx;
+            $drMatchByte <<= 1;
+            $drBit = ($drMatchByte & $drMatchMask);
+            $drProbLitIdx = $drProbIdx + $drMatchMask + $drBit + $drSymbol;
+            $drTtt = vec($probs, $drProbLitIdx, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt; if (LT[$code],[$drBound]) { $range = ($drBound); vec($probs, $drProbLitIdx, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5)); $drSymbol = ($drSymbol + $drSymbol); $drMatchMask &= ~$drBit; } else { $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbLitIdx, 16) = $drTtt - (($drTtt) >> (5)); $drSymbol = ($drSymbol + $drSymbol) + 1; $drMatchMask &= $drBit; }
+          } while ((($drSymbol) < (0x100)));
         }
-        vec($dic, (($dicPos++) & 0xffffffff), 8) = (($symbol) & 0xff);
+        vec($dic, $dicPos++, 8) = $drSymbol;
         $processedPos++;
         goto continue_do2;  # CONTINUE;
       } else {
-        $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff);
-        $probIdx = IsRep + $state;
-        $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-        if (lt32($codeLocal, $bound)) {
-          $rangeLocal = $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff);
+        $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx, 16) = $drTtt - (($drTtt) >> (5));
+        $drProbIdx = IsRep + $state;
+        $drTtt = vec($probs, $drProbIdx, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt;
+        if (LT[$code],[$drBound]) {
+          $range = ($drBound); vec($probs, $drProbIdx, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5));
           $state += kNumStates;
-          $probIdx = LenCoder;
+          $drProbIdx = LenCoder;
         } else {
-          $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff);
-          if ((((($checkDicSize) - (0)) & 0xffffffff) == 0) && (((($processedPos) - (0)) & 0xffffffff) == 0)) {
+          $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx, 16) = $drTtt - (($drTtt) >> (5));
+          if ((($checkDicSize) == (0)) && (($processedPos) == (0))) {
             return SZ_ERROR_DATA;
           }
-          $probIdx = IsRepG0 + $state;
-          $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-          if (lt32($codeLocal, $bound)) {
-            $rangeLocal = $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff);
-            $probIdx = IsRep0Long + ($state << (kNumPosBitsMax)) + $posState;
-            $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-            if (lt32($codeLocal, $bound)) {
-              $rangeLocal = $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff);
-              vec($dic, (($dicPos) & 0xffffffff), 8) = vec($dic, ((($dicPos - $rep0) + (lt32($dicPos, $rep0) ? $dicBufSize : 0)) & 0xffffffff), 8);
+          $drProbIdx = IsRepG0 + $state;
+          $drTtt = vec($probs, $drProbIdx, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt;
+          if (LT[$code],[$drBound]) {
+            $range = ($drBound); vec($probs, $drProbIdx, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5));
+            $drProbIdx = IsRep0Long + ($state << (kNumPosBitsMax)) + $drPosState;
+            $drTtt = vec($probs, $drProbIdx, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt;
+            if (LT[$code],[$drBound]) {
+              $range = ($drBound); vec($probs, $drProbIdx, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5));
+              vec($dic, $dicPos, 8) = vec($dic, ($dicPos - $rep0) + ((($dicPos) < ($rep0)) ? $dicBufSize : 0), 8);
               $dicPos++;
               $processedPos++;
-              $state = lt32($state, kNumLitStates) ? 9 : 11;
+              $state = (($state) < (kNumLitStates)) ? 9 : 11;
               goto continue_do2;  # CONTINUE;
             }
-            $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff);
+            $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx, 16) = $drTtt - (($drTtt) >> (5));
           } else {
-            my $distance;
-            $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff);
-            $probIdx = IsRepG1 + $state;
-            $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-            if (lt32($codeLocal, $bound)) {
-              $rangeLocal = $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff);
+            $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx, 16) = $drTtt - (($drTtt) >> (5));
+            $drProbIdx = IsRepG1 + $state;
+            $drTtt = vec($probs, $drProbIdx, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt;
+            if (LT[$code],[$drBound]) {
+              $range = ($drBound); vec($probs, $drProbIdx, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5));
               $distance = $rep1;
             } else {
-              $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff);
-              $probIdx = IsRepG2 + $state;
-              $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-              if (lt32($codeLocal, $bound)) {
-                $rangeLocal = $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff);
+              $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx, 16) = $drTtt - (($drTtt) >> (5));
+              $drProbIdx = IsRepG2 + $state;
+              $drTtt = vec($probs, $drProbIdx, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt;
+              if (LT[$code],[$drBound]) {
+                $range = ($drBound); vec($probs, $drProbIdx, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5));
                 $distance = $rep2;
               } else {
-                $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff);
+                $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx, 16) = $drTtt - (($drTtt) >> (5));
                 $distance = $rep3;
                 $rep3 = $rep2;
               }
@@ -301,370 +309,370 @@ sub LzmaDec_DecodeReal2($$) { my($dicLimit, $bufLimit) = @_;
             $rep1 = $rep0;
             $rep0 = $distance;
           }
-          $state = lt32($state, kNumLitStates) ? 8 : 11;
-          $probIdx = RepLenCoder;
+          $state = (($state) < (kNumLitStates)) ? 8 : 11;
+          $drProbIdx = RepLenCoder;
         }
         {
-          my $limitSub;
-          my $offset;
-          my $probLenIdx = $probIdx + LenChoice;
-          $ttt = vec($probs, (($probLenIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-          if (lt32($codeLocal, $bound)) {
-            $rangeLocal = $bound; vec($probs, (($probLenIdx) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff);
-            $probLenIdx = $probIdx + LenLow + ($posState << (kLenNumLowBits));
-            $offset = 0;
-            $limitSub = ((1) << (kLenNumLowBits));
+          my $drLimitSub;
+          my $drOffset;
+          my $drProbLenIdx = $drProbIdx + LenChoice;
+          $drTtt = vec($probs, $drProbLenIdx, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt;
+          if (LT[$code],[$drBound]) {
+            $range = ($drBound); vec($probs, $drProbLenIdx, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5));
+            $drProbLenIdx = $drProbIdx + LenLow + ($drPosState << (kLenNumLowBits));
+            $drOffset = 0;
+            $drLimitSub = ((1) << (kLenNumLowBits));
           } else {
-            $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probLenIdx) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff);
-            $probLenIdx = $probIdx + LenChoice2;
-            $ttt = vec($probs, (($probLenIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-            if (lt32($codeLocal, $bound)) {
-              $rangeLocal = $bound; vec($probs, (($probLenIdx) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff);
-              $probLenIdx = $probIdx + LenMid + ($posState << (kLenNumMidBits));
-              $offset = kLenNumLowSymbols;
-              $limitSub = (1) << (kLenNumMidBits);
+            $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbLenIdx, 16) = $drTtt - (($drTtt) >> (5));
+            $drProbLenIdx = $drProbIdx + LenChoice2;
+            $drTtt = vec($probs, $drProbLenIdx, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt;
+            if (LT[$code],[$drBound]) {
+              $range = ($drBound); vec($probs, $drProbLenIdx, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5));
+              $drProbLenIdx = $drProbIdx + LenMid + ($drPosState << (kLenNumMidBits));
+              $drOffset = kLenNumLowSymbols;
+              $drLimitSub = (1) << (kLenNumMidBits);
             } else {
-              $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probLenIdx) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff);
-              $probLenIdx = $probIdx + LenHigh;
-              $offset = kLenNumLowSymbols + kLenNumMidSymbols;
-              $limitSub = (1) << (kLenNumHighBits);
+              $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbLenIdx, 16) = $drTtt - (($drTtt) >> (5));
+              $drProbLenIdx = $drProbIdx + LenHigh;
+              $drOffset = kLenNumLowSymbols + kLenNumMidSymbols;
+              $drLimitSub = (1) << (kLenNumHighBits);
             }
           }
           {
-            $localLen = 1;
+            $remainLen = (1);
             do {
-              { $ttt = vec($probs, ((($probLenIdx + $localLen)) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; vec($probs, ((($probLenIdx + $localLen)) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff); $localLen = ($localLen + $localLen); } else { $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, ((($probLenIdx + $localLen)) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff); $localLen = ($localLen + $localLen) + 1; } }
-            } while (lt32($localLen, $limitSub));
-            $localLen -= $limitSub;
+              { $drTtt = vec($probs, ($drProbLenIdx + $remainLen), 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt; if (LT[$code],[$drBound]) { $range = ($drBound); vec($probs, ($drProbLenIdx + $remainLen), 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5)); $remainLen = (($remainLen + $remainLen)); } else { $range -= ($drBound); $code -= ($drBound); vec($probs, ($drProbLenIdx + $remainLen), 16) = $drTtt - (($drTtt) >> (5)); $remainLen = (($remainLen + $remainLen) + 1); } }
+            } while ((($remainLen) < ($drLimitSub)));
+            $remainLen -= ($drLimitSub);
           }
-          $localLen += $offset;
+          $remainLen += ($drOffset);
         }
 
-        if ((!lt32($state, kNumStates))) {
-          my $distance;
-          $probIdx = PosSlotCode + ((lt32($localLen, kNumLenToPosStates) ? $localLen : kNumLenToPosStates - 1) << (kNumPosSlotBits));
+        if ((($state) >= (kNumStates))) {
+          $drProbIdx = PosSlotCode + (((($remainLen) < (kNumLenToPosStates)) ? $remainLen : kNumLenToPosStates - 1) << (kNumPosSlotBits));
           {
             $distance = 1;
             do {
-              { $ttt = vec($probs, ((($probIdx + $distance)) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; vec($probs, ((($probIdx + $distance)) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff); $distance = ($distance + $distance); } else { $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, ((($probIdx + $distance)) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff); $distance = ($distance + $distance) + 1; } }
-            } while (lt32($distance, (1 << 6)));
+              { $drTtt = vec($probs, ($drProbIdx + $distance), 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt; if (LT[$code],[$drBound]) { $range = ($drBound); vec($probs, ($drProbIdx + $distance), 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5)); $distance = ($distance + $distance); } else { $range -= ($drBound); $code -= ($drBound); vec($probs, ($drProbIdx + $distance), 16) = $drTtt - (($drTtt) >> (5)); $distance = ($distance + $distance) + 1; } }
+            } while ((($distance) < ((1 << 6))));
             $distance -= (1 << 6);
           }
-          if ((!lt32($distance, kStartPosModelIndex))) {
-            my $posSlot = $distance;
-            my $numDirectBits = shr32($distance, 1) - 1;
+          if ((($distance) >= (kStartPosModelIndex))) {
+            my $drPosSlot = $distance;
+            my $drDirectBitCount = (($distance) >> (1)) - 1;
             $distance = (2 | ($distance & 1));
-            if (lt32($posSlot, kEndPosModelIndex)) {
-              $distance <<= $numDirectBits;
-              $probIdx = SpecPos + $distance - $posSlot - 1;
+            if ((($drPosSlot) < (kEndPosModelIndex))) {
+              $distance <<= $drDirectBitCount;
+              $drProbIdx = SpecPos + $distance - $drPosSlot - 1;
               {
                 my $mask = 1;
-                my $localI = 1;
+                $drI = 1;
                 do {
-                  $ttt = vec($probs, (($probIdx + $localI) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; vec($probs, (($probIdx + $localI) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff); $localI = ($localI + $localI); } else { $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx + $localI) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff); $localI = ($localI + $localI) + 1; $distance |= $mask; }
+                  $drTtt = vec($probs, $drProbIdx + $drI, 16); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt; if (LT[$code],[$drBound]) { $range = ($drBound); vec($probs, $drProbIdx + $drI, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5)); $drI = ($drI + $drI); } else { $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx + $drI, 16) = $drTtt - (($drTtt) >> (5)); $drI = ($drI + $drI) + 1; $distance |= $mask; }
                   $mask <<= 1;
-                } while (((((--$numDirectBits) - (0)) & 0xffffffff) != 0));
+                } while (((--$drDirectBitCount) != (0)));
               }
             } else {
-              $numDirectBits -= kNumAlignBits;
+              $drDirectBitCount -= kNumAlignBits;
               do {
-                my $localT;
-                if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); }
-                (($rangeLocal) = shr32($rangeLocal, 1));
-                $codeLocal -= $rangeLocal;
-                $localT = (0 - ((shr32($codeLocal, 31))));
-                $distance = ($distance << 1) + ($localT + 1);
-                $codeLocal += $rangeLocal & $localT;
-              } while (((((--$numDirectBits) - (0)) & 0xffffffff) != 0));
-              $probIdx = Align;
+                if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); }
+                # Here GLOBAL_VAR(range) can be non-small, so we can't use SHR_SMALLX instead of SHR1.
+                $range = (((($range) >> 1) & 0x7fffffff));
+                if (($code - $range) & 0x80000000) {
+                  $distance <<= 1;
+                } else {
+                  $code -= ($range);
+                  # This won't be faster in Perl: <<= 1, ++
+                  $distance = ($distance << 1) + 1;
+                }
+              } while (((--$drDirectBitCount) != (0)));
+              $drProbIdx = Align;
               $distance <<= kNumAlignBits;
               {
-                my $localI = 1;
-                $ttt = vec($probs, (($probIdx + $localI) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; vec($probs, (($probIdx + $localI) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff); $localI = ($localI + $localI); } else { $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx + $localI) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff); $localI = ($localI + $localI) + 1; $distance |= 1; }
-                $ttt = vec($probs, (($probIdx + $localI) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; vec($probs, (($probIdx + $localI) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff); $localI = ($localI + $localI); } else { $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx + $localI) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff); $localI = ($localI + $localI) + 1; $distance |= 2; }
-                $ttt = vec($probs, (($probIdx + $localI) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; vec($probs, (($probIdx + $localI) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff); $localI = ($localI + $localI); } else { $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx + $localI) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff); $localI = ($localI + $localI) + 1; $distance |= 4; }
-                $ttt = vec($probs, (($probIdx + $localI) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; vec($probs, (($probIdx + $localI) & 0xffffffff), 16) = (($ttt + shr32((kBitModelTotal - $ttt), kNumMoveBits)) & 0xffff); $localI = ($localI + $localI); } else { $rangeLocal -= $bound; $codeLocal -= $bound; vec($probs, (($probIdx + $localI) & 0xffffffff), 16) = (($ttt - shr32($ttt, kNumMoveBits)) & 0xffff); $localI = ($localI + $localI) + 1; $distance |= 8; }
+                $drI = 1;
+                $drTtt = vec($probs, $drProbIdx + $drI, 16); do {} while (0 && (((($drTtt) & ~0x7fffffff) == 0) && (($drTtt) <= (kBitModelTotal)))); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt; if (LT[$code],[$drBound]) { $range = ($drBound); vec($probs, $drProbIdx + $drI, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5)); $drI = ($drI + $drI); } else { $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx + $drI, 16) = $drTtt - (($drTtt) >> (5)); $drI = ($drI + $drI) + 1; $distance |= 1; }
+                $drTtt = vec($probs, $drProbIdx + $drI, 16); do {} while (0 && (((($drTtt) & ~0x7fffffff) == 0) && (($drTtt) <= (kBitModelTotal)))); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt; if (LT[$code],[$drBound]) { $range = ($drBound); vec($probs, $drProbIdx + $drI, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5)); $drI = ($drI + $drI); } else { $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx + $drI, 16) = $drTtt - (($drTtt) >> (5)); $drI = ($drI + $drI) + 1; $distance |= 2; }
+                $drTtt = vec($probs, $drProbIdx + $drI, 16); do {} while (0 && (((($drTtt) & ~0x7fffffff) == 0) && (($drTtt) <= (kBitModelTotal)))); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt; if (LT[$code],[$drBound]) { $range = ($drBound); vec($probs, $drProbIdx + $drI, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5)); $drI = ($drI + $drI); } else { $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx + $drI, 16) = $drTtt - (($drTtt) >> (5)); $drI = ($drI + $drI) + 1; $distance |= 4; }
+                $drTtt = vec($probs, $drProbIdx + $drI, 16); do {} while (0 && (((($drTtt) & ~0x7fffffff) == 0) && (($drTtt) <= (kBitModelTotal)))); if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); } $drBound = ((($range) >> 11) & (0x7fffffff >> 10)) * $drTtt; if (LT[$code],[$drBound]) { $range = ($drBound); vec($probs, $drProbIdx + $drI, 16) = $drTtt + ((kBitModelTotal - $drTtt) >> (5)); $drI = ($drI + $drI); } else { $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx + $drI, 16) = $drTtt - (($drTtt) >> (5)); $drI = ($drI + $drI) + 1; $distance |= 8; }
               }
-              if (((((~$distance) - (0)) & 0xffffffff) == 0)) {
-                $localLen += kMatchSpecLenStart;
+              if (EQ0[~$distance]) {
+                $remainLen += (kMatchSpecLenStart);
                 $state -= kNumStates;
                 goto break_do2;  # BREAK;
               }
             }
           }
+          # TODO(pts): Do the 2 instances of SZ_ERROR_DATA below also check this?
           $rep3 = $rep2;
           $rep2 = $rep1;
           $rep1 = $rep0;
           $rep0 = $distance + 1;
-          if ((((($checkDicSize) - (0)) & 0xffffffff) == 0)) {
-            if ((!lt32($distance, $processedPos))) {
+          if ((($checkDicSize) == (0))) {
+            if ((($distance) >= ($processedPos))) {
               return SZ_ERROR_DATA;
             }
           } else {
-            if ((!lt32($distance, $checkDicSize))) {
+            if ((($distance) >= ($checkDicSize))) {
               return SZ_ERROR_DATA;
             }
           }
-          $state = lt32($state, kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3;
+          $state = (($state) < (kNumStates + kNumLitStates)) ? kNumLitStates : kNumLitStates + 3;
         }
 
-        $localLen += kMatchMinLen;
+        $remainLen += (kMatchMinLen);
 
-        if ((((($dicLimit2) - ($dicPos)) & 0xffffffff) == 0)) {
+        if ((($drDicLimit2) == ($dicPos))) {
           return SZ_ERROR_DATA;
         }
         {
-          my $rem = $dicLimit2 - $dicPos;
-          my $curLen = (lt32($rem, $localLen) ? $rem : $localLen);
-          my $pos = ($dicPos - $rep0) + (lt32($dicPos, $rep0) ? $dicBufSize : 0);
+          my $drRem = $drDicLimit2 - $dicPos;
+          my $curLen = ((($drRem) < ($remainLen)) ? $drRem : $remainLen);
+          my $pos = ($dicPos - $rep0) + ((($dicPos) < ($rep0)) ? $dicBufSize : 0);
 
           $processedPos += $curLen;
 
-          $localLen -= $curLen;
-          if ((!lt32($dicBufSize, $pos + $curLen))) {
+          $remainLen -= ($curLen);
+          if ((($pos + $curLen) <= ($dicBufSize))) {
             do {
               # Here pos can be negative if 64-bit.
-              vec($dic, (($dicPos++) & 0xffffffff), 8) = vec($dic, (($pos++) & 0xffffffff), 8);
-            } while (((((--$curLen) - (0)) & 0xffffffff) != 0));
+              vec($dic, $dicPos++, 8) = vec($dic, $pos++, 8);
+            } while (((--$curLen) != (0)));
           } else {
             do {
-              vec($dic, (($dicPos++) & 0xffffffff), 8) = vec($dic, (($pos++) & 0xffffffff), 8);
-              if ((((($pos) - ($dicBufSize)) & 0xffffffff) == 0)) { $pos = 0; }
-            } while (((((--$curLen) - (0)) & 0xffffffff) != 0));
+              vec($dic, $dicPos++, 8) = vec($dic, $pos++, 8);
+              if ((($pos) == ($dicBufSize))) { $pos = 0; }
+            } while (((--$curLen) != (0)));
           }
         }
       }
      continue_do2:;
-    } while (lt32($dicPos, $dicLimit2) && lt32($bufCur, $bufLimit));
+    } while ((($dicPos) < ($drDicLimit2)) && (($bufCur) < ($drBufLimit)));
     break_do2:;
-    if (lt32($rangeLocal, kTopValue)) { $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufCur++) & 0xffffffff), 8)); }
-    $range = $rangeLocal;
-    $code = $codeLocal;
-    $remainLen = $localLen;
-    if ((!lt32($processedPos, $dicSize))) {
+    if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); }
+    if ((($processedPos) >= ($dicSize))) {
       $checkDicSize = $dicSize;
     }
-    LzmaDec_WriteRem($dicLimit);
-  } while (lt32($dicPos, $dicLimit) && lt32($bufCur, $bufLimit) && lt32($remainLen, kMatchSpecLenStart));
+    LzmaDec_WriteRem($drDicLimit);
+  } while ((($dicPos) < ($drDicLimit)) && (($bufCur) < ($drBufLimit)) && (($remainLen) < (kMatchSpecLenStart)));
 
-  if (lt32(kMatchSpecLenStart, $remainLen)) {
+  if ((($remainLen) > (kMatchSpecLenStart))) {
     $remainLen = kMatchSpecLenStart;
   }
   return SZ_OK;
 }
 
-sub LzmaDec_TryDummy($$) { my($bufDummyCur, $bufLimit) = @_;
-  my $rangeLocal = $range;
-  my $codeLocal = $code;
-  my $stateLocal = $state;
-  my $res;
-  {
-    my $probIdx;
-    my $bound;
-    my $ttt;
-    my $posState = ($processedPos) & ((1 << $pb) - 1);
+sub LzmaDec_TryDummy($$) { my($tdCur, $tdBufLimit) = @_;
+  my $tdRange = $range;
+  my $tdCode = $code;
+  my $tdState = $state;
+  my $tdRes;
+  my $tdProbIdx;
+  my $tdBound;
+  my $tdTtt;
+  my $tdPosState = ($processedPos) & ((1 << $pb) - 1);
+  $tdProbIdx = IsMatch + ($tdState << (kNumPosBitsMax)) + $tdPosState;
+  $tdTtt = vec($probs, $tdProbIdx, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt;
+  if (LT[$tdCode],[$tdBound]) {
+    my $tdSymbol = 1;
+    $tdRange = $tdBound;
+    $tdProbIdx = Literal;
+    if ((($checkDicSize) != (0)) || (($processedPos) != (0))) {
+      $tdProbIdx += (LZMA_LIT_SIZE * (((($processedPos) & ((1 << ($lp)) - 1)) << $lc) + ((vec($dic, ((($dicPos) == (0)) ? $dicBufSize : $dicPos) - 1, 8)) >> ($lcm8))));
+    }
 
-    $probIdx = IsMatch + ($stateLocal << (kNumPosBitsMax)) + $posState;
-    $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-    if (lt32($codeLocal, $bound)) {
-      $rangeLocal = $bound;
-      $probIdx = Literal;
-      if ((((($checkDicSize) - (0)) & 0xffffffff) != 0) || (((($processedPos) - (0)) & 0xffffffff) != 0)) {
-        $probIdx += (LZMA_LIT_SIZE * (((($processedPos) & ((1 << ($lp)) - 1)) << $lc) + shr32(vec($dic, ((((((($dicPos) - (0)) & 0xffffffff) == 0) ? $dicBufSize : $dicPos) - 1) & 0xffffffff), 8), (8 - $lc))));
-      }
-
-      if (lt32($stateLocal, kNumLitStates)) {
-        my $symbol = 1;
-        do {
-          $ttt = vec($probs, (($probIdx + $symbol) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; $symbol = ($symbol + $symbol); } else { $rangeLocal -= $bound; $codeLocal -= $bound; $symbol = ($symbol + $symbol) + 1; }
-        } while (lt32($symbol, 0x100));
-      } else {
-        my $matchByte = vec($dic, (($dicPos - $rep0 + (lt32($dicPos, $rep0) ? $dicBufSize : 0)) & 0xffffffff), 8);
-        my $offs = 0x100;
-        my $symbol = 1;
-        do {
-          my $localBit;
-          my $probLitIdx;
-          $matchByte <<= 1;
-          $localBit = ($matchByte & $offs);
-          $probLitIdx = $probIdx + $offs + $localBit + $symbol;
-          $ttt = vec($probs, (($probLitIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; $symbol = ($symbol + $symbol); $offs &= ~$localBit; } else { $rangeLocal -= $bound; $codeLocal -= $bound; $symbol = ($symbol + $symbol) + 1; $offs &= $localBit; }
-        } while (lt32($symbol, 0x100));
-      }
-      $res = DUMMY_LIT;
+    if ((($tdState) < (kNumLitStates))) {
+      do {
+        $tdTtt = vec($probs, $tdProbIdx + $tdSymbol, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt; if (LT[$tdCode],[$tdBound]) { $tdRange = $tdBound; $tdSymbol = ($tdSymbol + $tdSymbol); } else { $tdRange -= $tdBound; $tdCode -= $tdBound; $tdSymbol = ($tdSymbol + $tdSymbol) + 1; }
+      } while ((($tdSymbol) < (0x100)));
     } else {
-      my $localLen;
-      $rangeLocal -= $bound; $codeLocal -= $bound;
-      $probIdx = IsRep + $stateLocal;
-      $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-      if (lt32($codeLocal, $bound)) {
-        $rangeLocal = $bound;
-        $stateLocal = 0;
-        $probIdx = LenCoder;
-        $res = DUMMY_MATCH;
-      } else {
-        $rangeLocal -= $bound; $codeLocal -= $bound;
-        $res = DUMMY_REP;
-        $probIdx = IsRepG0 + $stateLocal;
-        $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-        if (lt32($codeLocal, $bound)) {
-          $rangeLocal = $bound;
-          $probIdx = IsRep0Long + ($stateLocal << (kNumPosBitsMax)) + $posState;
-          $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-          if (lt32($codeLocal, $bound)) {
-            $rangeLocal = $bound;
-            if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); }
-            return DUMMY_REP;
-          } else {
-            $rangeLocal -= $bound; $codeLocal -= $bound;
-          }
+      my $tdMatchByte = vec($dic, $dicPos - $rep0 + ((($dicPos) < ($rep0)) ? $dicBufSize : 0), 8);
+      my $tdMatchMask = 0x100;  # 0 or 0x100.
+      do {
+        my $tdBit;
+        my $tdProbLitIdx;
+        $tdMatchByte <<= 1;
+        $tdBit = ($tdMatchByte & $tdMatchMask);
+        $tdProbLitIdx = $tdProbIdx + $tdMatchMask + $tdBit + $tdSymbol;
+        $tdTtt = vec($probs, $tdProbLitIdx, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt; if (LT[$tdCode],[$tdBound]) { $tdRange = $tdBound; $tdSymbol = ($tdSymbol + $tdSymbol); $tdMatchMask &= ~$tdBit; } else { $tdRange -= $tdBound; $tdCode -= $tdBound; $tdSymbol = ($tdSymbol + $tdSymbol) + 1; $tdMatchMask &= $tdBit; }
+      } while ((($tdSymbol) < (0x100)));
+    }
+    $tdRes = DUMMY_LIT;
+  } else {
+    my $tdLen;
+    $tdRange -= $tdBound; $tdCode -= $tdBound;
+    $tdProbIdx = IsRep + $tdState;
+    $tdTtt = vec($probs, $tdProbIdx, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt;
+    if (LT[$tdCode],[$tdBound]) {
+      $tdRange = $tdBound;
+      $tdState = 0;
+      $tdProbIdx = LenCoder;
+      $tdRes = DUMMY_MATCH;
+    } else {
+      $tdRange -= $tdBound; $tdCode -= $tdBound;
+      $tdRes = DUMMY_REP;
+      $tdProbIdx = IsRepG0 + $tdState;
+      $tdTtt = vec($probs, $tdProbIdx, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt;
+      if (LT[$tdCode],[$tdBound]) {
+        $tdRange = $tdBound;
+        $tdProbIdx = IsRep0Long + ($tdState << (kNumPosBitsMax)) + $tdPosState;
+        $tdTtt = vec($probs, $tdProbIdx, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt;
+        if (LT[$tdCode],[$tdBound]) {
+          $tdRange = $tdBound;
+          if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); }
+          return DUMMY_REP;
         } else {
-          $rangeLocal -= $bound; $codeLocal -= $bound;
-          $probIdx = IsRepG1 + $stateLocal;
-          $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-          if (lt32($codeLocal, $bound)) {
-            $rangeLocal = $bound;
+          $tdRange -= $tdBound; $tdCode -= $tdBound;
+        }
+      } else {
+        $tdRange -= $tdBound; $tdCode -= $tdBound;
+        $tdProbIdx = IsRepG1 + $tdState;
+        $tdTtt = vec($probs, $tdProbIdx, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt;
+        if (LT[$tdCode],[$tdBound]) {
+          $tdRange = $tdBound;
+        } else {
+          $tdRange -= $tdBound; $tdCode -= $tdBound;
+          $tdProbIdx = IsRepG2 + $tdState;
+          $tdTtt = vec($probs, $tdProbIdx, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt;
+          if (LT[$tdCode],[$tdBound]) {
+            $tdRange = $tdBound;
           } else {
-            $rangeLocal -= $bound; $codeLocal -= $bound;
-            $probIdx = IsRepG2 + $stateLocal;
-            $ttt = vec($probs, (($probIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-            if (lt32($codeLocal, $bound)) {
-              $rangeLocal = $bound;
-            } else {
-              $rangeLocal -= $bound; $codeLocal -= $bound;
-            }
+            $tdRange -= $tdBound; $tdCode -= $tdBound;
           }
         }
-        $stateLocal = kNumStates;
-        $probIdx = RepLenCoder;
+      }
+      $tdState = kNumStates;
+      $tdProbIdx = RepLenCoder;
+    }
+    {
+      my $tdLimitSub;
+      my $tdOffset;
+      my $tdProbLenIdx = $tdProbIdx + LenChoice;
+      $tdTtt = vec($probs, $tdProbLenIdx, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt;
+      if (LT[$tdCode],[$tdBound]) {
+        $tdRange = $tdBound;
+        $tdProbLenIdx = $tdProbIdx + LenLow + ($tdPosState << (kLenNumLowBits));
+        $tdOffset = 0;
+        $tdLimitSub = (1) << (kLenNumLowBits);
+      } else {
+        $tdRange -= $tdBound; $tdCode -= $tdBound;
+        $tdProbLenIdx = $tdProbIdx + LenChoice2;
+        $tdTtt = vec($probs, $tdProbLenIdx, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt;
+        if (LT[$tdCode],[$tdBound]) {
+          $tdRange = $tdBound;
+          $tdProbLenIdx = $tdProbIdx + LenMid + ($tdPosState << (kLenNumMidBits));
+          $tdOffset = kLenNumLowSymbols;
+          $tdLimitSub = (1) << (kLenNumMidBits);
+        } else {
+          $tdRange -= $tdBound; $tdCode -= $tdBound;
+          $tdProbLenIdx = $tdProbIdx + LenHigh;
+          $tdOffset = kLenNumLowSymbols + kLenNumMidSymbols;
+          $tdLimitSub = (1) << (kLenNumHighBits);
+        }
       }
       {
-        my $limitSub;
-        my $offset;
-        my $probLenIdx = $probIdx + LenChoice;
-        $ttt = vec($probs, (($probLenIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-        if (lt32($codeLocal, $bound)) {
-          $rangeLocal = $bound;
-          $probLenIdx = $probIdx + LenLow + ($posState << (kLenNumLowBits));
-          $offset = 0;
-          $limitSub = (1) << (kLenNumLowBits);
-        } else {
-          $rangeLocal -= $bound; $codeLocal -= $bound;
-          $probLenIdx = $probIdx + LenChoice2;
-          $ttt = vec($probs, (($probLenIdx) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt;
-          if (lt32($codeLocal, $bound)) {
-            $rangeLocal = $bound;
-            $probLenIdx = $probIdx + LenMid + ($posState << (kLenNumMidBits));
-            $offset = kLenNumLowSymbols;
-            $limitSub = (1) << (kLenNumMidBits);
-          } else {
-            $rangeLocal -= $bound; $codeLocal -= $bound;
-            $probLenIdx = $probIdx + LenHigh;
-            $offset = kLenNumLowSymbols + kLenNumMidSymbols;
-            $limitSub = (1) << (kLenNumHighBits);
-          }
-        }
-        {
-          $localLen = 1;
-          do {
-            $ttt = vec($probs, (($probLenIdx + $localLen) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; $localLen = ($localLen + $localLen); } else { $rangeLocal -= $bound; $codeLocal -= $bound; $localLen = ($localLen + $localLen) + 1; }
-          } while (lt32($localLen, $limitSub));
-          $localLen -= $limitSub;
-        }
-        $localLen += $offset;
+        $tdLen = 1;
+        do {
+          $tdTtt = vec($probs, $tdProbLenIdx + $tdLen, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt; if (LT[$tdCode],[$tdBound]) { $tdRange = $tdBound; $tdLen = ($tdLen + $tdLen); } else { $tdRange -= $tdBound; $tdCode -= $tdBound; $tdLen = ($tdLen + $tdLen) + 1; }
+        } while ((($tdLen) < ($tdLimitSub)));
+        $tdLen -= $tdLimitSub;
       }
+      $tdLen += $tdOffset;
+    }
 
-      if (lt32($stateLocal, 4)) {
-        my $posSlot;
-        $probIdx = PosSlotCode + ((lt32($localLen, kNumLenToPosStates) ? $localLen : kNumLenToPosStates - 1) << (kNumPosSlotBits));
-        {
-          $posSlot = 1;
+    if ((($tdState) < (4))) {
+      my $tdPosSlot;
+      $tdProbIdx = PosSlotCode + (((($tdLen) < (kNumLenToPosStates)) ? $tdLen : kNumLenToPosStates - 1) << (kNumPosSlotBits));
+      {
+        $tdPosSlot = 1;
+        do {
+          $tdTtt = vec($probs, $tdProbIdx + $tdPosSlot, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt; if (LT[$tdCode],[$tdBound]) { $tdRange = $tdBound; $tdPosSlot = ($tdPosSlot + $tdPosSlot); } else { $tdRange -= $tdBound; $tdCode -= $tdBound; $tdPosSlot = ($tdPosSlot + $tdPosSlot) + 1; }
+        } while ((($tdPosSlot) < ((1) << (kNumPosSlotBits))));
+        $tdPosSlot -= (1) << (kNumPosSlotBits);
+      }
+      # Small enough for SHR_SMALLX(LOCAL_VAR(tdPosSlot), ...).
+      if ((($tdPosSlot) >= (kStartPosModelIndex))) {
+        my $tdDirectBitCount = (($tdPosSlot) >> (1)) - 1;
+        if ((($tdPosSlot) < (kEndPosModelIndex))) {
+          $tdProbIdx = SpecPos + ((2 | ($tdPosSlot & 1)) << $tdDirectBitCount) - $tdPosSlot - 1;
+        } else {
+          $tdDirectBitCount -= kNumAlignBits;
           do {
-            $ttt = vec($probs, (($probIdx + $posSlot) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; $posSlot = ($posSlot + $posSlot); } else { $rangeLocal -= $bound; $codeLocal -= $bound; $posSlot = ($posSlot + $posSlot) + 1; }
-          } while (lt32($posSlot, (1) << (kNumPosSlotBits)));
-          $posSlot -= (1) << (kNumPosSlotBits);
+            if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); }
+            $tdRange = ((($tdRange) >> 1) & 0x7fffffff);
+            if (!(($tdCode - $tdRange) & 0x80000000)) {
+              $tdCode -= $tdRange;
+            }
+          } while (((--$tdDirectBitCount) != (0)));
+          $tdProbIdx = Align;
+          $tdDirectBitCount = kNumAlignBits;
         }
-        if ((!lt32($posSlot, kStartPosModelIndex))) {
-          my $numDirectBits = shr32($posSlot, 1) - 1;
-          if (lt32($posSlot, kEndPosModelIndex)) {
-            $probIdx = SpecPos + ((2 | ($posSlot & 1)) << $numDirectBits) - $posSlot - 1;
-          } else {
-            $numDirectBits -= kNumAlignBits;
-            do {
-              if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); }
-              (($rangeLocal) = shr32($rangeLocal, 1));
-              $codeLocal -= $rangeLocal & (shr32(($codeLocal - $rangeLocal), 31) - 1);
-            } while (((((--$numDirectBits) - (0)) & 0xffffffff) != 0));
-            $probIdx = Align;
-            $numDirectBits = kNumAlignBits;
-          }
-          {
-            my $localI = 1;
-            do {
-              $ttt = vec($probs, (($probIdx + $localI) & 0xffffffff), 16); if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); } $bound = shr32($rangeLocal, kNumBitModelTotalBits) * $ttt; if (lt32($codeLocal, $bound)) { $rangeLocal = $bound; $localI = ($localI + $localI); } else { $rangeLocal -= $bound; $codeLocal -= $bound; $localI = ($localI + $localI) + 1; }
-            } while (((((--$numDirectBits) - (0)) & 0xffffffff) != 0));
-          }
+        {
+          my $tdI = 1;
+          do {
+            $tdTtt = vec($probs, $tdProbIdx + $tdI, 16); if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); } $tdBound = ((($tdRange) >> 11) & (0x7fffffff >> 10)) * $tdTtt; if (LT[$tdCode],[$tdBound]) { $tdRange = $tdBound; $tdI = ($tdI + $tdI); } else { $tdRange -= $tdBound; $tdCode -= $tdBound; $tdI = ($tdI + $tdI) + 1; }
+          } while (((--$tdDirectBitCount) != (0)));
         }
       }
     }
   }
-  if (lt32($rangeLocal, kTopValue)) { if ((!lt32($bufDummyCur, $bufLimit))) { return DUMMY_ERROR; } $rangeLocal <<= 8; $codeLocal = ($codeLocal << 8) | (vec($readBuf, (($bufDummyCur++) & 0xffffffff), 8)); }
-  return $res;
+  if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); }
+  return $tdRes;
 }
 
-sub LzmaDec_InitDicAndState($$) { my($initDic, $initState) = @_;
+sub LzmaDec_InitDicAndState($$) { my($idInitDic, $idInitState) = @_;
   $needFlush = TRUE;
   $remainLen = 0;
   $tempBufSize = 0;
 
-  if ($initDic) {
+  if ($idInitDic) {
     $processedPos = 0;
     $checkDicSize = 0;
     $needInitLzma = TRUE;
   }
-  if ($initState) {
+  if ($idInitState) {
     $needInitLzma = TRUE;
   }
 }
 
 # Decompress LZMA stream in
-# * readBuf8[GLOBAL_VAR(readCur) : GLOBAL_VAR(readCur) + LOCAL_VAR(srcLen)].
-# * On success (and on some errors as well), adds LOCAL_VAR(srcLen) to GLOBAL_VAR(readCur).
-sub LzmaDec_DecodeToDic($) { my $srcLen = $_[0];
+# * readBuf8[GLOBAL_VAR(readCur) : GLOBAL_VAR(readCur) + LOCAL_VAR(ddSrcLen)].
+# * On success (and on some errors as well), adds LOCAL_VAR(ddSrcLen) to GLOBAL_VAR(readCur).
+sub LzmaDec_DecodeToDic($) { my $ddSrcLen = $_[0];
   # Index limit in GLOBAL_VAR(readBuf).
-  my $decodeLimit = $readCur + $srcLen;
+  my $decodeLimit = $readCur + $ddSrcLen;
+  my $checkEndMarkNow;
+  my $dummyRes;
   LzmaDec_WriteRem($dicBufSize);
 
-  while ((((($remainLen) - (kMatchSpecLenStart)) & 0xffffffff) != 0)) {
-    my $checkEndMarkNow;
+  while ((($remainLen) != (kMatchSpecLenStart))) {
 
     if ($needFlush) {
       # Read 5 bytes (RC_INIT_SIZE) to tempBuf, first of which must be
       # * 0, initialize the range coder with the 4 bytes after the 0 byte.
-      while (lt32($readCur, $decodeLimit) && lt32($tempBufSize, RC_INIT_SIZE)) {
-        vec($readBuf, ((READBUF_SIZE + $tempBufSize++) & 0xffffffff), 8) = vec($readBuf, (($readCur++) & 0xffffffff), 8);
+      while ((($decodeLimit) > ($readCur)) && (($tempBufSize) < (RC_INIT_SIZE))) {
+        vec($readBuf, READBUF_SIZE + $tempBufSize++, 8) = vec($readBuf, $readCur++, 8);
       }
-      if (lt32($tempBufSize, RC_INIT_SIZE)) {
+      if ((($tempBufSize) < (RC_INIT_SIZE))) {
        on_needs_more_input:
-        if ((((($decodeLimit) - ($readCur)) & 0xffffffff) != 0)) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
+        if ((($readCur) != ($decodeLimit))) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
         return SZ_ERROR_NEEDS_MORE_INPUT;
       }
-      if (((((vec($readBuf, ((READBUF_SIZE) & 0xffffffff), 8)) - (0)) & 0xffffffff) != 0)) {
+      if (((vec($readBuf, READBUF_SIZE, 8)) != (0))) {
         return SZ_ERROR_DATA;
       }
-      $code = ((vec($readBuf, ((READBUF_SIZE + 1) & 0xffffffff), 8)) << 24) | ((vec($readBuf, ((READBUF_SIZE + 2) & 0xffffffff), 8)) << 16) | ((vec($readBuf, ((READBUF_SIZE + 3) & 0xffffffff), 8)) << 8) | ((vec($readBuf, ((READBUF_SIZE + 4) & 0xffffffff), 8)));
+      $code = ((vec($readBuf, READBUF_SIZE + 1, 8)) << 24) | ((vec($readBuf, READBUF_SIZE + 2, 8)) << 16) | ((vec($readBuf, READBUF_SIZE + 3, 8)) << 8) | ((vec($readBuf, READBUF_SIZE + 4, 8)));
       $range = 0xffffffff;
       $needFlush = FALSE;
       $tempBufSize = 0;
     }
 
     $checkEndMarkNow = FALSE;
-    if ((!lt32($dicPos, $dicBufSize))) {
-      if ((((($remainLen) - (0)) & 0xffffffff) == 0) && (((($code) - (0)) & 0xffffffff) == 0)) {
-        if ((((($decodeLimit) - ($readCur)) & 0xffffffff) != 0)) { return SZ_ERROR_CHUNK_NOT_CONSUMED; }
+    if ((($dicPos) >= ($dicBufSize))) {
+      if ((($remainLen) == (0)) && EQ0[$code]) {
+        if ((($readCur) != ($decodeLimit))) { return SZ_ERROR_CHUNK_NOT_CONSUMED; }
         return SZ_OK  # MAYBE_FINISHED_WITHOUT_MARK
       }
-      if ((((($remainLen) - (0)) & 0xffffffff) != 0)) {
+      if ((($remainLen) != (0))) {
         return SZ_ERROR_NOT_FINISHED;
       }
       $checkEndMarkNow = TRUE;
@@ -672,29 +680,28 @@ sub LzmaDec_DecodeToDic($) { my $srcLen = $_[0];
 
     if ($needInitLzma) {
       my $numProbs = Literal + ((LZMA_LIT_SIZE) << ($lc + $lp));
-      my $probIdx;
-      for ($probIdx = 0; lt32($probIdx, $numProbs); $probIdx++) {
-        vec($probs, (($probIdx) & 0xffffffff), 16) = shr32(kBitModelTotal, 1);
+      my $ddProbIdx;
+      for ($ddProbIdx = 0; (($ddProbIdx) < ($numProbs)); $ddProbIdx++) {
+        vec($probs, $ddProbIdx, 16) = ((kBitModelTotal) >> (1));
       }
       $rep0 = $rep1 = $rep2 = $rep3 = 1;
       $state = 0;
       $needInitLzma = FALSE;
     }
 
-    if ((((($tempBufSize) - (0)) & 0xffffffff) == 0)) {
+    if ((($tempBufSize) == (0))) {
       my $bufLimit;
-      if (lt32($decodeLimit - $readCur, LZMA_REQUIRED_INPUT_MAX) || $checkEndMarkNow) {
-        my $dummyRes;
+      if ((($decodeLimit - $readCur) < (LZMA_REQUIRED_INPUT_MAX)) || $checkEndMarkNow) {
         $dummyRes = LzmaDec_TryDummy($readCur, $decodeLimit);
-        if ((((($dummyRes) - (DUMMY_ERROR)) & 0xffffffff) == 0)) {
-          # This line can be triggered by passing LOCAL_VAR(srcLen)=1 to LzmaDec_DecodeToDic.
+        if ((($dummyRes) == (DUMMY_ERROR))) {
+          # This line can be triggered by passing LOCAL_VAR(ddSrcLen)=1 to LzmaDec_DecodeToDic.
           $tempBufSize = 0;
-          while ((((($readCur) - ($decodeLimit)) & 0xffffffff) != 0)) {
-            vec($readBuf, ((READBUF_SIZE + $tempBufSize++) & 0xffffffff), 8) = vec($readBuf, (($readCur++) & 0xffffffff), 8);
+          while ((($readCur) != ($decodeLimit))) {
+            vec($readBuf, READBUF_SIZE + $tempBufSize++, 8) = vec($readBuf, $readCur++, 8);
           }
           goto on_needs_more_input;
         }
-        if ($checkEndMarkNow && (((($dummyRes) - (DUMMY_MATCH)) & 0xffffffff) != 0)) {
+        if ($checkEndMarkNow && (($dummyRes) != (DUMMY_MATCH))) {
           return SZ_ERROR_NOT_FINISHED;
         }
         $bufLimit = $readCur;
@@ -702,39 +709,38 @@ sub LzmaDec_DecodeToDic($) { my $srcLen = $_[0];
         $bufLimit = $decodeLimit - LZMA_REQUIRED_INPUT_MAX;
       }
       $bufCur = $readCur;
-      if (((((LzmaDec_DecodeReal2($dicBufSize, $bufLimit)) - (0)) & 0xffffffff) != 0)) {
+      if (((LzmaDec_DecodeReal2($dicBufSize, $bufLimit)) != (SZ_OK))) {
         return SZ_ERROR_DATA;
       }
       $readCur = $bufCur;
     } else {
-      my $rem = $tempBufSize;
+      my $ddRem = $tempBufSize;
       my $lookAhead = 0;
-      while (lt32($rem, LZMA_REQUIRED_INPUT_MAX) && lt32($lookAhead, $decodeLimit - $readCur)) {
-        vec($readBuf, ((READBUF_SIZE + $rem++) & 0xffffffff), 8) = vec($readBuf, (($readCur + $lookAhead++) & 0xffffffff), 8);
+      while ((($ddRem) < (LZMA_REQUIRED_INPUT_MAX)) && (($lookAhead) < ($decodeLimit - $readCur))) {
+        vec($readBuf, READBUF_SIZE + $ddRem++, 8) = vec($readBuf, $readCur + $lookAhead++, 8);
       }
-      $tempBufSize = $rem;
-      if (lt32($rem, LZMA_REQUIRED_INPUT_MAX) || $checkEndMarkNow) {
-        my $dummyRes;
-        $dummyRes = LzmaDec_TryDummy(READBUF_SIZE, READBUF_SIZE + $rem);
-        if ((((($dummyRes) - (DUMMY_ERROR)) & 0xffffffff) == 0)) {
+      $tempBufSize = $ddRem;
+      if ((($ddRem) < (LZMA_REQUIRED_INPUT_MAX)) || $checkEndMarkNow) {
+        $dummyRes = LzmaDec_TryDummy(READBUF_SIZE, READBUF_SIZE + $ddRem);
+        if ((($dummyRes) == (DUMMY_ERROR))) {
           $readCur += $lookAhead;
           goto on_needs_more_input;
         }
-        if ($checkEndMarkNow && (((($dummyRes) - (DUMMY_MATCH)) & 0xffffffff) != 0)) {
+        if ($checkEndMarkNow && (($dummyRes) != (DUMMY_MATCH))) {
           return SZ_ERROR_NOT_FINISHED;
         }
       }
-      # This line can be triggered by passing LOCAL_VAR(srcLen)=1 to LzmaDec_DecodeToDic.
+      # This line can be triggered by passing LOCAL_VAR(ddSrcLen)=1 to LzmaDec_DecodeToDic.
       $bufCur = READBUF_SIZE;  # tempBuf.
-      if (((((LzmaDec_DecodeReal2(0, READBUF_SIZE)) - (0)) & 0xffffffff) != 0)) {
+      if (((LzmaDec_DecodeReal2(0, READBUF_SIZE)) != (SZ_OK))) {
         return SZ_ERROR_DATA;
       }
-      $lookAhead -= $rem - ($bufCur - READBUF_SIZE);
+      $lookAhead -= $ddRem - ($bufCur - READBUF_SIZE);
       $readCur += $lookAhead;
       $tempBufSize = 0;
     }
   }
-  if ((((($code) - (0)) & 0xffffffff) != 0)) { return SZ_ERROR_DATA; }
+  if (NE0[$code]) { return SZ_ERROR_DATA; }
   return SZ_ERROR_FINISHED_WITH_MARK;
 }
 
@@ -744,44 +750,47 @@ sub LzmaDec_DecodeToDic($) { my $srcLen = $_[0];
 # * Doesn't try to preread more than absolutely necessary, to avoid copies in
 # * the future.
 # *
-# * Works only if LE(prereadPos, READBUF_SIZE).
-sub Preread($) { my $prereadSize = $_[0];
-  my $prereadPos = $readEnd - $readCur;
-  if (lt32($prereadPos, $prereadSize)) {  # Not enough pending available.
-    if (lt32(READBUF_SIZE - $readCur, $prereadSize)) {
-      # If no room for LOCAL_VAR(prereadSize) bytes to the end, discard bytes from the beginning.
-      for ($readEnd = 0; lt32($readEnd, $prereadPos); ++$readEnd) {
-        vec($readBuf, (($readEnd) & 0xffffffff), 8) = vec($readBuf, (($readCur + $readEnd) & 0xffffffff), 8);
+# * Works only if LE_SMALL(prereadPos, READBUF_SIZE).
+# *
+# * Maximum allowed prereadSize is READBUF_SIZE (< 66000).
+sub Preread($) { my $prSize = $_[0];
+  my $prPos = $readEnd - $readCur;
+  my $prGot;
+  if ((($prPos) < ($prSize))) {  # Not enough pending available.
+    if (((READBUF_SIZE - $readCur) < ($prSize))) {
+      # If no room for LOCAL_VAR(prSize) bytes to the end, discard bytes from the beginning.
+      for ($readEnd = 0; (($readEnd) < ($prPos)); ++$readEnd) {
+        vec($readBuf, $readEnd, 8) = vec($readBuf, $readCur + $readEnd, 8);
       }
       $readCur = 0;
     }
-    while (lt32($prereadPos, $prereadSize)) {
-      # Instead of (LOCAL_VAR(prereadSize) - LOCAL_VAR(prereadPos)) we could use (GLOBAL_VAR(readBuf) + READBUF_SIZE -
+    while ((($prPos) < ($prSize))) {
+      # Instead of (LOCAL_VAR(prSize) - LOCAL_VAR(prPos)) we could use (GLOBAL_VAR(readBuf) + READBUF_SIZE -
       # * GLOBAL_VAR(readEnd)) to read as much as the buffer has room for.
-      my $got = UndefToMinus1(sysread(STDIN, $readBuf, ($prereadSize - $prereadPos), ($readEnd)));
-      if (($got - 1) & 0x80000000) { last; }  # EOF or error on input.
-      $readEnd += $got;
-      $prereadPos += $got;
+      $prGot = UndefToMinus1(sysread(STDIN, $readBuf, ($prSize - $prPos), ($readEnd)));
+      if ((($prGot + 1) <= (1))) { last; }  # EOF or error on input.
+      $readEnd += $prGot;
+      $prPos += $prGot;
     }
   }
-  return $prereadPos;
+  return $prPos;
 }
 
 sub IgnoreVarint() {
-  while ((!lt32(vec($readBuf, (($readCur++) & 0xffffffff), 8), 0x80))) {}
+  while (((vec($readBuf, $readCur++, 8)) >= (0x80))) {}
 }
 
-sub IgnoreZeroBytes($) { my $zeroByteCount = $_[0];
-  for (; lt32(0, $zeroByteCount); --$zeroByteCount) {
-    if (((((vec($readBuf, (($readCur++) & 0xffffffff), 8)) - (0)) & 0xffffffff) != 0)) {
+sub IgnoreZeroBytes($) { my $izCount = $_[0];
+  for (; (($izCount) != (0)); --$izCount) {
+    if (((vec($readBuf, $readCur++, 8)) != (0))) {
       return SZ_ERROR_BAD_PADDING;
     }
   }
   return SZ_OK;
 }
 
-sub GetLE4($) { my $localReadPos = $_[0];
-  return vec($readBuf, (($localReadPos) & 0xffffffff), 8) | vec($readBuf, (($localReadPos + 1) & 0xffffffff), 8) << 8 | vec($readBuf, (($localReadPos + 2) & 0xffffffff), 8) << 16 | vec($readBuf, (($localReadPos + 3) & 0xffffffff), 8) << 24;
+sub GetLE4($) { my $glPos = $_[0];
+  return vec($readBuf, $glPos, 8) | vec($readBuf, $glPos + 1, 8) << 8 | vec($readBuf, $glPos + 2, 8) << 16 | vec($readBuf, $glPos + 3, 8) << 24;
 }
 
 # Expects GLOBAL_VAR(dicSize) be set already. Can be called before or after InitProp.
@@ -796,23 +805,24 @@ sub InitDecode() {
   LzmaDec_InitDicAndState(TRUE, TRUE);
 }
 
-sub InitProp($) { my $propByte = $_[0];
-  if ((!lt32($propByte, 9 * 5 * 5))) { return SZ_ERROR_BAD_LCLPPB_PROP; }
-  $lc = $propByte % 9;
-  $propByte /= 9;
-  $pb = $propByte / 5;
-  $lp = $propByte % 5;
-  if (lt32(LZMA2_LCLP_MAX, $lc + $lp)) { return SZ_ERROR_BAD_LCLPPB_PROP; }
+sub InitProp($) { my $ipByte = $_[0];
+  if ((($ipByte) >= (9 * 5 * 5))) { return SZ_ERROR_BAD_LCLPPB_PROP; }
+  $lc = $ipByte % 9;
+  $lcm8 = 8 - $lc;
+  $ipByte /= 9;
+  $pb = $ipByte / 5;
+  $lp = $ipByte % 5;
+  if ((($lc + $lp) > (LZMA2_LCLP_MAX))) { return SZ_ERROR_BAD_LCLPPB_PROP; }
   $needInitProp = FALSE;
   return SZ_OK;
 }
 
 # Writes uncompressed data dic[LOCAL_VAR(fromDicPos) : GLOBAL_VAR(dicPos)] to stdout.
-sub WriteFrom($) { my $fromDicPos = $_[0];
-  while ((((($fromDicPos) - ($dicPos)) & 0xffffffff) != 0)) {
-    my $got = UndefToMinus1(syswrite(STDOUT, $dic, ($dicPos - $fromDicPos), ($fromDicPos)));
-    if ($got & 0x80000000) { return SZ_ERROR_WRITE; }
-    $fromDicPos += $got;
+sub WriteFrom($) { my $wfDicPos = $_[0];
+  while ((($wfDicPos) != ($dicPos))) {
+    my $wfGot = UndefToMinus1(syswrite(STDOUT, $dic, ($dicPos - $wfDicPos), ($wfDicPos)));
+    if ($wfGot & 0x80000000) { return SZ_ERROR_WRITE; }
+    $wfDicPos += $wfGot;
   }
   return SZ_OK;
 }
@@ -824,36 +834,36 @@ sub WriteFrom($) { my $fromDicPos = $_[0];
 sub DecompressXzOrLzma() {
   my $checksumSize;
   my $bhf;  # Block header flags
-  my $res;
+  my $dxRes;
 
   # 12 for the stream header + 12 for the first block header + 6 for the
   # * first chunk header. empty.xz is 32 bytes.
-  if (lt32(Preread(12 + 12 + 6), 12 + 12 + 6)) { return SZ_ERROR_INPUT_EOF; }
+  if (((Preread(12 + 12 + 6)) < (12 + 12 + 6))) { return SZ_ERROR_INPUT_EOF; }
   # readBuf[6] is actually stream flags, should also be 0.
-  if (((((vec($readBuf, ((0) & 0xffffffff), 8)) - (0xfd)) & 0xffffffff) == 0) && ((((vec($readBuf, ((1) & 0xffffffff), 8)) - (0x37)) & 0xffffffff) == 0) &&
-      ((((vec($readBuf, ((2) & 0xffffffff), 8)) - (0x7a)) & 0xffffffff) == 0) && ((((vec($readBuf, ((3) & 0xffffffff), 8)) - (0x58)) & 0xffffffff) == 0) &&
-      ((((vec($readBuf, ((4) & 0xffffffff), 8)) - (0x5a)) & 0xffffffff) == 0) && ((((vec($readBuf, ((5) & 0xffffffff), 8)) - (0)) & 0xffffffff) == 0) &&
-      ((((vec($readBuf, ((6) & 0xffffffff), 8)) - (0)) & 0xffffffff) == 0)) {  # .xz: "\xFD""7zXZ\0"
-  } elsif ((!lt32(225, vec($readBuf, (($readCur) & 0xffffffff), 8))) && ((((vec($readBuf, (($readCur + 13) & 0xffffffff), 8)) - (0)) & 0xffffffff) == 0) &&  # .lzma
+  if (((vec($readBuf, 0, 8)) == (0xfd)) && ((vec($readBuf, 1, 8)) == (0x37)) &&
+      ((vec($readBuf, 2, 8)) == (0x7a)) && ((vec($readBuf, 3, 8)) == (0x58)) &&
+      ((vec($readBuf, 4, 8)) == (0x5a)) && ((vec($readBuf, 5, 8)) == (0)) &&
+      ((vec($readBuf, 6, 8)) == (0))) {  # .xz: "\xFD""7zXZ\0"
+  } elsif (((vec($readBuf, $readCur, 8)) <= (225)) && ((vec($readBuf, $readCur + 13, 8)) == (0)) &&  # .lzma
         # High 4 bytes of uncompressed size.
-        (((((($bhf = GetLE4($readCur + 9))) - (0)) & 0xffffffff) == 0) || (((($bhf) - (0xffffffff)) & 0xffffffff) == 0)) &&
-        (!lt32(($dicSize = GetLE4($readCur + 1)), LZMA_DIC_MIN)) &&
-        (!lt32(DIC_ARRAY_SIZE, $dicSize))) {
+        (EQ0[($bhf = GetLE4($readCur + 9))] || EQ0[~$bhf]) &&
+        ((($dicSize = GetLE4($readCur + 1))) >= (LZMA_DIC_MIN)) &&
+        LTX[$dicSize],[DIC_ARRAY_SIZE + 1]) {
     # Based on https://svn.python.org/projects/external/xz-5.0.3/doc/lzma-file-format.txt
     my $readBufUS;
     my $srcLen;
     my $fromDicPos;
     InitDecode();
-    # LZMA restricts LE(lc + lp, 4). LZMA requires LE(lc + lp, 12).
-    # * We apply the LZMA2 restriction here (to save memory in
+    # LZMA restricts LE_SMALL(lc + lp, 4). LZMA requires LE_SMALL(lc + lp,
+    # * 12). We apply the LZMA2 restriction here (to save memory in
     # * GLOBAL_VAR(probs)), thus we are not able to extract some legitimate
     # * .lzma files.
-    if (((((($res = InitProp(vec($readBuf, (($readCur) & 0xffffffff), 8)))) - (SZ_OK)) & 0xffffffff) != 0)) {
-      return $res;
+    if (((($dxRes = InitProp(vec($readBuf, $readCur, 8)))) != (SZ_OK))) {
+      return $dxRes;
     }
-    if ((((($bhf) - (0)) & 0xffffffff) == 0)) {
+    if (EQ0[$bhf]) {
       $dicBufSize = $readBufUS = GetLE4($readCur + 5);
-      if (lt32(DIC_ARRAY_SIZE, $readBufUS)) { return SZ_ERROR_MEM; }
+      if (!LTX[$readBufUS],[DIC_ARRAY_SIZE + 1]) { return SZ_ERROR_MEM; }
     } else {
       $readBufUS = $bhf;  # max UInt32.
       $dicBufSize = DIC_ARRAY_SIZE;
@@ -863,27 +873,26 @@ sub DecompressXzOrLzma() {
     # * specified.
     # Any Preread(...) amount starting from 1 works here, but higher values
     # * are faster.
-    while (lt32(0, ($srcLen = Preread(READBUF_SIZE)))) {
-      my $res;
+    while (((($srcLen = Preread(READBUF_SIZE))) != (0))) {
       $fromDicPos = $dicPos;
-      $res = LzmaDec_DecodeToDic($srcLen);
-      if (lt32($readBufUS, $dicPos)) { $dicPos = $readBufUS; }
-      if (((((($res = WriteFrom($fromDicPos))) - (SZ_OK)) & 0xffffffff) != 0)) { return $res; }
-      if ((((($res) - (SZ_ERROR_FINISHED_WITH_MARK)) & 0xffffffff) == 0)) { last; }
-      if ((((($res) - (SZ_ERROR_NEEDS_MORE_INPUT)) & 0xffffffff) != 0) && (((($res) - (SZ_OK)) & 0xffffffff) != 0)) { return $res; }
-      if ((((($dicPos) - ($readBufUS)) & 0xffffffff) == 0)) { last; }
+      $dxRes = LzmaDec_DecodeToDic($srcLen);
+      if ((($dicPos) > ($readBufUS))) { $dicPos = $readBufUS; }
+      if (((($dxRes = WriteFrom($fromDicPos))) != (SZ_OK))) { return $dxRes; }
+      if ((($dxRes) == (SZ_ERROR_FINISHED_WITH_MARK))) { last; }
+      if ((($dxRes) != (SZ_ERROR_NEEDS_MORE_INPUT)) && (($dxRes) != (SZ_OK))) { return $dxRes; }
+      if ((($dicPos) == ($readBufUS))) { last; }
     }
     return SZ_OK;
   } else {
     return SZ_ERROR_BAD_MAGIC;
   }
   # Based on https://tukaani.org/xz/xz-file-format-1.0.4.txt
-  $checksumSize = vec($readBuf, (($readCur + 7) & 0xffffffff), 8);
-  if ((((($checksumSize) - (0)) & 0xffffffff) == 0)) {  # None
+  $checksumSize = vec($readBuf, $readCur + 7, 8);
+  if ((($checksumSize) == (0))) {  # None
  $checksumSize = 1; }
-  elsif ((((($checksumSize) - (1)) & 0xffffffff) == 0)) {  # CRC32
+  elsif ((($checksumSize) == (1))) {  # CRC32
  $checksumSize = 4; }
-  elsif ((((($checksumSize) - (4)) & 0xffffffff) == 0)) {  # CRC64, typical xz output.
+  elsif ((($checksumSize) == (4))) {  # CRC64, typical xz output.
  $checksumSize = 8; }
   else { return SZ_ERROR_BAD_CHECKSUM_TYPE; }
   # Also ignore the CRC32 after LOCAL_VAR(checksumSize).
@@ -897,28 +906,28 @@ sub DecompressXzOrLzma() {
     my $readAtBlock;
     $readAtBlock = $readCur;
     # Last block, index follows.
-    if (((((($bhs = vec($readBuf, (($readCur++) & 0xffffffff), 8))) - (0)) & 0xffffffff) == 0)) { last; }
+    if (((($bhs = vec($readBuf, $readCur++, 8))) == (0))) { last; }
     # Block header size includes the LOCAL_VAR(bhs) field above and the CRC32 below.
     $bhs = ($bhs + 1) << 2;
     # Typically the Preread(12 + 12 + 6) above covers it.
-    if (lt32(Preread($bhs), $bhs)) { return SZ_ERROR_INPUT_EOF; }
+    if (((Preread($bhs)) < ($bhs))) { return SZ_ERROR_INPUT_EOF; }
     $readAtBlock = $readCur;
-    $bhf = vec($readBuf, (($readCur++) & 0xffffffff), 8);
-    if (((((($bhf & 2)) - (0)) & 0xffffffff) != 0)) { return SZ_ERROR_UNSUPPORTED_FILTER_COUNT; }
-    if (((((($bhf & 20)) - (0)) & 0xffffffff) != 0)) { return SZ_ERROR_BAD_BLOCK_FLAGS; }
-    if ($bhf & 64) {  # Compressed size present.
+    $bhf = vec($readBuf, $readCur++, 8);
+    if ((($bhf & 2) != (0))) { return SZ_ERROR_UNSUPPORTED_FILTER_COUNT; }
+    if ((($bhf & 20) != (0))) { return SZ_ERROR_BAD_BLOCK_FLAGS; }
+    if ((($bhf & 64) != (0))) {  # Compressed size present.
       # Usually not present, just ignore it.
       IgnoreVarint();
     }
-    if ($bhf & 128) {  # Uncompressed size present.
+    if ((($bhf & 128) != (0))) {  # Uncompressed size present.
       # Usually not present, just ignore it.
       IgnoreVarint();
     }
     # This is actually a varint, but it's shorter to read it as a byte.
-    if (((((vec($readBuf, (($readCur++) & 0xffffffff), 8)) - (FILTER_ID_LZMA2)) & 0xffffffff) != 0)) { return SZ_ERROR_UNSUPPORTED_FILTER_ID; }
+    if (((vec($readBuf, $readCur++, 8)) != (FILTER_ID_LZMA2))) { return SZ_ERROR_UNSUPPORTED_FILTER_ID; }
     # This is actually a varint, but it's shorter to read it as a byte.
-    if (((((vec($readBuf, (($readCur++) & 0xffffffff), 8)) - (1)) & 0xffffffff) != 0)) { return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE; }
-    $dicSizeProp = vec($readBuf, (($readCur++) & 0xffffffff), 8);
+    if (((vec($readBuf, $readCur++, 8)) != (1))) { return SZ_ERROR_UNSUPPORTED_FILTER_PROPERTIES_SIZE; }
+    $dicSizeProp = vec($readBuf, $readCur++, 8);
     # Typical large dictionary sizes:
     # *
     # *  * 35: 805306368 bytes == 768 MiB
@@ -927,37 +936,38 @@ sub DecompressXzOrLzma() {
     # *  * 38: 2147483648 bytes == 2 GiB
     # *  * 39: 3221225472 bytes == 3 GiB
     # *  * 40: 4294967295 bytes, largest supported by .xz
-    if (lt32(40, $dicSizeProp)) { return SZ_ERROR_BAD_DICTIONARY_SIZE; }
+    if ((($dicSizeProp) > (40))) { return SZ_ERROR_BAD_DICTIONARY_SIZE; }
     # LZMA2 and .xz support it, we don't (for simpler memory management on
     # * 32-bit systems).
-    if (lt32(37, $dicSizeProp)) { return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE; }
+    if ((($dicSizeProp) > (37))) { return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE; }
     $dicSize = (((2) | (($dicSizeProp) & 1)) << (($dicSizeProp) / 2 + 11));
     $bhs2 = $readCur - $readAtBlock + 5;  # Won't overflow.
-    if (lt32($bhs, $bhs2)) { return SZ_ERROR_BLOCK_HEADER_TOO_LONG; }
-    if (((((($res = IgnoreZeroBytes($bhs - $bhs2))) - (SZ_OK)) & 0xffffffff) != 0)) { return $res; }
+    if ((($bhs2) > ($bhs))) { return SZ_ERROR_BLOCK_HEADER_TOO_LONG; }
+    if (((($dxRes = IgnoreZeroBytes($bhs - $bhs2))) != (SZ_OK))) { return $dxRes; }
     $readCur += 4;  # Ignore CRC32.
     # Typically it's LOCAL_VAR(offset) 24, xz creates it by default, minimal.
     {  # Parse LZMA2 stream.
       # Based on https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#LZMA2_format
       my $chunkUS;  # Uncompressed chunk sizes.
       my $chunkCS;  # Compressed chunk size.
+      my $initDic;
       InitDecode();
 
       for (;;) {
         my $control;
         # Actually 2 bytes is enough to get to the index if everything is
         # * aligned and there is no block checksum.
-        if (lt32(Preread(6), 6)) { return SZ_ERROR_INPUT_EOF; }
-        $control = vec($readBuf, (($readCur) & 0xffffffff), 8);
-        if ((((($control) - (0)) & 0xffffffff) == 0)) {
+        if (((Preread(6)) < (6))) { return SZ_ERROR_INPUT_EOF; }
+        $control = vec($readBuf, $readCur, 8);
+        if ((($control) == (0))) {
           ++$readCur;
           last;
-        } elsif (lt32((($control - 3) & 0xff), 0x80 - 3)) {
+        } elsif ((((($control - 3) & 0xff)) < (0x80 - 3))) {
           return SZ_ERROR_BAD_CHUNK_CONTROL_BYTE;
         }
-        $chunkUS = (vec($readBuf, (($readCur + 1) & 0xffffffff), 8) << 8) + vec($readBuf, (($readCur + 2) & 0xffffffff), 8) + 1;
-        if (lt32($control, 3)) {  # Uncompressed chunk.
-          my $initDic = (((($control) - (1)) & 0xffffffff) == 0);
+        $chunkUS = (vec($readBuf, $readCur + 1, 8) << 8) + vec($readBuf, $readCur + 2, 8) + 1;
+        if ((($control) < (3))) {  # Uncompressed chunk.
+          $initDic = (($control) == (1));
           $chunkCS = $chunkUS;
           $readCur += 3;
           # TODO(pts): Porting: TRUNCATE_TO_8BIT(LOCAL_VAR(blockSizePad)) for Python and other unlimited-integer-range languages.
@@ -970,15 +980,15 @@ sub DecompressXzOrLzma() {
           }
           LzmaDec_InitDicAndState($initDic, FALSE);
         } else {  # LZMA chunk.
-          my $mode = (shr32(($control), 5) & 3);
-          my $initDic = (((($mode) - (3)) & 0xffffffff) == 0);
-          my $initState = lt32(0, $mode);
-          my $isProp = ((((($control & 64)) - (0)) & 0xffffffff) != 0);
+          my $mode = (((($control)) >> (5)) & 3);
+          my $initState = (($mode) != (0));
+          my $isProp = ((($control & 64)) != (0));
+          $initDic = (($mode) == (3));
           $chunkUS += ($control & 31) << 16;
-          $chunkCS = (vec($readBuf, (($readCur + 3) & 0xffffffff), 8) << 8) + vec($readBuf, (($readCur + 4) & 0xffffffff), 8) + 1;
+          $chunkCS = (vec($readBuf, $readCur + 3, 8) << 8) + vec($readBuf, $readCur + 4, 8) + 1;
           if ($isProp) {
-            if (((((($res = InitProp(vec($readBuf, (($readCur + 5) & 0xffffffff), 8)))) - (SZ_OK)) & 0xffffffff) != 0)) {
-              return $res;
+            if (((($dxRes = InitProp(vec($readBuf, $readCur + 5, 8)))) != (SZ_OK))) {
+              return $dxRes;
             }
             ++$readCur;
             --$blockSizePad;
@@ -996,24 +1006,24 @@ sub DecompressXzOrLzma() {
         }
         $dicBufSize += $chunkUS;
         # Decompressed data too long, won't fit to GLOBAL_VAR(dic).
-        if (lt32(DIC_ARRAY_SIZE, $dicBufSize)) { return SZ_ERROR_MEM; }
+        if ((($dicBufSize) > (DIC_ARRAY_SIZE))) { return SZ_ERROR_MEM; }
         # Read 6 extra bytes to optimize away a read(...) system call in
         # * the Prefetch(6) call in the next chunk header.
-        if (lt32(Preread($chunkCS + 6), $chunkCS)) { return SZ_ERROR_INPUT_EOF; }
-        if (lt32($control, 0x80)) {  # Uncompressed chunk.
-          while ((((($dicPos) - ($dicBufSize)) & 0xffffffff) != 0)) {
-            vec($dic, (($dicPos++) & 0xffffffff), 8) = vec($readBuf, (($readCur++) & 0xffffffff), 8);
+        if (((Preread($chunkCS + 6)) < ($chunkCS))) { return SZ_ERROR_INPUT_EOF; }
+        if ((($control) < (0x80))) {  # Uncompressed chunk.
+          while ((($dicPos) != ($dicBufSize))) {
+            vec($dic, $dicPos++, 8) = vec($readBuf, $readCur++, 8);
           }
-          if ((((($checkDicSize) - (0)) & 0xffffffff) == 0) && (!lt32($chunkUS, $dicSize - $processedPos))) {
+          if ((($checkDicSize) == (0)) && (($dicSize - $processedPos) <= ($chunkUS))) {
             $checkDicSize = $dicSize;
           }
           $processedPos += $chunkUS;
         } else {  # Compressed chunk.
           # This call doesn't change GLOBAL_VAR(dicBufSize).
-          if (((((($res = LzmaDec_DecodeToDic($chunkCS))) - (SZ_OK)) & 0xffffffff) != 0)) { return $res; }
+          if (((($dxRes = LzmaDec_DecodeToDic($chunkCS))) != (SZ_OK))) { return $dxRes; }
         }
-        if ((((($dicPos) - ($dicBufSize)) & 0xffffffff) != 0)) { return SZ_ERROR_BAD_DICPOS; }
-        if (((((($res = WriteFrom($dicPos - $chunkUS))) - (SZ_OK)) & 0xffffffff) != 0)) { return $res; }
+        if ((($dicPos) != ($dicBufSize))) { return SZ_ERROR_BAD_DICPOS; }
+        if (((($dxRes = WriteFrom($dicPos - $chunkUS))) != (SZ_OK))) { return $dxRes; }
         $blockSizePad -= $chunkCS;
         # We can't discard decompressbuf[:GLOBAL_VAR(dicBufSize)] now,
         # * because we need it a dictionary in which subsequent calls to
@@ -1023,26 +1033,41 @@ sub DecompressXzOrLzma() {
     # End of block.
     # 7 for padding4 and CRC32 + 12 for the next block header + 6 for the next
     # * chunk header.
-    if (lt32(Preread(7 + 12 + 6), 7 + 12 + 6)) { return SZ_ERROR_INPUT_EOF; }
+    if (((Preread(7 + 12 + 6)) < (7 + 12 + 6))) { return SZ_ERROR_INPUT_EOF; }
     # Ignore block padding.
-    if (((((($res = IgnoreZeroBytes($blockSizePad & 3))) - (SZ_OK)) & 0xffffffff) != 0)) { return $res; }
+    if (((($dxRes = IgnoreZeroBytes($blockSizePad & 3))) != (SZ_OK))) { return $dxRes; }
     $readCur += $checksumSize;  # Ignore CRC32, CRC64 etc.
   }
   # The .xz input file continues with the index, which we ignore from here.
   return SZ_OK;
 }
 sub Decompress() {
-  my $res;
+  my $deRes;
   $probs = '';
   $readBuf = '';
   $dic = '';
   binmode(STDIN);
   binmode(STDOUT);
-  $res = DecompressXzOrLzma();
+  $deRes = DecompressXzOrLzma();
   $probs = '';
   $readBuf = '';
   $dic = '';
-  return $res;
+  return $deRes;
 }
+ENDEVAL
+my $lta; my $ltb;
+if ((1 << 31) < 0) {  # 32-bit Perl.
+  s@\bLT\[([^\]]+)\],\[([^\]]+)\]@(\$lta = ($1) & 0xffffffff, \$ltb = ($2) & 0xffffffff, (\$lta < 0 ? \$ltb >= 0 : \$ltb < 0) ? \$ltb < 0 : \$lta < \$ltb)@g;
+  s@\bLTX\[([^\]]+)\],\[([^\]]+)\]@(\$lta = ($1) & 0xffffffff, \$lta < ($2) && \$lta >= 0)@g;
+  s@\bEQ0\[([^\]]+)\]@!($1)@g;
+  s@\bNE0\[([^\]]+)\]@(($1) != 0)@g;
+} else {  # At least 33-bit Perl, typically 64-bit.
+  # This is faster than the LT above.
+  s@\bLT\[([^\]]+)\],\[([^\]]+)\]@((($1) & 0xffffffff) < (($2) & 0xffffffff))@g;
+  s@\bLTX\[([^\]]+)\],\[([^\]]+)\]@((($1) & 0xffffffff) < ($2))@g;
+  s@\bEQ0\[([^\]]+)\]@!(($1) & 0xffffffff)@g;
+  s@\bNE0\[([^\]]+)\]@((($1) & 0xffffffff) != 0)@g;
+}
+eval; die $@ if $@ }
 
-exit(Decompress());
+exit(Decompress())
