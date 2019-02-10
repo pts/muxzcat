@@ -30,11 +30,11 @@ gcc -C -E -DCONFIG_LANG_PERL "$@" -ansi -O2 -W -Wall -Wextra -Werror muaxzcat.c 
 BEGIN { $^W = 1 }
 use integer;  # This is required.
 use strict;   # Optional.
+BEGIN {
 die "fatal: your Perl does not support integer arithmetic\n" if 1 / 2 * 2;
 die "fatal: your Perl cannot do 32-bit integer arithmetic\n" if
     abs(1 << 31 >> 31) != 1;
-
-BEGIN { $_ = <<'\''ENDEVAL'\'';
+$_ = <<'\''ENDEVAL'\'';
 ' &&
 <muaxzcat.pl.tmp2 perl -0777 -pe 's@^#(?!!).*\n@@gm; sub cont($) { my $s = $_[0]; $s =~ s@\A\s+@@; $s =~ s@\s+\Z(?!\n)@@; $s =~ s@\n[ \t]?([ \t]*)@\n$1# @g; $s } s@/[*](.*?)[*]/\n*@ "# " . cont($1) . "\n" @gse;
     s@([^\s#]) (#.*)|(#.*)@ defined($1) ? "$1  $2" : $3 @ge;
