@@ -43,18 +43,16 @@ $_ = <<'\''ENDEVAL'\'';
     s@(#.*)|[ \t]+;@ defined($1) ? $1 : ";" @ge;
     s@^[ \t]*GLOBAL @@mg' &&
 echo 'ENDEVAL
+my $lta; my $ltb;
 if ((1 << 31) < 0) {  # 32-bit Perl.
-  sub lt32($$) {
-    my $a = $_[0] & 0xffffffff;
-    my $b = $_[1] & 0xffffffff;
-    ($a < 0 ? $b >= 0 : $b < 0) ? $b < 0 : $a < $b
-  }
-  s@\bLT\[([^\]]+)\],\[([^\]]+)\]@lt32($1, $2)@g;
+  s@\bLT\[([^\]]+)\],\[([^\]]+)\]@(\$lta = ($1) & 0xffffffff, \$ltb = ($2) & 0xffffffff, (\$lta < 0 ? \$ltb >= 0 : \$ltb < 0) ? \$ltb < 0 : \$lta < \$ltb)@g;
+  s@\bLTX\[([^\]]+)\],\[([^\]]+)\]@(\$lta = ($1) & 0xffffffff, \$lta < ($2) && \$lta >= 0)@g;
   s@\bEQ0\[([^\]]+)\]@!($1)@g;
   s@\bNE0\[([^\]]+)\]@(($1) != 0)@g;
 } else {  # At least 33-bit Perl, typically 64-bit.
-  # This is much faster than lt32 above.
+  # This is faster than the LT above.
   s@\bLT\[([^\]]+)\],\[([^\]]+)\]@((($1) & 0xffffffff) < (($2) & 0xffffffff))@g;
+  s@\bLTX\[([^\]]+)\],\[([^\]]+)\]@((($1) & 0xffffffff) < ($2))@g;
   s@\bEQ0\[([^\]]+)\]@!(($1) & 0xffffffff)@g;
   s@\bNE0\[([^\]]+)\]@((($1) & 0xffffffff) != 0)@g;
 }

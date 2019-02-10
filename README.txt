@@ -70,14 +70,17 @@ Based on decompression speed measurements of linux-4.20.5.tar.xz,
 size-optimized muxzcat.c (on Linux i386) is about 7% slower than
 speed-optimized xzcat (on Linux amd64).
 
-Based on decompression speed measurements of a ~2 MiB .tar.xz file,
-size-optimized muxzcat.c (on Linux i386) is about 334 times faster than
-muxzcat.pl (on perl compiled for Linux amd64). Currently muxzcat.pl is very
-slow because it does many artihmetic operations conservatively so that it
-will work with Perls with 32-bit and 64-bit integer arithmetic. It looks
-like possible to improve the speed ratio to 200 by removing some unncessary
-calls to `& 0xffffffff', if restricted to Perls with 64-bit integer
-arithmetic.
+Based on decompression speed measurements of a ~2 MiB .tar.xz file and of
+the ~100 MiB linux-4.20.5.tar.xz, size-optimized muxzcat.c (on Linux i386)
+is about 285 times faster than muxzcat.pl (on perl compiled for Linux
+amd64). Part of the slowness is because LZMA decompression needs 32-bit
+unsigned arithmetic, and perl compiled for Linux amd64 can do 64-bit signed
+arithmetic, so the inputs of some operations (e.g. >>, <, =) need to be
+bit-masked to get correct results. (Fortunately % and / are not used in LZMA
+decompression, because they would be even slower when emulated on the wrong
+signedness.) muxzcat.pl is even slower than that on Perls which can do
+32-bit signed aritmetic, because special handling is needed for negative
+inputs of <.
 
 muxzcat.pl is compatible with recent versions of Perl 5 (e.g. Perl 5.24) and
 very old versions of Perl 5 (e.g. Perl 5.004_04, released on 1997-10-15).
