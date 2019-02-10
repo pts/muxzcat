@@ -1,6 +1,9 @@
 /*
+ * Build instructions:
+ *
  * $ wget -O xz-java-1.8.zip https://tukaani.org/xz/xz-java-1.8.zip
  * $ unzip -o xz-java-1.8.zip
+ * $ perl -pi -e 's@\bassert\b.*?;@;@g' `find src -type f -name '*.java'`
  * $ (cd src && cp ../muxzcatj.java ./)
  * # Works with javac 1.8.
  * $ (cd src && javac -target 1.1 -source 1.2 muxzcatj.java)
