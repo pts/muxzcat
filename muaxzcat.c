@@ -128,13 +128,13 @@ struct IntegerTypeAsserts {
 #define ENDGLOBALS } global;
 #define GLOBAL_VAR(name) global.name  /* Get or set a global variable. */
 #define SET_GLOBAL(name, setid, op) global.name op
-#define GET_ARY16(a, idx) ((UInt32)global.a##16[TRUNCATE_TO_32BIT(idx)])
+#define GET_ARY16(a, idx) ((UInt32)global.a##16[ASSERT_IS_SMALL(idx)])
 /* If the base type was larger than uint16_t, we'd have to call TRUNCATE_TO_16BIT(value) here. */
-#define SET_ARY16(a, idx, value) (global.a##16[TRUNCATE_TO_32BIT(idx)] = value)
+#define SET_ARY16(a, idx, value) (global.a##16[ASSERT_IS_SMALL(idx)] = value)
 #define CLEAR_ARY8(a)
-#define GET_ARY8(a, idx) ((UInt32)global.a##8[TRUNCATE_TO_32BIT(idx)])
+#define GET_ARY8(a, idx) ((UInt32)global.a##8[ASSERT_IS_SMALL(idx)])
 /* If the base type was larger than uint8_t, we'd have to call TRUNCATE_TO_8BIT(value) here. */
-#define SET_ARY8(a, idx, value) (global.a##8[TRUNCATE_TO_32BIT(idx)] = value)
+#define SET_ARY8(a, idx, value) (global.a##8[ASSERT_IS_SMALL(idx)] = value)
 #define CLEAR_ARY16(a)
 #define READ_FROM_STDIN_TO_ARY8(a, fromIdx, size) (read(0, &global.a##8[fromIdx], (size)))
 #define WRITE_TO_STDOUT_FROM_ARY8(a, fromIdx, size) (write(1, &global.a##8[fromIdx], (size)))
@@ -147,12 +147,11 @@ struct IntegerTypeAsserts {
 #define ENDGLOBALS
 #define GLOBAL_VAR(name) $##name
 #define SET_GLOBAL(name, setid, op) $##name op
-/* !! Not all indexes can be more than 32-bit. Optimize away the long ones. */
-#define GET_ARY16(a, idx) vec($##a, TRUNCATE_TO_32BIT(idx), 16)
-#define SET_ARY16(a, idx, value) vec($##a, TRUNCATE_TO_32BIT(idx), 16) = value
+#define GET_ARY16(a, idx) vec($##a, idx, 16)
+#define SET_ARY16(a, idx, value) vec($##a, idx, 16) = value
 #define CLEAR_ARY16(a) $##a = ''
-#define GET_ARY8(a, idx) vec($##a, TRUNCATE_TO_32BIT(idx), 8)
-#define SET_ARY8(a, idx, value) vec($##a, TRUNCATE_TO_32BIT(idx), 8) = value
+#define GET_ARY8(a, idx) vec($##a, idx, 8)
+#define SET_ARY8(a, idx, value) vec($##a, idx, 8) = value
 #define CLEAR_ARY8(a) $##a = ''
 #define READ_FROM_STDIN_TO_ARY8(a, fromIdx, size) UndefToMinus1(sysread(STDIN, $##a, (size), (fromIdx)))
 #define WRITE_TO_STDOUT_FROM_ARY8(a, fromIdx, size) UndefToMinus1(syswrite(STDOUT, $##a, (size), (fromIdx)))
@@ -189,13 +188,21 @@ struct IntegerTypeAsserts {
  * SET_LOCALB(distance, 251, =, (LOCAL_VAR(distance) + LOCAL_VAR(distance)));
  * SET_LOCALB(distance, 257, =, (LOCAL_VAR(distance) + LOCAL_VAR(distance)) + 1);
   */
-/* !! Optimized masking of the index of GET_ARY8, GET_ARY16, SET_ARY8, SET_ARY16? */
 /* !! Optimized masking of EQ(x, 0) and NE(x, 0), GT(x, 0) etc. */
 /* !! Use comparison *_SMALL more, wherever it works. */
 /* !! Add EQ0, NE0 (== GT0), which is a bit optimized. */
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
 #define IS_SMALL(x) (((x) & ~0x7fffffff) == 0)
-/* These work only if IS_SMALL(x). */
+#ifdef CONFIG_DEUBG
+#define SHR_SMALLX(x, y) (ASSERT_IS_SMALL(x) >> (y))
+#define EQ_SMALL(x, y) (ASSERT_IS_SMALL(x) == ASSERT_IS_SMALL(y))
+#define NE_SMALL(x, y) (ASSERT_IS_SMALL(x) != ASSERT_IS_SMALL(y))
+#define LT_SMALL(x, y) (ASSERT_IS_SMALL(x) < ASSERT_IS_SMALL(y))
+#define LE_SMALL(x, y) (ASSERT_IS_SMALL(x) <= ASSERT_IS_SMALL(y))
+#define GT_SMALL(x, y) (ASSERT_IS_SMALL(x) > ASSERT_IS_SMALL(y))
+#define GE_SMALL(x, y) (ASSERT_IS_SMALL(x) >= ASSERT_IS_SMALL(y))
+#else
+/* These work only if IS_SMALL(x) and 0 <= y <= 31. */
 #define SHR_SMALLX(x, y) ((x) >> (y))
 /* These work only if IS_SMALL(x) && IS_SMALL(y). */
 #define EQ_SMALL(x, y) ((x) == (y))
@@ -204,6 +211,7 @@ struct IntegerTypeAsserts {
 #define LE_SMALL(x, y) ((x) <= (y))
 #define GT_SMALL(x, y) ((x) > (y))
 #define GE_SMALL(x, y) ((x) >= (y))
+#endif  /* CONFIG_DEBUG */
 #ifdef CONFIG_LANG_C
 #if defined(CONFIG_UINT64) || defined(CONFIG_INT64)
 /* The CONFIG_LANG_PERL version would also work for SHR1 and SHR11. */
@@ -252,20 +260,7 @@ struct IntegerTypeAsserts {
 #include <stdio.h>
 #define DEBUGF(...) fprintf(stderr, "DEBUG: " __VA_ARGS__)
 #define ASSERT(condition) assert(condition)
-#undef  SHR_SMALLX
-#define SHR_SMALLX(x, y) ({ const UInt32 x2 = (x); ASSERT(IS_SMALL(x2)); x2 >> (y); })
-#undef  EQ_SMALL
-#define EQ_SMALL(x, y) ({ const UInt32 x2 = (x); const UInt32 y2 = (y); ASSERT(IS_SMALL(x2)); ASSERT(IS_SMALL(y2)); x2 == y2; })
-#undef  NE_SMALL
-#define NE_SMALL(x, y) ({ const UInt32 x2 = (x); const UInt32 y2 = (y); ASSERT(IS_SMALL(x2)); ASSERT(IS_SMALL(y2)); x2 != y2; })
-#undef  LT_SMALL
-#define LT_SMALL(x, y) ({ const UInt32 x2 = (x); const UInt32 y2 = (y); ASSERT(IS_SMALL(x2)); ASSERT(IS_SMALL(y2)); x2 < y2; })
-#undef  LE_SMALL
-#define LE_SMALL(x, y) ({ const UInt32 x2 = (x); const UInt32 y2 = (y); ASSERT(IS_SMALL(x2)); ASSERT(IS_SMALL(y2)); x2 <= y2; })
-#undef  GT_SMALL
-#define GT_SMALL(x, y) ({ const UInt32 x2 = (x); const UInt32 y2 = (y); ASSERT(IS_SMALL(x2)); ASSERT(IS_SMALL(y2)); x2 > y2; })
-#undef  GE_SMALL
-#define GE_SMALL(x, y) ({ const UInt32 x2 = (x); const UInt32 y2 = (y); ASSERT(IS_SMALL(x2)); ASSERT(IS_SMALL(y2)); x2 >= y2; })
+#define ASSERT_IS_SMALL(x) ({ const UInt32 x2 = (x); ASSERT(IS_SMALL(x2)); x2; })
 #ifdef CONFIG_DEBUG_VARS
 static void DumpVars(void);
 /* ++ and -- operators for global and local variables could be instrumented
@@ -276,18 +271,20 @@ static void DumpVars(void);
 #undef  SET_GLOBAL
 #define SET_GLOBAL(name, setid, op) ({ DumpVars(); DEBUGF("SET_GLOBAL %s @%d\n", #name, setid); &global.name; })[0] op
 #undef  SET_ARY16
-#define SET_ARY16(a, idx, value) ({ const UInt32 idx2 = idx; global.a##16[idx2] = value; DEBUGF("SET_ARY16 %s[%d]=%u\n", #a, (int)idx2, (int)(global.a##16[idx2])); global.a##16[idx2]; })
+#define SET_ARY16(a, idx, value) ({ const UInt32 idx2 = ASSERT_IS_SMALL(idx); global.a##16[idx2] = value; DEBUGF("SET_ARY16 %s[%d]=%u\n", #a, (int)idx2, (int)(global.a##16[idx2])); global.a##16[idx2]; })
 #undef  SET_ARY8
-#define SET_ARY8(a, idx, value) ({ const UInt32 idx2 = idx; global.a##8[idx2] = value; DEBUGF("SET_ARY8 %s[%d]=%u\n", #a, (int)idx2, (int)(global.a##8[idx2])); global.a##8[idx2];  })
+#define SET_ARY8(a, idx, value) ({ const UInt32 idx2 = ASSERT_IS_SMALL(idx); global.a##8[idx2] = value; DEBUGF("SET_ARY8 %s[%d]=%u\n", #a, (int)idx2, (int)(global.a##8[idx2])); global.a##8[idx2];  })
 #endif  /* CONFIG_DEBUG_VARS */
 #else
 #define DEBUGF(...)
 /* Just check that it compiles. */
 #define ASSERT(condition) do {} while (0 && (condition))
+#define ASSERT_IS_SMALL(x) (x)
 #endif  /* !CONFIG_DEBUG */
 #endif  /* CONFIG_LANG_C */
 
 #ifdef CONFIG_LANG_PERL
+#define ASSERT_IS_SMALL(x) (x)
 #ifdef CONFIG_DEBUG
 #define DEBUGF(...) printf(STDERR "DEBUG: " . __VA_ARGS__)
 #define ASSERT(condition) die "ASSERT: " . #condition if !(condition)
