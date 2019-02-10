@@ -218,7 +218,9 @@ struct IntegerTypeAsserts {
 #define SHR1(x) (((x) & 0xffffffff) >> 1)
 #define SHR11(x) (((x) & 0xffffffff) >> 11)
 #define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
+#define EQ0(x) (((x) & 0xffffffff) == 0)
 #define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
+#define NE0(x) (((x) & 0xffffffff) != 0)
 #define LT(x, y) (((x) & 0xffffffff) <  ((y) & 0xffffffff))
 #define LE(x, y) (((x) & 0xffffffff) <= ((y) & 0xffffffff))
 #define GT(x, y) (((x) & 0xffffffff) >  ((y) & 0xffffffff))
@@ -227,7 +229,9 @@ struct IntegerTypeAsserts {
 #define SHR1(x) ((x) >> 1)
 #define SHR11(x) ((x) >> 11)
 #define EQ(x, y) ((x) == (y))
+#define EQ0(x) ((x) == 0)
 #define NE(x, y) ((x) != (y))
+#define NE0(x) ((x) != 0)
 #define LT(x, y) ((x) < (y))
 #define LE(x, y) ((x) <= (y))
 #define GT(x, y) ((x) > (y))
@@ -238,6 +242,8 @@ struct IntegerTypeAsserts {
 #define SHR1(x) (((x) >> 1) & 0x7fffffff)
 #define SHR11(x) (((x) >> 11) & (0x7fffffff >> 10))
 #define EQ(x, y) ((((x) - (y)) & 0xffffffff) == 0)
+#define EQ0(x) EQ0[x]
+#define NE0(x) NE0[x]
 #define NE(x, y) ((((x) - (y)) & 0xffffffff) != 0)
 /* genpl.sh has the 32-bit (slow) and 64-bit (fast) implementations of LT,
  * LE, GT, GE. These are just placeholders.
@@ -455,7 +461,8 @@ typedef uint8_t Bool;
 #ifdef CONFIG_LANG_C
 #ifdef CONFIG_DEBUG_VAR_RANGES
 /* Only these variables seem to be non-small (IS_SMALL(...) is false):
- * blockSizePad, code, drBound, range, tdBound, tdCode, tdRange.
+ * blockSizePad, bhf, distance (either ~0 or IS_SMALL), code, drBound,
+ * range, tdBound, tdCode, tdRange.
  */
 /* gcc -DCONFIG_DEBUG_VAR_RANGES -DCONFIG_INT64 -ansi -O2 -W -Wall -Wextra -Werror -o muxzcat muaxzcat.c */
 #define DECLARE_VRMINMAX(name) int64_t VRMIN_##name = 0, VRMAX_##name = 0
@@ -902,13 +909,15 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, drDicLimit, const UInt32, drB
                 SET_LOCALB(drTtt, 347, =, GET_ARY16(probs, LOCAL_VAR(drProbIdx) + LOCAL_VAR(drI))); ASSERT(IS_SMALL(LOCAL_VAR(drTtt)) && LE(LOCAL_VAR(drTtt), kBitModelTotal)); if (LT(GLOBAL_VAR(range), kTopValue)) { SET_GLOBAL(range, 349, <<=) (8) ; SET_GLOBAL(code, 351, =) ((GLOBAL_VAR(code) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(drBound, 353, =, SHR11(GLOBAL_VAR(range)) * LOCAL_VAR(drTtt)) ; if (LT(GLOBAL_VAR(code), LOCAL_VAR(drBound))) { SET_GLOBAL(range, 355, =) (LOCAL_VAR(drBound)) ; SET_ARY16(probs, LOCAL_VAR(drProbIdx) + LOCAL_VAR(drI), LOCAL_VAR(drTtt) + SHR_SMALLX(kBitModelTotal - LOCAL_VAR(drTtt), 5)); SET_LOCALB(drI, 357, =, (LOCAL_VAR(drI) + LOCAL_VAR(drI))); } else { SET_GLOBAL(range, 359, -=) (LOCAL_VAR(drBound)) ; SET_GLOBAL(code, 361, -=) (LOCAL_VAR(drBound)) ; SET_ARY16(probs, LOCAL_VAR(drProbIdx) + LOCAL_VAR(drI), LOCAL_VAR(drTtt) - SHR_SMALLX(LOCAL_VAR(drTtt), 5)); SET_LOCALB(drI, 363, =, (LOCAL_VAR(drI) + LOCAL_VAR(drI)) + 1) ; SET_LOCALB(distance, 365, |=, 4) ; }
                 SET_LOCALB(drTtt, 367, =, GET_ARY16(probs, LOCAL_VAR(drProbIdx) + LOCAL_VAR(drI))); ASSERT(IS_SMALL(LOCAL_VAR(drTtt)) && LE(LOCAL_VAR(drTtt), kBitModelTotal)); if (LT(GLOBAL_VAR(range), kTopValue)) { SET_GLOBAL(range, 369, <<=) (8) ; SET_GLOBAL(code, 371, =) ((GLOBAL_VAR(code) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; } SET_LOCALB(drBound, 373, =, SHR11(GLOBAL_VAR(range)) * LOCAL_VAR(drTtt)) ; if (LT(GLOBAL_VAR(code), LOCAL_VAR(drBound))) { SET_GLOBAL(range, 375, =) (LOCAL_VAR(drBound)) ; SET_ARY16(probs, LOCAL_VAR(drProbIdx) + LOCAL_VAR(drI), LOCAL_VAR(drTtt) + SHR_SMALLX(kBitModelTotal - LOCAL_VAR(drTtt), 5)); SET_LOCALB(drI, 377, =, (LOCAL_VAR(drI) + LOCAL_VAR(drI))); } else { SET_GLOBAL(range, 379, -=) (LOCAL_VAR(drBound)) ; SET_GLOBAL(code, 381, -=) (LOCAL_VAR(drBound)) ; SET_ARY16(probs, LOCAL_VAR(drProbIdx) + LOCAL_VAR(drI), LOCAL_VAR(drTtt) - SHR_SMALLX(LOCAL_VAR(drTtt), 5)); SET_LOCALB(drI, 383, =, (LOCAL_VAR(drI) + LOCAL_VAR(drI)) + 1) ; SET_LOCALB(distance, 385, |=, 8) ; }
               }
-              if (EQ(~LOCAL_VAR(distance), 0)) {
+              if (EQ0(~LOCAL_VAR(distance))) {
                 SET_GLOBAL(remainLen, 387, +=) (kMatchSpecLenStart) ;
                 SET_GLOBAL(state, 26, -=) kNumStates;
                 goto break_do2;  /* BREAK; */
               }
             }
           }
+          /* TODO(pts): Do the 2 instances of SZ_ERROR_DATA below also check this? */
+          ASSERT(IS_SMALL(LOCAL_VAR(distance)) && LE(LOCAL_VAR(distance), DIC_ARRAY_SIZE));
           SET_GLOBAL(rep3, 28, =) GLOBAL_VAR(rep2);
           SET_GLOBAL(rep2, 30, =) GLOBAL_VAR(rep1);
           SET_GLOBAL(rep1, 32, =) GLOBAL_VAR(rep0);
@@ -1171,7 +1180,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
       }
       if (LT_SMALL(GLOBAL_VAR(tempBufSize), RC_INIT_SIZE)) {
        on_needs_more_input:
-        if (NE(LOCAL_VAR(decodeLimit), GLOBAL_VAR(readCur))) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
+        if (NE(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
         return SZ_ERROR_NEEDS_MORE_INPUT;
       }
       if (NE(GET_ARY8(readBuf, READBUF_SIZE), 0)) {
@@ -1185,8 +1194,8 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
 
     SET_LOCALB(checkEndMarkNow, 695, =, FALSE) ;
     if (GE_SMALL(GLOBAL_VAR(dicPos), GLOBAL_VAR(dicBufSize))) {
-      if (EQ(GLOBAL_VAR(remainLen), 0) && EQ(GLOBAL_VAR(code), 0)) {
-        if (NE(LOCAL_VAR(decodeLimit), GLOBAL_VAR(readCur))) { return SZ_ERROR_CHUNK_NOT_CONSUMED; }
+      if (EQ(GLOBAL_VAR(remainLen), 0) && EQ0(GLOBAL_VAR(code))) {
+        if (NE(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) { return SZ_ERROR_CHUNK_NOT_CONSUMED; }
         return SZ_OK /* MAYBE_FINISHED_WITHOUT_MARK */;
       }
       if (NE(GLOBAL_VAR(remainLen), 0)) {
@@ -1226,7 +1235,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
         SET_LOCALB(bufLimit, 703, =, LOCAL_VAR(decodeLimit) - LZMA_REQUIRED_INPUT_MAX) ;
       }
       SET_GLOBAL(bufCur, 86, =) GLOBAL_VAR(readCur);
-      if (NE(LzmaDec_DecodeReal2(GLOBAL_VAR(dicBufSize), LOCAL_VAR(bufLimit)), 0)) {
+      if (NE_SMALL(LzmaDec_DecodeReal2(GLOBAL_VAR(dicBufSize), LOCAL_VAR(bufLimit)), SZ_OK)) {
         return SZ_ERROR_DATA;
       }
       SET_GLOBAL(readCur, 88, =) GLOBAL_VAR(bufCur);
@@ -1249,7 +1258,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
       }
       /* This line can be triggered by passing LOCAL_VAR(ddSrcLen)=1 to LzmaDec_DecodeToDic. */
       SET_GLOBAL(bufCur, 94, =) READBUF_SIZE;  /* tempBuf. */
-      if (NE(LzmaDec_DecodeReal2(0, READBUF_SIZE), 0)) {
+      if (NE_SMALL(LzmaDec_DecodeReal2(0, READBUF_SIZE), SZ_OK)) {
         return SZ_ERROR_DATA;
       }
       SET_LOCALB(lookAhead, 707, -=, LOCAL_VAR(ddRem) - (GLOBAL_VAR(bufCur) - READBUF_SIZE)) ;
@@ -1257,7 +1266,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
       SET_GLOBAL(tempBufSize, 98, =) 0;
     }
   }
-  if (NE(GLOBAL_VAR(code), 0)) { return SZ_ERROR_DATA; }
+  if (NE0(GLOBAL_VAR(code))) { return SZ_ERROR_DATA; }
   return SZ_ERROR_FINISHED_WITH_MARK;
 ENDFUNC
 
@@ -1377,7 +1386,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
       EQ_SMALL(GET_ARY8(readBuf, 6), 0)) {  /* .xz: "\xFD""7zXZ\0" */
   } ELSE_IF (LE_SMALL(GET_ARY8(readBuf, GLOBAL_VAR(readCur)), 225) && EQ_SMALL(GET_ARY8(readBuf, GLOBAL_VAR(readCur) + 13), 0) &&  /* .lzma */
         /* High 4 bytes of uncompressed size. */
-        (EQ_SMALL((LOCAL_VAR(bhf) = GetLE4(GLOBAL_VAR(readCur) + 9)), 0) || EQ(LOCAL_VAR(bhf), 0xffffffff)) &&
+        (EQ_SMALL((LOCAL_VAR(bhf) = GetLE4(GLOBAL_VAR(readCur) + 9)), 0) || EQ0(~LOCAL_VAR(bhf))) &&
         GE_SMALL((SET_GLOBAL(dicSize, 130, =) GetLE4(GLOBAL_VAR(readCur) + 1)), LZMA_DIC_MIN) &&
         LE(GLOBAL_VAR(dicSize), DIC_ARRAY_SIZE)) {
     /* Based on https://svn.python.org/projects/external/xz-5.0.3/doc/lzma-file-format.txt */
@@ -1393,7 +1402,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
     if (NE_SMALL((LOCAL_VAR(dxRes) = InitProp(GET_ARY8(readBuf, GLOBAL_VAR(readCur)))), SZ_OK)) {
       return LOCAL_VAR(dxRes);
     }
-    if (EQ_SMALL(LOCAL_VAR(bhf), 0)) {
+    if (EQ(LOCAL_VAR(bhf), 0)) {
       SET_GLOBAL(dicBufSize, 132, =) LOCAL_VAR(readBufUS) = GetLE4(GLOBAL_VAR(readCur) + 5);
       if (GT(LOCAL_VAR(readBufUS), DIC_ARRAY_SIZE)) { return SZ_ERROR_MEM; }
     } else {

@@ -53,10 +53,14 @@ if ((1 << 31) < 0) {  # 32-bit Perl.
   s@\bLE\[([^\]]+)\],\[([^\]]+)\]@!lt32($2, $1)@g;
   s@\bGT\[([^\]]+)\],\[([^\]]+)\]@lt32($2, $1)@g;
   s@\bGE\[([^\]]+)\],\[([^\]]+)\]@!lt32($1, $2)@g;
+  s@\bEQ0\[([^\]]+)\]@!($1)@g;
+  s@\bNE0\[([^\]]+)\]@(($1) != 0)@g;
 } else {  # At least 33-bit Perl, typically 64-bit.
   my %cmph = qw(LT < LE <= GT > GE >=);
   # This is much faster than lt32 above.
   s@\b(LT|LE|GT|GE)\[([^\]]+)\],\[([^\]]+)\]@((($2) & 0xffffffff) $cmph{$1} (($3) & 0xffffffff))@g;
+  s@\bEQ0\[([^\]]+)\]@!(($1) & 0xffffffff)@g;
+  s@\bNE0\[([^\]]+)\]@((($1) & 0xffffffff) != 0)@g;
 }
 eval; die $@ if $@ }
 
