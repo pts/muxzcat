@@ -19,6 +19,12 @@
  * Most users should use muxzcat.c instead, because that one runs faster.
  */
 
+#ifdef CONFIG_DEBUG_VARS
+#ifndef CONFIG_DEBUG
+#define CONFIG_DEBUG 1
+#endif
+#endif
+
 #ifdef CONFIG_LANG_PERL
 START_PREPROCESSED
 #else
@@ -272,6 +278,7 @@ sub lt32($$) {
 #include <stdio.h>
 #define DEBUGF(...) fprintf(stderr, "DEBUG: " __VA_ARGS__)
 #define ASSERT(condition) assert(condition)
+#ifdef CONFIG_DEBUG_VARS
 static void DumpVars(void);
 /* ++ and -- operators for global and local variables could be instrumented
  * for completeness here.
@@ -284,6 +291,7 @@ static void DumpVars(void);
 #define SET_ARY16(a, idx, value) ({ const UInt32 idx2 = idx; global.a##16[idx2] = value; DEBUGF("SET_ARY16 %s[%d]=%u\n", #a, (int)idx2, (int)(global.a##16[idx2])); global.a##16[idx2]; })
 #undef  SET_ARY8
 #define SET_ARY8(a, idx, value) ({ const UInt32 idx2 = idx; global.a##8[idx2] = value; DEBUGF("SET_ARY8 %s[%d]=%u\n", #a, (int)idx2, (int)(global.a##8[idx2])); global.a##8[idx2];  })
+#endif  /* CONFIG_DEBUG_VARS */
 #else
 #define DEBUGF(...)
 /* Just check that it compiles. */
@@ -295,6 +303,7 @@ static void DumpVars(void);
 #ifdef CONFIG_DEBUG
 #define DEBUGF(...) printf(STDERR "DEBUG: " . __VA_ARGS__)
 #define ASSERT(condition) die "ASSERT: " . #condition if !(condition)
+#ifdef CONFIG_DEBUG_VARS
 /* ${...} produced by SET_ARY16 and SET_ARY16. */
 BEGIN { eval { require warnings; unimport warnings qw(void) }; }
 sub DumpVars();
@@ -306,6 +315,7 @@ sub DumpVars();
 #define SET_ARY16(a, idx, value) ${ my $setidx = TRUNCATE_TO_32BIT(idx); vec($##a, $setidx, 16) = value; DEBUGF("SET_ARY16 %s[%d]=%u\n", #a, $setidx, vec($##a, $setidx, 16)); \vec($##a, $setidx, 16) }
 #undef  SET_ARY8
 #define SET_ARY8(a, idx, value) ${ my $setidx = TRUNCATE_TO_32BIT(idx); vec($##a, $setidx, 8) = value; DEBUGF("SET_ARY8 %s[%d]=%u\n", #a, $setidx, vec($##a, $setidx, 8)); \vec($##a, $setidx, 8) }
+#endif  /* CONFIG_DEBUG_VARS */
 #else
 #define DEBUGF(...)
 /* Just check that it compiles. */
@@ -523,7 +533,7 @@ GLOBALS
   GLOBAL_ARY8(dic, DIC_ARRAY_SIZE / 10);
 ENDGLOBALS
 
-#ifdef CONFIG_DEBUG
+#ifdef CONFIG_DEBUG_VARS
 FUNC_ARG0(void, DumpVars)
   DEBUGF("GLOBALS bufCur=%u dicSize=%u range=%u code=%u dicPos=%u dicBufSize=%u processedPos=%u checkDicSize=%u state=%u rep0=%u rep1=%u rep2=%u rep3=%u remainLen=%u tempBufSize=%u readCur=%u readEnd=%u needFlush=%u needInitLzma=%u needInitDic=%u needInitState=%u needInitProp=%u lc=%u lp=%u pb=%u\n",
       ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(bufCur))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(dicSize))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(range))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(code))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(dicPos))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(dicBufSize))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(processedPos))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(checkDicSize))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(state))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(rep0))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(rep1))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(rep2))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(rep3))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(remainLen))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(tempBufSize))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(readCur))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(readEnd))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(needFlush))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(needInitLzma))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(needInitDic))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(needInitState))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(needInitProp))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(lc))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(lp))), ENSURE_32BIT(TRUNCATE_TO_32BIT(GLOBAL_VAR(pb))));

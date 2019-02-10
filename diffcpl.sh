@@ -27,7 +27,7 @@ function die() {
 
 set -x  # Echo.
 
-gcc -DCONFIG_DEBUG -ansi -s -Os -W -Wall -Wextra -Werror -o muxzcat muaxzcat.c || die "COMPILE"
+gcc -DCONFIG_DEBUG_VARS -ansi -s -Os -W -Wall -Wextra -Werror -o muxzcat muaxzcat.c || die "COMPILE"
 ./muxzcat <xa8.tar.xz >xa8.tar.dec 2>/dev/null || die "ERROR:$?"  # This is very slow (several minutes).
 cmp xa.tar xa8.tar.dec || die "CMP"
 TRANSFORM_PL='
@@ -37,7 +37,7 @@ TRANSFORM_PL='
     END { print @buf }'
 ./muxzcat <xa8.tar.xz 2>&1 >xa8.tar.dec | perl -wne "$TRANSFORM_PL" >cvars.out || die "DUMP"
 : less cvars.out
-./genpl.sh -DCONFIG_DEBUG || die "GENPLSH"
+./genpl.sh -DCONFIG_DEBUG_VARS || die "GENPLSH"
 perl ./muaxzcat.pl <xa8.tar.xz 2>&1 >xa8.tar.dec | perl -wne "$TRANSFORM_PL" >plvars.out || die "DUMP"
 : less plvars.out
 : diff -U10 cvars.out plvars.out
