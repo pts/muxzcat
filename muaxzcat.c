@@ -181,15 +181,9 @@ struct IntegerTypeAsserts {
  * SET_LOCALB(distance, 251, =, (LOCAL_VAR(distance) + LOCAL_VAR(distance)));
  * SET_LOCALB(distance, 257, =, (LOCAL_VAR(distance) + LOCAL_VAR(distance)) + 1);
   */
-/* !! Instrument ++ and -- operators. */
 /* !! Optimized masking of the index of GET_ARY8, GET_ARY16, SET_ARY8, SET_ARY16? */
 /* !! Optimized masking of EQ(x, 0) and NE(x, 0), GT(x, 0) etc. */
-/* !! Inline shr32 with constant values. */
-/* !! Use SHR_SMALL more instead of SHR1, SHR5, SHR11, wherever it works.
- * SHR1(LOCAL_VAR(distance));  Is distance small?
- * SHR1(LOCAL_VAR(rangeLocal));  Is rangeLocal small?
- * SHR11(LOCAL_VAR(rangeLocal))
- */
+/* !! TRUNCATE_TO_16BIT not needed in: SET_ARY16(probs, LOCAL_VAR(probIdx), TRUNCATE_TO_16BIT(LOCAL_VAR(ttt) + (SHR_SMALL(kBitModelTotal - LOCAL_VAR(ttt), 5)))) */
 /* !! Use comparison *_SMALL more, wherever it works. */
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
 #define IS_SMALL(x) (((x) & ~0x7fffffff) == 0)
@@ -738,9 +732,10 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
             } while (LT_SMALL(LOCAL_VAR(distance), (1 << 6)));
             SET_LOCALB(distance, 259, -=, (1 << 6)) ;
           }
+          ASSERT(IS_SMALL(LOCAL_VAR(distance)) && LT(LOCAL_VAR(distance), 64));
           if (GE_SMALL(LOCAL_VAR(distance), kStartPosModelIndex)) {
             LOCAL_INIT(const UInt32, posSlot, LOCAL_VAR(distance));
-            LOCAL_INIT(UInt32, numDirectBits, SHR1(LOCAL_VAR(distance)) - 1);
+            LOCAL_INIT(UInt32, numDirectBits, SHR_SMALL(LOCAL_VAR(distance), 1) - 1);
             SET_LOCALB(distance, 261, =, (2 | (LOCAL_VAR(distance) & 1))) ;
             if (LT(LOCAL_VAR(posSlot), kEndPosModelIndex)) {
               SET_LOCALB(distance, 263, <<=, LOCAL_VAR(numDirectBits)) ;
@@ -757,6 +752,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, dicLimit, const UInt32, bufLi
               SET_LOCALB(numDirectBits, 289, -=, kNumAlignBits) ;
               do {
                 if (LT(LOCAL_VAR(rangeLocal), kTopValue)) { SET_LOCALB(rangeLocal, 291, <<=, 8) ; SET_LOCALB(codeLocal, 293, =, (LOCAL_VAR(codeLocal) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; }
+                /* Here LOCAL_VAR(rangeLocal) can be non-small, so we can't use SHR_SMALL instead of SHR1. */
                 SET_LOCALB(rangeLocal, 2951, =, SHR1(LOCAL_VAR(rangeLocal)));
                 if ((LOCAL_VAR(codeLocal) - LOCAL_VAR(rangeLocal)) & 0x80000000) {
                   SET_LOCALB(distance, 297, <<=, 1);
