@@ -278,6 +278,8 @@ sub lt32($$) {
 #include <stdio.h>
 #define DEBUGF(...) fprintf(stderr, "DEBUG: " __VA_ARGS__)
 #define ASSERT(condition) assert(condition)
+#undef  SHR_SMALL
+#define SHR_SMALL(x, y) ({ const UInt32 x2 = (x); ASSERT((x2 & ~0x7fffffff) == 0); x2 >> (y); })
 #ifdef CONFIG_DEBUG_VARS
 static void DumpVars(void);
 /* ++ and -- operators for global and local variables could be instrumented
