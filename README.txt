@@ -1,7 +1,7 @@
 muxzcat: tiny .xz and .lzma decompression filter
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 muxzcat is decompression filter for .xz and .lzma compressed files
-implemented in C (also works in C++) and Perl 5. muxzcat.c is platform
+implemented in C (also works in C++), Perl 5 and Java. muxzcat.c is platform
 independent, but it's size-optimized for Linux i386. muxzcat.c is
 self-contained: it uses only the standard C library.
 
@@ -29,6 +29,15 @@ Here is how to use the Perl implementation:
 
   It ignores command-line flags, so you can specify e.g. `-cd'.
 
+Here is how to use the Java implementation:
+
+  $ java -jar muxzcatj11.jar <input.xz >output.bin
+
+  Error is indicated as a non-zero exit status and an exception report on
+  stderr.
+
+  It ignores command-line flags, so you can specify e.g. `-cd'.
+
 muzxcat is a drop-in replacement for the following commands:
 
   $ xz -cd              <input.xz >output.bin
@@ -50,7 +59,7 @@ muzxcat is a drop-in replacement for the following commands:
 
 muxzcat is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
 
-Limitations of muxzcat:
+Limitations of muxzcat.c and muxzcat.pl:
 
 * It keeps uncompressed data in memory, and it needs 130 KiB of
   memory on top of it: readBuf is about 64 KiB, CLzmaDec.prob is about
@@ -66,6 +75,15 @@ Limitations of muxzcat:
   (This is not a problem in practice, because even the ouput of `xz -9e'
   uses only 64 MiB dictionary size.)
 
+Limitations of muxzcatj11.jar:
+
+* It needs JRE 1.1 (Java 1.1) released on 1997-02. (Also works with any more
+  recent Java.)
+* It doesn't work with avian-0.6 (it uses some classes not available there).
+* It doesn't support decompressing .lzma streams.
+* Its memory usage is constant + 100 KiB + dictionary size, so it doesn't
+  keep the entire uncompressed data in memory.
+
 Based on decompression speed measurements of linux-4.20.5.tar.xz,
 size-optimized muxzcat.c (on Linux i386) is about 7% slower than
 speed-optimized xzcat (on Linux amd64).
@@ -73,7 +91,9 @@ speed-optimized xzcat (on Linux amd64).
 Based on decompression speed measurements of a ~2 MiB .tar.xz file and of
 the ~100 MiB linux-4.20.5.tar.xz, size-optimized muxzcat.c (on Linux i386)
 is about 285 times faster than muxzcat.pl (on perl compiled for Linux
-amd64). Part of the slowness is because LZMA decompression needs 32-bit
+amd64). The C and Perl implementations are derived from the same codebase
+(muxzcat.c, itself derived from the sources files in 7z922.tar.bz2).
+Part of the slowness is because LZMA decompression needs 32-bit
 unsigned arithmetic, and perl compiled for Linux amd64 can do 64-bit signed
 arithmetic, so the inputs of some operators (e.g. >>, <, ==) need to be
 bit-masked to get correct results. (Fortunately % and / are not used in LZMA
@@ -87,6 +107,12 @@ https://ptspts.blogspot.com/2019/02/speed-of-in-memory-algorithms-in.html
 
 muxzcat.pl is compatible with recent versions of Perl 5 (e.g. Perl 5.24) and
 very old versions of Perl 5 (e.g. Perl 5.004_04, released on 1997-10-15).
+
+Based on decompression speed measurements of the ~100 MiB
+linux-4.20.5.tar.xz, size-optimized muxzcat.c (on Linux i386) is about 1.347
+times faster than muxzcatj11.jar (with java 1.8 compiled for Linux amd64).
+The C and Java implementations are completely different, they don't share
+code.
 
 If you need a tiny decompressor for .gz, .zip and Flate compressed
 files implemented in C, see https://github.com/pts/pts-zcat .
