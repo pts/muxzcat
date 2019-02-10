@@ -30,6 +30,10 @@ START_PREPROCESSED
 #else
 #ifdef __TINYC__  /* tcc https://bellard.org/tcc/ , pts-tcc https://github.com/pts/pts-tcc */
 
+#ifdef CONFIG_DEBUG
+#error __TINYC__ does not support CONFIG_DEBUG
+#endif
+
 #undef  CONFIG_LANG_C
 #define CONFIG_LANG_C 1
 
@@ -49,6 +53,10 @@ ssize_t write(int fd, const void *buf, size_t count);
 #undef  CONFIG_LANG_C
 #define CONFIG_LANG_C 1
 #include <xtiny.h>
+
+#ifdef CONFIG_DEBUG
+#error __XTINY__ does not support CONFIG_DEBUG
+#endif
 
 #else  /* Not __XTINY__. */
 
