@@ -713,7 +713,7 @@ public static void EnsureDicSize() {
     newCapacity = DIC_ARRAY_SIZE;
   }
   if (LT_SMALL(dic8.length, newCapacity)) {
-    final byte newDic[] = new byte[newCapacity];
+    /*final*/ byte newDic[] = new byte[newCapacity];
     System.arraycopy(dic8, 0, newDic, 0, GLOBAL_VAR(dicPos));
     dic8 = newDic;
   }
