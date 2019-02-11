@@ -41,7 +41,7 @@ compilation or downloading of muxzcat.class, run with any of:
 
 Here is how to use the Java-with-lib implementation:
 
-  $ java -jar muxzcatj11.jar <input.xz >output.bin
+  $ java -jar muxzcatj12.jar <input.xz >output.bin
 
   Error is indicated as a non-zero exit status and an exception report on
   stderr.
@@ -86,7 +86,7 @@ Limitations of muxzcat.c, muxzcat.pl and muxzcat.java:
   uses only 64 MiB dictionary size.)
 * muxzcat.java doesn't work with Avian 0.6 (OutOfMemoryError).
 
-Limitations of Java-with-lib muxzcatj11.jar:
+Limitations of Java-with-lib muxzcatj12.jar:
 
 * It doesn't work with Avian 0.6 (it uses some classes not available there).
 * It doesn't support decompressing .lzma streams.
@@ -119,12 +119,13 @@ very old versions of Perl 5 (e.g. Perl 5.004_04, released on 1997-10-15).
 
 Based on decompression speed measurements of the ~100 MiB
 linux-4.20.5.tar.xz, size-optimized muxzcat.c (on Linux i386) is about 1.347
-times faster than muxzcatj11.jar (with java 1.8 compiled for Linux amd64).
+times faster than muxzcatj12.jar (with java 1.8 compiled for Linux amd64).
 The C and Java implementations are completely different, they don't share
 code.
 
-muxzcatj11.jar needs JRE 1.1 (Java 1.1) released on 1997-02. It Also works
-with any more recent Java, e.g. Java 8.
+muxzcatj12.jar needs Java 1.2 (released on 1998-12) or any more recent Java,
+e.g. Java 8. Versions earlier than 1.2 don't work, because they lack
+java.util.Arrays.{equals,fill}.
 
 Based on decompression speed measurements of the ~100 MiB
 linux-4.20.5.tar.xz, size-optimized muxzcat.c (on Linux i386) is about 1.439
@@ -132,8 +133,8 @@ times faster than muxzcat.java (with java 1.8 compiled for Linux amd64).
 The C and Java implementations are derived from the same codebase
 (muxzcat.c, itself derived from the sources files in 7z922.tar.bz2).
 
-muzxcat.java needs JRE 1.1 (Java 1.1) released on 1997-02. It Also works
-with any more recent Java, e.g. Java 8.
+muzxcat.java needs Java 1.0.2 (released on 1995-09-16) or any more recent
+Java, e.g. Java 8.
 
 If you need a tiny decompressor for .gz, .zip and Flate compressed
 files implemented in C, see https://github.com/pts/pts-zcat .
