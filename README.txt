@@ -89,7 +89,6 @@ Limitations of muxzcat.c, muxzcat.pl and muxzcat.java:
 Limitations of Java-with-lib muxzcatj12.jar:
 
 * It doesn't work with Avian 0.6 (it uses some classes not available there).
-* It doesn't support decompressing .lzma streams.
 * Its memory usage is constant + 100 KiB + dictionary size, so it doesn't
   keep the entire uncompressed data in memory.
 

@@ -34,12 +34,6 @@
  */
 /*#define LzmaProps_GetNumProbs(p) TRUNCATE_TO_32BIT(LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp))) */
 public class muxzcat {
-public static final boolean Lt32(int x, int y) {
-  return (x < 0 ? y >= 0 : y < 0) ? y < 0 : x < y;
-}
-public static final boolean Ltx32(int x, int y) {
-  return x < y && x >= 0;
-}
 
 
 
@@ -52,7 +46,7 @@ public static void EnsureDicSize() {
     newCapacity = 1610612736;
   }
   if (((dic8.length) < (newCapacity))) {
-    final byte newDic[] = new byte[newCapacity];
+    /*final*/ byte newDic[] = new byte[newCapacity];
     System.arraycopy(dic8, 0, newDic, 0, GLOBAL_dicPos);
     dic8 = newDic;
   }
@@ -152,8 +146,8 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
       int LOCAL_drPosState = GLOBAL_processedPos & LOCAL_pbMask;
 
       LOCAL_drProbIdx = 0 + (GLOBAL_state << (4)) + LOCAL_drPosState ;
-      LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
-      if (Lt32(GLOBAL_code, LOCAL_drBound)) {
+      LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
+      if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) {
         int LOCAL_drSymbol;
         GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx] = (short)(LOCAL_drTtt + (((2048 - LOCAL_drTtt) >> (5))));
         LOCAL_drProbIdx = 1846 ;
@@ -164,7 +158,7 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
           GLOBAL_state -= (((GLOBAL_state) < (4))) ? GLOBAL_state : 3;
           LOCAL_drSymbol = 1 ;
           do {
-            LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drSymbol] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = (((GLOBAL_range) >>> 11)) * LOCAL_drTtt ; if (Lt32(GLOBAL_code, LOCAL_drBound)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drSymbol] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drSymbol = (LOCAL_drSymbol + LOCAL_drSymbol); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drSymbol] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drSymbol = (LOCAL_drSymbol + LOCAL_drSymbol) + 1; }
+            LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drSymbol] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = (((GLOBAL_range) >>> 11)) * LOCAL_drTtt ; if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drSymbol] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drSymbol = (LOCAL_drSymbol + LOCAL_drSymbol); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drSymbol] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drSymbol = (LOCAL_drSymbol + LOCAL_drSymbol) + 1; }
           } while (((LOCAL_drSymbol) < (0x100)));
         } else {
           int LOCAL_drMatchByte = (dic8[(GLOBAL_dicPos - GLOBAL_rep0) + (((GLOBAL_dicPos) < (GLOBAL_rep0)) ? GLOBAL_dicBufSize : 0)] & 0xff);
@@ -177,7 +171,7 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
             LOCAL_drMatchByte <<= 1 ;
             LOCAL_drBit = (LOCAL_drMatchByte & LOCAL_drMatchMask) ;
             LOCAL_drProbLitIdx = LOCAL_drProbIdx + LOCAL_drMatchMask + LOCAL_drBit + LOCAL_drSymbol ;
-            LOCAL_drTtt = (probs16[LOCAL_drProbLitIdx] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (Lt32(GLOBAL_code, LOCAL_drBound)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbLitIdx] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drSymbol = (LOCAL_drSymbol + LOCAL_drSymbol) ; LOCAL_drMatchMask &= ~LOCAL_drBit ; } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbLitIdx] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drSymbol = (LOCAL_drSymbol + LOCAL_drSymbol) + 1 ; LOCAL_drMatchMask &= LOCAL_drBit ; }
+            LOCAL_drTtt = (probs16[LOCAL_drProbLitIdx] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbLitIdx] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drSymbol = (LOCAL_drSymbol + LOCAL_drSymbol) ; LOCAL_drMatchMask &= ~LOCAL_drBit ; } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbLitIdx] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drSymbol = (LOCAL_drSymbol + LOCAL_drSymbol) + 1 ; LOCAL_drMatchMask &= LOCAL_drBit ; }
           } while (((LOCAL_drSymbol) < (0x100)));
         }
         dic8[GLOBAL_dicPos++] = (byte)(LOCAL_drSymbol);
@@ -186,8 +180,8 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
       } else {
         GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5)));
         LOCAL_drProbIdx = 192 + GLOBAL_state ;
-        LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
-        if (Lt32(GLOBAL_code, LOCAL_drBound)) {
+        LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
+        if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) {
           GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5)));
           GLOBAL_state += 12;
           LOCAL_drProbIdx = 818 ;
@@ -197,12 +191,12 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
             return 1;
           }
           LOCAL_drProbIdx = 204 + GLOBAL_state ;
-          LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
-          if (Lt32(GLOBAL_code, LOCAL_drBound)) {
+          LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
+          if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) {
             GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5)));
             LOCAL_drProbIdx = 240 + (GLOBAL_state << (4)) + LOCAL_drPosState ;
-            LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
-            if (Lt32(GLOBAL_code, LOCAL_drBound)) {
+            LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
+            if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) {
               GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5)));
               dic8[GLOBAL_dicPos] = (byte)((dic8[(GLOBAL_dicPos - GLOBAL_rep0) + (((GLOBAL_dicPos) < (GLOBAL_rep0)) ? GLOBAL_dicBufSize : 0)] & 0xff));
               GLOBAL_dicPos++;
@@ -214,15 +208,15 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
           } else {
             GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5)));
             LOCAL_drProbIdx = 216 + GLOBAL_state ;
-            LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
-            if (Lt32(GLOBAL_code, LOCAL_drBound)) {
+            LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
+            if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) {
               GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5)));
               LOCAL_distance = GLOBAL_rep1 ;
             } else {
               GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5)));
               LOCAL_drProbIdx = 228 + GLOBAL_state ;
-              LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
-              if (Lt32(GLOBAL_code, LOCAL_drBound)) {
+              LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
+              if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) {
                 GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5)));
                 LOCAL_distance = GLOBAL_rep2 ;
               } else {
@@ -242,8 +236,8 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
           int LOCAL_drLimitSub;
           int LOCAL_drOffset;
           int LOCAL_drProbLenIdx = LOCAL_drProbIdx + 0;
-          LOCAL_drTtt = (probs16[LOCAL_drProbLenIdx] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
-          if (Lt32(GLOBAL_code, LOCAL_drBound)) {
+          LOCAL_drTtt = (probs16[LOCAL_drProbLenIdx] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
+          if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) {
             GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbLenIdx] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5)));
             LOCAL_drProbLenIdx = LOCAL_drProbIdx + 2 + (LOCAL_drPosState << (3)) ;
             LOCAL_drOffset = 0 ;
@@ -251,8 +245,8 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
           } else {
             GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbLenIdx] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5)));
             LOCAL_drProbLenIdx = LOCAL_drProbIdx + 1 ;
-            LOCAL_drTtt = (probs16[LOCAL_drProbLenIdx] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
-            if (Lt32(GLOBAL_code, LOCAL_drBound)) {
+            LOCAL_drTtt = (probs16[LOCAL_drProbLenIdx] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
+            if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) {
               GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbLenIdx] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5)));
               LOCAL_drProbLenIdx = LOCAL_drProbIdx + 130 + (LOCAL_drPosState << (3)) ;
               LOCAL_drOffset = 8 ;
@@ -267,7 +261,7 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
           {
             GLOBAL_remainLen = (1) ;
             do {
-              { LOCAL_drTtt = (probs16[(LOCAL_drProbLenIdx + GLOBAL_remainLen)] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (Lt32(GLOBAL_code, LOCAL_drBound)) { GLOBAL_range = (LOCAL_drBound) ; probs16[(LOCAL_drProbLenIdx + GLOBAL_remainLen)] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); GLOBAL_remainLen = ((GLOBAL_remainLen + GLOBAL_remainLen)); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[(LOCAL_drProbLenIdx + GLOBAL_remainLen)] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); GLOBAL_remainLen = ((GLOBAL_remainLen + GLOBAL_remainLen) + 1); } }
+              { LOCAL_drTtt = (probs16[(LOCAL_drProbLenIdx + GLOBAL_remainLen)] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) { GLOBAL_range = (LOCAL_drBound) ; probs16[(LOCAL_drProbLenIdx + GLOBAL_remainLen)] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); GLOBAL_remainLen = ((GLOBAL_remainLen + GLOBAL_remainLen)); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[(LOCAL_drProbLenIdx + GLOBAL_remainLen)] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); GLOBAL_remainLen = ((GLOBAL_remainLen + GLOBAL_remainLen) + 1); } }
             } while (((GLOBAL_remainLen) < (LOCAL_drLimitSub)));
             GLOBAL_remainLen -= (LOCAL_drLimitSub) ;
           }
@@ -279,7 +273,7 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
           {
             LOCAL_distance = 1 ;
             do {
-              { LOCAL_drTtt = (probs16[(LOCAL_drProbIdx + LOCAL_distance)] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (Lt32(GLOBAL_code, LOCAL_drBound)) { GLOBAL_range = (LOCAL_drBound) ; probs16[(LOCAL_drProbIdx + LOCAL_distance)] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_distance = (LOCAL_distance + LOCAL_distance); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[(LOCAL_drProbIdx + LOCAL_distance)] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_distance = (LOCAL_distance + LOCAL_distance) + 1; } }
+              { LOCAL_drTtt = (probs16[(LOCAL_drProbIdx + LOCAL_distance)] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) { GLOBAL_range = (LOCAL_drBound) ; probs16[(LOCAL_drProbIdx + LOCAL_distance)] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_distance = (LOCAL_distance + LOCAL_distance); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[(LOCAL_drProbIdx + LOCAL_distance)] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_distance = (LOCAL_distance + LOCAL_distance) + 1; } }
             } while (((LOCAL_distance) < ((1 << 6))));
             LOCAL_distance -= (1 << 6) ;
           }
@@ -294,14 +288,14 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
                 int LOCAL_mask = 1;
                 LOCAL_drI = 1;
                 do {
-                  LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drI] & 0xffff) ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (Lt32(GLOBAL_code, LOCAL_drBound)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI) + 1 ; LOCAL_distance |= LOCAL_mask ; }
+                  LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drI] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI) + 1 ; LOCAL_distance |= LOCAL_mask ; }
                   LOCAL_mask <<= 1 ;
                 } while (((--LOCAL_drDirectBitCount) != (0)));
               }
             } else {
               LOCAL_drDirectBitCount -= 4 ;
               do {
-                if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; }
+                if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; }
                 /* Here GLOBAL_VAR(range) can be non-small, so we can't use SHR_SMALLX instead of SHR1. */
                 GLOBAL_range = (((GLOBAL_range) >>> 1));
                 if ((((GLOBAL_code - GLOBAL_range) & 0x80000000) != 0)) {
@@ -316,10 +310,10 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
               LOCAL_distance <<= 4 ;
               {
                 LOCAL_drI = 1;
-                LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drI] & 0xffff); ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (Lt32(GLOBAL_code, LOCAL_drBound)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI) + 1 ; LOCAL_distance |= 1 ; }
-                LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drI] & 0xffff); ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (Lt32(GLOBAL_code, LOCAL_drBound)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI) + 1 ; LOCAL_distance |= 2 ; }
-                LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drI] & 0xffff); ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (Lt32(GLOBAL_code, LOCAL_drBound)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI) + 1 ; LOCAL_distance |= 4 ; }
-                LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drI] & 0xffff); ; if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (Lt32(GLOBAL_code, LOCAL_drBound)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI) + 1 ; LOCAL_distance |= 8 ; }
+                LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drI] & 0xffff); ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI) + 1 ; LOCAL_distance |= 1 ; }
+                LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drI] & 0xffff); ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI) + 1 ; LOCAL_distance |= 2 ; }
+                LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drI] & 0xffff); ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI) + 1 ; LOCAL_distance |= 4 ; }
+                LOCAL_drTtt = (probs16[LOCAL_drProbIdx + LOCAL_drI] & 0xffff); ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ; if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) { GLOBAL_range = (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt + ((2048 - LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI); } else { GLOBAL_range -= (LOCAL_drBound) ; GLOBAL_code -= (LOCAL_drBound) ; probs16[LOCAL_drProbIdx + LOCAL_drI] = (short)(LOCAL_drTtt - ((LOCAL_drTtt) >> (5))); LOCAL_drI = (LOCAL_drI + LOCAL_drI) + 1 ; LOCAL_distance |= 8 ; }
               }
               if (((~LOCAL_distance) == 0)) {
                 GLOBAL_remainLen += (274) ;
@@ -374,7 +368,7 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
     
     } while (((GLOBAL_dicPos) < (LOCAL_drDicLimit2)) && ((GLOBAL_bufCur) < (LOCAL_drBufLimit)));
    
-    if (Ltx32(GLOBAL_range, 16777216)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; }
+    if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; }
     if (((GLOBAL_processedPos) >= (GLOBAL_dicSize))) {
       GLOBAL_checkDicSize = GLOBAL_dicSize;
     }
@@ -397,8 +391,8 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
   int LOCAL_tdTtt;
   int LOCAL_tdPosState = (GLOBAL_processedPos) & ((1 << GLOBAL_pb) - 1);
   LOCAL_tdProbIdx = 0 + (LOCAL_tdState << (4)) + LOCAL_tdPosState ;
-  LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
-  if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) {
+  LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
+  if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) {
     int LOCAL_tdSymbol = 1;
     LOCAL_tdRange = LOCAL_tdBound ;
     LOCAL_tdProbIdx = 1846 ;
@@ -408,7 +402,7 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
 
     if (((LOCAL_tdState) < (7))) {
       do {
-        LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx + LOCAL_tdSymbol] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdSymbol = (LOCAL_tdSymbol + LOCAL_tdSymbol); } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdSymbol = (LOCAL_tdSymbol + LOCAL_tdSymbol) + 1; }
+        LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx + LOCAL_tdSymbol] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdSymbol = (LOCAL_tdSymbol + LOCAL_tdSymbol); } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdSymbol = (LOCAL_tdSymbol + LOCAL_tdSymbol) + 1; }
       } while (((LOCAL_tdSymbol) < (0x100)));
     } else {
       int LOCAL_tdMatchByte = (dic8[GLOBAL_dicPos - GLOBAL_rep0 + (((GLOBAL_dicPos) < (GLOBAL_rep0)) ? GLOBAL_dicBufSize : 0)] & 0xff);
@@ -419,7 +413,7 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
         LOCAL_tdMatchByte <<= 1 ;
         LOCAL_tdBit = (LOCAL_tdMatchByte & LOCAL_tdMatchMask) ;
         LOCAL_tdProbLitIdx = LOCAL_tdProbIdx + LOCAL_tdMatchMask + LOCAL_tdBit + LOCAL_tdSymbol ;
-        LOCAL_tdTtt = (probs16[LOCAL_tdProbLitIdx] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdSymbol = (LOCAL_tdSymbol + LOCAL_tdSymbol) ; LOCAL_tdMatchMask &= ~LOCAL_tdBit ; } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdSymbol = (LOCAL_tdSymbol + LOCAL_tdSymbol) + 1 ; LOCAL_tdMatchMask &= LOCAL_tdBit ; }
+        LOCAL_tdTtt = (probs16[LOCAL_tdProbLitIdx] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdSymbol = (LOCAL_tdSymbol + LOCAL_tdSymbol) ; LOCAL_tdMatchMask &= ~LOCAL_tdBit ; } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdSymbol = (LOCAL_tdSymbol + LOCAL_tdSymbol) + 1 ; LOCAL_tdMatchMask &= LOCAL_tdBit ; }
       } while (((LOCAL_tdSymbol) < (0x100)));
     }
     LOCAL_tdRes = 1 ;
@@ -427,8 +421,8 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
     int LOCAL_tdLen;
     LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ;
     LOCAL_tdProbIdx = 192 + LOCAL_tdState ;
-    LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
-    if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) {
+    LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
+    if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) {
       LOCAL_tdRange = LOCAL_tdBound ;
       LOCAL_tdState = 0 ;
       LOCAL_tdProbIdx = 818 ;
@@ -437,14 +431,14 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
       LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ;
       LOCAL_tdRes = 3 ;
       LOCAL_tdProbIdx = 204 + LOCAL_tdState ;
-      LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
-      if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) {
+      LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
+      if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) {
         LOCAL_tdRange = LOCAL_tdBound ;
         LOCAL_tdProbIdx = 240 + (LOCAL_tdState << (4)) + LOCAL_tdPosState ;
-        LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
-        if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) {
+        LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
+        if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) {
           LOCAL_tdRange = LOCAL_tdBound ;
-          if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; }
+          if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; }
           return 3;
         } else {
           LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ;
@@ -452,14 +446,14 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
       } else {
         LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ;
         LOCAL_tdProbIdx = 216 + LOCAL_tdState ;
-        LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
-        if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) {
+        LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
+        if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) {
           LOCAL_tdRange = LOCAL_tdBound ;
         } else {
           LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ;
           LOCAL_tdProbIdx = 228 + LOCAL_tdState ;
-          LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
-          if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) {
+          LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
+          if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) {
             LOCAL_tdRange = LOCAL_tdBound ;
           } else {
             LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ;
@@ -473,8 +467,8 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
       int LOCAL_tdLimitSub;
       int LOCAL_tdOffset;
       int LOCAL_tdProbLenIdx = LOCAL_tdProbIdx + 0;
-      LOCAL_tdTtt = (probs16[LOCAL_tdProbLenIdx] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
-      if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) {
+      LOCAL_tdTtt = (probs16[LOCAL_tdProbLenIdx] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
+      if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) {
         LOCAL_tdRange = LOCAL_tdBound ;
         LOCAL_tdProbLenIdx = LOCAL_tdProbIdx + 2 + (LOCAL_tdPosState << (3)) ;
         LOCAL_tdOffset = 0 ;
@@ -482,8 +476,8 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
       } else {
         LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ;
         LOCAL_tdProbLenIdx = LOCAL_tdProbIdx + 1 ;
-        LOCAL_tdTtt = (probs16[LOCAL_tdProbLenIdx] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
-        if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) {
+        LOCAL_tdTtt = (probs16[LOCAL_tdProbLenIdx] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ;
+        if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) {
           LOCAL_tdRange = LOCAL_tdBound ;
           LOCAL_tdProbLenIdx = LOCAL_tdProbIdx + 130 + (LOCAL_tdPosState << (3)) ;
           LOCAL_tdOffset = 8 ;
@@ -498,7 +492,7 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
       {
         LOCAL_tdLen = 1 ;
         do {
-          LOCAL_tdTtt = (probs16[LOCAL_tdProbLenIdx + LOCAL_tdLen] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdLen = (LOCAL_tdLen + LOCAL_tdLen); } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdLen = (LOCAL_tdLen + LOCAL_tdLen) + 1; }
+          LOCAL_tdTtt = (probs16[LOCAL_tdProbLenIdx + LOCAL_tdLen] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdLen = (LOCAL_tdLen + LOCAL_tdLen); } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdLen = (LOCAL_tdLen + LOCAL_tdLen) + 1; }
         } while (((LOCAL_tdLen) < (LOCAL_tdLimitSub)));
         LOCAL_tdLen -= LOCAL_tdLimitSub ;
       }
@@ -511,7 +505,7 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
       {
         LOCAL_tdPosSlot = 1 ;
         do {
-          LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx + LOCAL_tdPosSlot] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdPosSlot = (LOCAL_tdPosSlot + LOCAL_tdPosSlot); } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdPosSlot = (LOCAL_tdPosSlot + LOCAL_tdPosSlot) + 1; }
+          LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx + LOCAL_tdPosSlot] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdPosSlot = (LOCAL_tdPosSlot + LOCAL_tdPosSlot); } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdPosSlot = (LOCAL_tdPosSlot + LOCAL_tdPosSlot) + 1; }
         } while (((LOCAL_tdPosSlot) < ((1) << (6))));
         LOCAL_tdPosSlot -= (1) << (6) ;
       }
@@ -523,7 +517,7 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
         } else {
           LOCAL_tdDirectBitCount -= 4 ;
           do {
-            if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; }
+            if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; }
             LOCAL_tdRange = ((LOCAL_tdRange) >>> 1);
             if ((((LOCAL_tdCode - LOCAL_tdRange) & 0x80000000) == 0)) {
               LOCAL_tdCode -= LOCAL_tdRange;
@@ -535,13 +529,13 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
         {
           int LOCAL_tdI = 1;
           do {
-            LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx + LOCAL_tdI] & 0xffff) ; if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (Lt32(LOCAL_tdCode, LOCAL_tdBound)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdI = (LOCAL_tdI + LOCAL_tdI); } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdI = (LOCAL_tdI + LOCAL_tdI) + 1; }
+            LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx + LOCAL_tdI] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdI = (LOCAL_tdI + LOCAL_tdI); } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdI = (LOCAL_tdI + LOCAL_tdI) + 1; }
           } while (((--LOCAL_tdDirectBitCount) != (0)));
         }
       }
     }
   }
-  if (Ltx32(LOCAL_tdRange, 16777216)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; }
+  if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; }
   return LOCAL_tdRes;
 }
 
@@ -720,7 +714,7 @@ static final int Preread(int LOCAL_prSize) {
   return LOCAL_prPos;
 
   } catch (java.io.IOException e) {
-    throw new RuntimeException(e);
+    return 8;
   }
 
 }
@@ -803,7 +797,7 @@ static final int DecompressXzOrLzma() {
         /* High 4 bytes of uncompressed size. */
         ((((LOCAL_bhf = GetLE4(GLOBAL_readCur + 9))) == 0) || ((~LOCAL_bhf) == 0)) &&
         (((GLOBAL_dicSize = GetLE4(GLOBAL_readCur + 1))) >= ((1 << 12))) &&
-        Ltx32(GLOBAL_dicSize, 1610612736 + 1)) {
+        ((GLOBAL_dicSize) - 0x80000000 < (1610612736 + 1) - 0x80000000)) {
     /* Based on https://svn.python.org/projects/external/xz-5.0.3/doc/lzma-file-format.txt */
     int LOCAL_readBufUS;
     int LOCAL_srcLen;
@@ -819,7 +813,7 @@ static final int DecompressXzOrLzma() {
     }
     if (((LOCAL_bhf) == 0)) {
       GLOBAL_dicBufSize = LOCAL_readBufUS = GetLE4(GLOBAL_readCur + 5);
-      if (!Ltx32(LOCAL_readBufUS, 1610612736 + 1)) { return 2; }
+      if (!((LOCAL_readBufUS) - 0x80000000 < (1610612736 + 1) - 0x80000000)) { return 2; }
     } else {
       LOCAL_readBufUS = LOCAL_bhf ; /* max UInt32. */
       /* !! Don't preallocate DIC_BUF_SIZE in Java in ENSURE_DIC_SIZE below. */
