@@ -85,6 +85,9 @@ Limitations of muxzcat.c, muxzcat.pl and muxzcat.java:
   (This is not a problem in practice, because even the ouput of `xz -9e'
   uses only 64 MiB dictionary size.)
 * muxzcat.java doesn't work with Avian 0.6 (OutOfMemoryError).
+* muxzcat.java uses the maximum amount of memory (~1.61 GB) for some .lzma
+  files which don't have their uncompressed size specified. This includes
+  files created by `xz --format=lzma'.
 
 Limitations of Java-with-lib muxzcatj12.jar:
 
