@@ -256,7 +256,7 @@ sub LzmaDec_DecodeReal2($$) { my($drDicLimit, $drBufLimit) = @_;
         }
         vec($dic, $dicPos++, 8) = $drSymbol;
         $processedPos++;
-        goto continue_do2;  # CONTINUE;
+        goto continue_do2;
       } else {
         $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx, 16) = $drTtt - (($drTtt) >> (5));
         $drProbIdx = IsRep + $state;
@@ -282,7 +282,7 @@ sub LzmaDec_DecodeReal2($$) { my($drDicLimit, $drBufLimit) = @_;
               $dicPos++;
               $processedPos++;
               $state = (($state) < (kNumLitStates)) ? 9 : 11;
-              goto continue_do2;  # CONTINUE;
+              goto continue_do2;
             }
             $range -= ($drBound); $code -= ($drBound); vec($probs, $drProbIdx, 16) = $drTtt - (($drTtt) >> (5));
           } else {
@@ -378,7 +378,7 @@ sub LzmaDec_DecodeReal2($$) { my($drDicLimit, $drBufLimit) = @_;
                 if (LTX[$range],[kTopValue]) { $range <<= (8); $code = (($code << 8) | (vec($readBuf, $bufCur++, 8))); }
                 # Here GLOBAL_VAR(range) can be non-small, so we can't use SHR_SMALLX instead of SHR1.
                 $range = (((($range) >> 1) & 0x7fffffff));
-                if (($code - $range) & 0x80000000) {
+                if ((($code - $range) & 0x80000000)) {
                   $distance <<= 1;
                 } else {
                   $code -= ($range);
@@ -398,7 +398,7 @@ sub LzmaDec_DecodeReal2($$) { my($drDicLimit, $drBufLimit) = @_;
               if (EQ0[~$distance]) {
                 $remainLen += (kMatchSpecLenStart);
                 $state -= kNumStates;
-                goto break_do2;  # BREAK;
+                goto break_do2;
               }
             }
           }
@@ -599,7 +599,7 @@ sub LzmaDec_TryDummy($$) { my($tdCur, $tdBufLimit) = @_;
           do {
             if (LTX[$tdRange],[kTopValue]) { if ((($tdCur) >= ($tdBufLimit))) { return DUMMY_ERROR; } $tdRange <<= 8; $tdCode = ($tdCode << 8) | (vec($readBuf, $tdCur++, 8)); }
             $tdRange = ((($tdRange) >> 1) & 0x7fffffff);
-            if (!(($tdCode - $tdRange) & 0x80000000)) {
+            if ((!(($tdCode - $tdRange) & 0x80000000))) {
               $tdCode -= $tdRange;
             }
           } while (((--$tdDirectBitCount) != (0)));
@@ -624,12 +624,12 @@ sub LzmaDec_InitDicAndState($$) { my($idInitDic, $idInitState) = @_;
   $remainLen = 0;
   $tempBufSize = 0;
 
-  if ($idInitDic) {
+  if (($idInitDic)) {
     $processedPos = 0;
     $checkDicSize = 0;
     $needInitLzma = TRUE;
   }
-  if ($idInitState) {
+  if (($idInitState)) {
     $needInitLzma = TRUE;
   }
 }
@@ -645,17 +645,18 @@ sub LzmaDec_DecodeToDic($) { my $ddSrcLen = $_[0];
   LzmaDec_WriteRem($dicBufSize);
 
   while ((($remainLen) != (kMatchSpecLenStart))) {
-
-    if ($needFlush) {
+    if (($needFlush)) {
       # Read 5 bytes (RC_INIT_SIZE) to tempBuf, first of which must be
       # * 0, initialize the range coder with the 4 bytes after the 0 byte.
       while ((($decodeLimit) > ($readCur)) && (($tempBufSize) < (RC_INIT_SIZE))) {
         vec($readBuf, READBUF_SIZE + $tempBufSize++, 8) = vec($readBuf, $readCur++, 8);
       }
       if ((($tempBufSize) < (RC_INIT_SIZE))) {
+
        on_needs_more_input:
         if ((($readCur) != ($decodeLimit))) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
         return SZ_ERROR_NEEDS_MORE_INPUT;
+
       }
       if (((vec($readBuf, READBUF_SIZE, 8)) != (0))) {
         return SZ_ERROR_DATA;
@@ -678,7 +679,7 @@ sub LzmaDec_DecodeToDic($) { my $ddSrcLen = $_[0];
       $checkEndMarkNow = TRUE;
     }
 
-    if ($needInitLzma) {
+    if (($needInitLzma)) {
       my $numProbs = Literal + ((LZMA_LIT_SIZE) << ($lc + $lp));
       my $ddProbIdx;
       for ($ddProbIdx = 0; (($ddProbIdx) < ($numProbs)); $ddProbIdx++) {
@@ -691,7 +692,7 @@ sub LzmaDec_DecodeToDic($) { my $ddSrcLen = $_[0];
 
     if ((($tempBufSize) == (0))) {
       my $bufLimit;
-      if ((($decodeLimit - $readCur) < (LZMA_REQUIRED_INPUT_MAX)) || $checkEndMarkNow) {
+      if ((($decodeLimit - $readCur) < (LZMA_REQUIRED_INPUT_MAX)) || ($checkEndMarkNow)) {
         $dummyRes = LzmaDec_TryDummy($readCur, $decodeLimit);
         if ((($dummyRes) == (DUMMY_ERROR))) {
           # This line can be triggered by passing LOCAL_VAR(ddSrcLen)=1 to LzmaDec_DecodeToDic.
@@ -699,9 +700,14 @@ sub LzmaDec_DecodeToDic($) { my $ddSrcLen = $_[0];
           while ((($readCur) != ($decodeLimit))) {
             vec($readBuf, READBUF_SIZE + $tempBufSize++, 8) = vec($readBuf, $readCur++, 8);
           }
+
           goto on_needs_more_input;
+
+
+
+
         }
-        if ($checkEndMarkNow && (($dummyRes) != (DUMMY_MATCH))) {
+        if (($checkEndMarkNow) && (($dummyRes) != (DUMMY_MATCH))) {
           return SZ_ERROR_NOT_FINISHED;
         }
         $bufLimit = $readCur;
@@ -720,13 +726,18 @@ sub LzmaDec_DecodeToDic($) { my $ddSrcLen = $_[0];
         vec($readBuf, READBUF_SIZE + $ddRem++, 8) = vec($readBuf, $readCur + $lookAhead++, 8);
       }
       $tempBufSize = $ddRem;
-      if ((($ddRem) < (LZMA_REQUIRED_INPUT_MAX)) || $checkEndMarkNow) {
+      if ((($ddRem) < (LZMA_REQUIRED_INPUT_MAX)) || ($checkEndMarkNow)) {
         $dummyRes = LzmaDec_TryDummy(READBUF_SIZE, READBUF_SIZE + $ddRem);
         if ((($dummyRes) == (DUMMY_ERROR))) {
           $readCur += $lookAhead;
+
           goto on_needs_more_input;
+
+
+
+
         }
-        if ($checkEndMarkNow && (($dummyRes) != (DUMMY_MATCH))) {
+        if (($checkEndMarkNow) && (($dummyRes) != (DUMMY_MATCH))) {
           return SZ_ERROR_NOT_FINISHED;
         }
       }
@@ -754,6 +765,9 @@ sub LzmaDec_DecodeToDic($) { my $ddSrcLen = $_[0];
 # *
 # * Maximum allowed prereadSize is READBUF_SIZE (< 66000).
 sub Preread($) { my $prSize = $_[0];
+
+
+
   my $prPos = $readEnd - $readCur;
   my $prGot;
   if ((($prPos) < ($prSize))) {  # Not enough pending available.
@@ -767,13 +781,18 @@ sub Preread($) { my $prSize = $_[0];
     while ((($prPos) < ($prSize))) {
       # Instead of (LOCAL_VAR(prSize) - LOCAL_VAR(prPos)) we could use (GLOBAL_VAR(readBuf) + READBUF_SIZE -
       # * GLOBAL_VAR(readEnd)) to read as much as the buffer has room for.
-      $prGot = UndefToMinus1(sysread(STDIN, $readBuf, ($prSize - $prPos), ($readEnd)));
+      $prGot = UndefToMinus1(sysread(STDIN, $readBuf, $prSize - $prPos, $readEnd));
       if ((($prGot + 1) <= (1))) { last; }  # EOF or error on input.
       $readEnd += $prGot;
       $prPos += $prGot;
     }
   }
   return $prPos;
+
+
+
+
+
 }
 
 sub IgnoreVarint() {
@@ -819,11 +838,15 @@ sub InitProp($) { my $ipByte = $_[0];
 
 # Writes uncompressed data dic[LOCAL_VAR(fromDicPos) : GLOBAL_VAR(dicPos)] to stdout.
 sub WriteFrom($) { my $wfDicPos = $_[0];
+
+
+
   while ((($wfDicPos) != ($dicPos))) {
-    my $wfGot = UndefToMinus1(syswrite(STDOUT, $dic, ($dicPos - $wfDicPos), ($wfDicPos)));
+    my $wfGot = UndefToMinus1(syswrite(STDOUT, $dic, $dicPos - $wfDicPos, $wfDicPos));
     if ($wfGot & 0x80000000) { return SZ_ERROR_WRITE; }
     $wfDicPos += $wfGot;
   }
+
   return SZ_OK;
 }
 
@@ -866,6 +889,7 @@ sub DecompressXzOrLzma() {
       if (!LTX[$readBufUS],[DIC_ARRAY_SIZE + 1]) { return SZ_ERROR_MEM; }
     } else {
       $readBufUS = $bhf;  # max UInt32.
+      # !! Don't preallocate DIC_BUF_SIZE in Java in ENSURE_DIC_SIZE below.
       $dicBufSize = DIC_ARRAY_SIZE;
     }
     $readCur += 13;  # Start decompressing the 0 byte.
@@ -876,11 +900,11 @@ sub DecompressXzOrLzma() {
     while (((($srcLen = Preread(READBUF_SIZE))) != (0))) {
       $fromDicPos = $dicPos;
       $dxRes = LzmaDec_DecodeToDic($srcLen);
-      if ((($dicPos) > ($readBufUS))) { $dicPos = $readBufUS; }
+      if (LTX[$readBufUS],[$dicPos]) { $dicPos = $readBufUS; }
       if (((($dxRes = WriteFrom($fromDicPos))) != (SZ_OK))) { return $dxRes; }
       if ((($dxRes) == (SZ_ERROR_FINISHED_WITH_MARK))) { last; }
       if ((($dxRes) != (SZ_ERROR_NEEDS_MORE_INPUT)) && (($dxRes) != (SZ_OK))) { return $dxRes; }
-      if ((($dicPos) == ($readBufUS))) { last; }
+      if (EQ0[$dicPos - $readBufUS]) { last; }
     }
     return SZ_OK;
   } else {
@@ -967,37 +991,37 @@ sub DecompressXzOrLzma() {
         }
         $chunkUS = (vec($readBuf, $readCur + 1, 8) << 8) + vec($readBuf, $readCur + 2, 8) + 1;
         if ((($control) < (3))) {  # Uncompressed chunk.
-          $initDic = (($control) == (1));
+          $initDic = ((($control) == (1)));
           $chunkCS = $chunkUS;
           $readCur += 3;
           # TODO(pts): Porting: TRUNCATE_TO_8BIT(LOCAL_VAR(blockSizePad)) for Python and other unlimited-integer-range languages.
           $blockSizePad -= 3;
-          if ($initDic) {
+          if (($initDic)) {
             $needInitProp = $needInitState = TRUE;
             $needInitDic = FALSE;
-          } elsif ($needInitDic) {
+          } elsif (($needInitDic)) {
             return SZ_ERROR_DATA;
           }
           LzmaDec_InitDicAndState($initDic, FALSE);
         } else {  # LZMA chunk.
           my $mode = (((($control)) >> (5)) & 3);
-          my $initState = (($mode) != (0));
-          my $isProp = ((($control & 64)) != (0));
-          $initDic = (($mode) == (3));
+          my $initState = ((($mode) != (0)));
+          my $isProp = (((($control & 64)) != (0)));
+          $initDic = ((($mode) == (3)));
           $chunkUS += ($control & 31) << 16;
           $chunkCS = (vec($readBuf, $readCur + 3, 8) << 8) + vec($readBuf, $readCur + 4, 8) + 1;
-          if ($isProp) {
+          if (($isProp)) {
             if (((($dxRes = InitProp(vec($readBuf, $readCur + 5, 8)))) != (SZ_OK))) {
               return $dxRes;
             }
             ++$readCur;
             --$blockSizePad;
           } else {
-            if ($needInitProp) { return SZ_ERROR_MISSING_INITPROP; }
+            if (($needInitProp)) { return SZ_ERROR_MISSING_INITPROP; }
           }
           $readCur += 5;
           $blockSizePad -= 5;
-          if ((!$initDic && $needInitDic) || (!$initState && $needInitState)) {
+          if (((!($initDic)) && ($needInitDic)) || ((!($initState)) && ($needInitState))) {
             return SZ_ERROR_DATA;
           }
           LzmaDec_InitDicAndState($initDic, $initState);
@@ -1055,10 +1079,8 @@ sub Decompress() {
   return $deRes;
 }
 ENDEVAL
-my $lta; my $ltb;
 if ((1 << 31) < 0) {  # 32-bit Perl.
-  s@\bLT\[([^\]]+)\],\[([^\]]+)\]@(\$lta = ($1) & 0xffffffff, \$ltb = ($2) & 0xffffffff, (\$lta < 0 ? \$ltb >= 0 : \$ltb < 0) ? \$ltb < 0 : \$lta < \$ltb)@g;
-  s@\bLTX\[([^\]]+)\],\[([^\]]+)\]@(\$lta = ($1) & 0xffffffff, \$lta < ($2) && \$lta >= 0)@g;
+  s@\bLTX?\[([^\]]+)\],\[([^\]]+)\]@(($1) - 0x80000000 < ($2) - 0x80000000)@g;
   s@\bEQ0\[([^\]]+)\]@!($1)@g;
   s@\bNE0\[([^\]]+)\]@(($1) != 0)@g;
 } else {  # At least 33-bit Perl, typically 64-bit.
