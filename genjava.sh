@@ -6,7 +6,7 @@ set -ex
 gcc -C -E -DCONFIG_LANG_JAVA "$@" -ansi -O2 -W -Wall -Wextra -Werror muaxzcat.c >muaxzcat.java.tmp1
 <muaxzcat.java.tmp1 perl -0777 -pe 's@\A.*START_PREPROCESSED\s+@@s' >muaxzcat.java.tmp2
 # !! Reuse numeric constants.
-(<muaxzcat.java.tmp2 perl -0777 -pe 's@^#(?!!).*\n@@gm; s@^[ \t]*;[ \t]*\n@@mg') >muaxzcat.java || exit "$?"
+(<muaxzcat.java.tmp2 perl -0777 -pe 's@^#(?!!).*\n@@gm; s@^[ \t]*;[ \t]*\n@@mg; s@(\n[ t]*)(?=\n)@@g') >muaxzcat.java || exit "$?"
 BCP=
 test -f java102rt.jar && BCP='-bootclasspath java102rt.jar'
 # Works with Java 1.8.
