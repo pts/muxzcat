@@ -1431,7 +1431,7 @@ FUNC_ARG1(UInt32, Preread, const UInt32, prSize)
   return LOCAL_VAR(prPos);
 #ifdef CONFIG_LANG_JAVA
   } catch (java.io.IOException e) {
-    throw new RuntimeException(e);
+    return SZ_ERROR_READ;
   }
 #endif  /* CONFIG_LANG_JAVA */
 ENDFUNC
