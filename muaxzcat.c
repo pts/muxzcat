@@ -1413,11 +1413,11 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
       SET_LOCALB(fromDicPos, 717, =, GLOBAL_VAR(dicPos)) ;
       SET_LOCALB(dxRes, 719, =, LzmaDec_DecodeToDic(LOCAL_VAR(srcLen))) ;
       DEBUGF("LZMADEC dxRes=%d\n", ENSURE_32BIT(LOCAL_VAR(dxRes)));
-      if (GT_SMALL(GLOBAL_VAR(dicPos), LOCAL_VAR(readBufUS))) { SET_GLOBAL(dicPos, 138, =) LOCAL_VAR(readBufUS); }
+      if (LTX(LOCAL_VAR(readBufUS), GLOBAL_VAR(dicPos))) { SET_GLOBAL(dicPos, 138, =) LOCAL_VAR(readBufUS); }
       if (NE_SMALL((LOCAL_VAR(dxRes) = WriteFrom(LOCAL_VAR(fromDicPos))), SZ_OK)) { return LOCAL_VAR(dxRes); }
       if (EQ_SMALL(LOCAL_VAR(dxRes), SZ_ERROR_FINISHED_WITH_MARK)) { BREAK; }
       if (NE_SMALL(LOCAL_VAR(dxRes), SZ_ERROR_NEEDS_MORE_INPUT) && NE_SMALL(LOCAL_VAR(dxRes), SZ_OK)) { return LOCAL_VAR(dxRes); }
-      if (EQ_SMALL(GLOBAL_VAR(dicPos), LOCAL_VAR(readBufUS))) { BREAK; }
+      if (EQ0(GLOBAL_VAR(dicPos) - LOCAL_VAR(readBufUS))) { BREAK; }
     }
     return SZ_OK;
   } else {
