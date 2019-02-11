@@ -20,7 +20,7 @@ compiling, run it with any of:
 
   It ignores command-line flags, so you can specify e.g. `-cd'.
 
-Here is how to use the Perl implementation:
+Here is how to use the Perl implementation (muxzcat.pl):
 
   $ perl muxzcat.pl <input.xz >output.bin
   $ perl muxzcat.pl <input.lzma >output.bin
@@ -29,7 +29,17 @@ Here is how to use the Perl implementation:
 
   It ignores command-line flags, so you can specify e.g. `-cd'.
 
-Here is how to use the Java implementation:
+Here is how to use the Java implementation (muxzcat.java). After
+compilation or downloading of muxzcat.class, run with any of:
+
+  $ java muxzcat <input.xz >output.bin
+  $ java muxzcat <input.lzma >output.bin
+
+  Error is indicated as a non-zero exit status.
+
+  It ignores command-line flags, so you can specify e.g. `-cd'.
+
+Here is how to use the Java-with-lib implementation:
 
   $ java -jar muxzcatj11.jar <input.xz >output.bin
 
@@ -59,7 +69,7 @@ muzxcat is a drop-in replacement for the following commands:
 
 muxzcat is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
 
-Limitations of muxzcat.c and muxzcat.pl:
+Limitations of muxzcat.c, muxzcat.pl and muxzcat.java:
 
 * It keeps uncompressed data in memory, and it needs 130 KiB of
   memory on top of it: readBuf is about 64 KiB, CLzmaDec.prob is about
@@ -74,12 +84,11 @@ Limitations of muxzcat.c and muxzcat.pl:
 * It doesn't support dictionary sizes larger than 1610612736 bytes (~1.61 GB).
   (This is not a problem in practice, because even the ouput of `xz -9e'
   uses only 64 MiB dictionary size.)
+* muxzcat.java doesn't work with Avian 0.6 (OutOfMemoryError).
 
-Limitations of muxzcatj11.jar:
+Limitations of Java-with-lib muxzcatj11.jar:
 
-* It needs JRE 1.1 (Java 1.1) released on 1997-02. (Also works with any more
-  recent Java.)
-* It doesn't work with avian-0.6 (it uses some classes not available there).
+* It doesn't work with Avian 0.6 (it uses some classes not available there).
 * It doesn't support decompressing .lzma streams.
 * Its memory usage is constant + 100 KiB + dictionary size, so it doesn't
   keep the entire uncompressed data in memory.
@@ -113,6 +122,18 @@ linux-4.20.5.tar.xz, size-optimized muxzcat.c (on Linux i386) is about 1.347
 times faster than muxzcatj11.jar (with java 1.8 compiled for Linux amd64).
 The C and Java implementations are completely different, they don't share
 code.
+
+muxzcatj11.jar needs JRE 1.1 (Java 1.1) released on 1997-02. It Also works
+with any more recent Java, e.g. Java 8.
+
+Based on decompression speed measurements of the ~100 MiB
+linux-4.20.5.tar.xz, size-optimized muxzcat.c (on Linux i386) is about 1.485
+times faster than muxzcat.java (with java 1.8 compiled for Linux amd64).
+The C and Java implementations are derived from the same codebase
+(muxzcat.c, itself derived from the sources files in 7z922.tar.bz2).
+
+muzxcat.java needs JRE 1.1 (Java 1.1) released on 1997-02. It Also works
+with any more recent Java, e.g. Java 8.
 
 If you need a tiny decompressor for .gz, .zip and Flate compressed
 files implemented in C, see https://github.com/pts/pts-zcat .

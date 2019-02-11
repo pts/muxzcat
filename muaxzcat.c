@@ -25,6 +25,9 @@
 #endif
 #endif
 
+#ifdef CONFIG_LANG_JAVA
+START_PREPROCESSED
+#else
 #ifdef CONFIG_LANG_PERL
 START_PREPROCESSED
 #else
@@ -73,6 +76,7 @@ ssize_t write(int fd, const void *buf, size_t count);
 #endif  /* __XTINY__ */
 #endif  /* Not __TINYC__. */
 #endif  /* Not CONFIG_LANG_PERL. */
+#endif  /* Not CONFIG_LANG_JAVA. */
 
 #ifdef CONFIG_LANG_C
 /* This fails to compile if any condition after the : is false. */
@@ -97,11 +101,37 @@ struct IntegerTypeAsserts {
  *    loop in Perl?
  */
 #ifdef CONFIG_LANG_C
+#define BOOL_TO_INT(x) (x)
+#define TO_BOOL(x) (x)
+#define TO_BOOL_NEG(x) (!(x))
+#define HAS_GOTO 1
+#define DEFAULT_CONTINUE_TO(label) continue
+#define DEFAULT_BREAK_TO(label) break
+#define DEFAULT_LABEL(label)
 #define ELSE_IF else if
 #define BREAK break
 #define CONTINUE continue
 #endif  /* CONFIG_LANG_C */
+#ifdef CONFIG_LANG_JAVA  /* !! Use symbolic constants in the .java file. */
+#undef HAS_GOTO
+#define BOOL_TO_INT(x) ((x) ? 1 : 0)
+#define TO_BOOL(x) ((x) != 0)  /* !! TODO(pts): Faster with boolean type. */
+#define TO_BOOL_NEG(x) ((x) == 0)  /* !! TODO(pts): Faster with boolean type. */
+#define DEFAULT_CONTINUE_TO(label) continue
+#define DEFAULT_BREAK_TO(label) break
+#define DEFAULT_LABEL(label)
+#define ELSE_IF else if
+#define BREAK break
+#define CONTINUE continue
+#endif  /* CONFIG_LANG_JAVA */
 #ifdef CONFIG_LANG_PERL
+#define HAS_GOTO 1
+#define BOOL_TO_INT(x) (x)
+#define TO_BOOL(x) (x)
+#define TO_BOOL_NEG(x) (!(x))
+#define DEFAULT_CONTINUE_TO(label) goto label
+#define DEFAULT_BREAK_TO(label) goto label
+#define DEFAULT_LABEL(label) label: ;
 #define ELSE_IF elsif
 #define BREAK last
 #define CONTINUE next
@@ -113,6 +143,12 @@ struct IntegerTypeAsserts {
 #define TRUNCATE_TO_16BIT(x) ((uint16_t)(x))
 #define TRUNCATE_TO_8BIT(x) ((uint8_t)(x))
 #endif  /* CONFIG_LANG_C */
+#ifdef CONFIG_LANG_JAVA
+#define ENSURE_32BIT(x) (x)
+#define TRUNCATE_TO_32BIT(x) ((x) & 0xffffffff)
+#define TRUNCATE_TO_16BIT(x) ((x) & 0xffff)
+#define TRUNCATE_TO_8BIT(x) ((x) & 0xff)
+#endif  /* CONFIG_LANG_JAVA */
 #ifdef CONFIG_LANG_PERL
 #define ENSURE_32BIT(x) (x)
 #define TRUNCATE_TO_32BIT(x) ((x) & 0xffffffff)
@@ -136,9 +172,26 @@ struct IntegerTypeAsserts {
 /* If the base type was larger than uint8_t, we'd have to call TRUNCATE_TO_8BIT(value) here. */
 #define SET_ARY8(a, idx, value) (global.a##8[ASSERT_IS_SMALL(idx)] = value)
 #define CLEAR_ARY16(a)
-#define READ_FROM_STDIN_TO_ARY8(a, fromIdx, size) (read(0, &global.a##8[fromIdx], (size)))
-#define WRITE_TO_STDOUT_FROM_ARY8(a, fromIdx, size) (write(1, &global.a##8[fromIdx], (size)))
+#define READ_FROM_STDIN_TO_ARY8(a, fromIdx, size) (read(0, &global.a##8[fromIdx], size))
+#define WRITE_TO_STDOUT_FROM_ARY8(a, fromIdx, size) (write(1, &global.a##8[fromIdx], size))
 #endif  /* CONFIG_LANG_C */
+#ifdef CONFIG_LANG_JAVA
+#define GLOBALS
+#define GLOBAL(type, name) static int GLOBAL_##name
+#define GLOBAL_ARY16(a, size) static short a##16[]
+#define GLOBAL_ARY8(a, size) static byte a##8[]
+#define ENDGLOBALS
+#define GLOBAL_VAR(name) GLOBAL_##name  /* Get or set a global variable. */
+#define SET_GLOBAL(name, setid, op) GLOBAL_##name op
+#define GET_ARY16(a, idx) (a##16[idx] & 0xffff)
+#define SET_ARY16(a, idx, value) a##16[idx] = (short)(value)  /* Parens would cause ``not a statement'' error. */
+#define CLEAR_ARY8(a)
+#define GET_ARY8(a, idx) (a##8[idx] & 0xff)
+#define SET_ARY8(a, idx, value) a##8[idx] = (byte)(value)  /* Parens would cause ``not a statement'' error. */
+#define CLEAR_ARY16(a)
+#define READ_FROM_STDIN_TO_ARY8(a, fromIdx, size) System.in.read(a##8, fromIdx, size)
+#define WRITE_TO_STDOUT_FROM_ARY8(a, fromIdx, size) System.out.write(a##8, fromIdx, size)
+#endif  /* CONFIG_LANG_JAVA */
 #ifdef CONFIG_LANG_PERL
 #define GLOBALS
 #define GLOBAL(type, name) GLOBAL my($##name) = 0
@@ -153,8 +206,8 @@ struct IntegerTypeAsserts {
 #define GET_ARY8(a, idx) vec($##a, idx, 8)
 #define SET_ARY8(a, idx, value) vec($##a, idx, 8) = value
 #define CLEAR_ARY8(a) $##a = ''
-#define READ_FROM_STDIN_TO_ARY8(a, fromIdx, size) UndefToMinus1(sysread(STDIN, $##a, (size), (fromIdx)))
-#define WRITE_TO_STDOUT_FROM_ARY8(a, fromIdx, size) UndefToMinus1(syswrite(STDOUT, $##a, (size), (fromIdx)))
+#define READ_FROM_STDIN_TO_ARY8(a, fromIdx, size) UndefToMinus1(sysread(STDIN, $##a, size, fromIdx))
+#define WRITE_TO_STDOUT_FROM_ARY8(a, fromIdx, size) UndefToMinus1(syswrite(STDOUT, $##a, size, fromIdx))
 #endif  /* CONFIG_LANG_PERL */
 
 #ifdef CONFIG_LANG_C
@@ -163,6 +216,12 @@ struct IntegerTypeAsserts {
 #define LOCAL_VAR(name) LOCAL_##name  /* Get or set a local variable or function argument. */
 #define SET_LOCALB(name, setid, op, value) LOCAL_##name op value
 #endif  /* CONFIG_LANG_C */
+#ifdef CONFIG_LANG_JAVA
+#define LOCAL(type, name) int LOCAL_##name
+#define LOCAL_INIT(type, name, value) int LOCAL_##name = value
+#define LOCAL_VAR(name) LOCAL_##name  /* Get or set a local variable or function argument. */
+#define SET_LOCALB(name, setid, op, value) LOCAL_##name op value
+#endif  /* CONFIG_LANG_JAVA */
 #ifdef CONFIG_LANG_PERL
 #define LOCAL(type, name) my $##name
 #define LOCAL_INIT(type, name, value) my $##name = value
@@ -176,6 +235,16 @@ struct IntegerTypeAsserts {
 #define FUNC_ARG2(return_type, name, arg1_type, arg1, arg2_type, arg2) return_type name(arg1_type LOCAL_##arg1, arg2_type LOCAL_##arg2) {
 #define ENDFUNC }
 #endif  /* CONFIG_LANG_C */
+#ifdef CONFIG_LANG_JAVA
+#define RETURN_TYPE_UInt32 int
+#define RETURN_TYPE_SRes int
+#define RETURN_TYPE_Byte int
+#define RETURN_TYPE_void void
+#define FUNC_ARG0(return_type, name) static final RETURN_TYPE_##return_type name() {
+#define FUNC_ARG1(return_type, name, arg1_type, arg1) static final RETURN_TYPE_##return_type name(int LOCAL_##arg1) {
+#define FUNC_ARG2(return_type, name, arg1_type, arg1, arg2_type, arg2) static final RETURN_TYPE_##return_type name(int LOCAL_##arg1, int LOCAL_##arg2) {
+#define ENDFUNC }
+#endif  /* CONFIG_LANG_JAVA */
 #ifdef CONFIG_LANG_PERL
 #define FUNC_ARG0(return_type, name) sub name() {
 #define FUNC_ARG1(return_type, name, arg1_type, arg1) sub name($) { my $##arg1 = $_[0];
@@ -228,6 +297,17 @@ struct IntegerTypeAsserts {
 #define LTX(x, y) ((x) < ASSERT_IS_SMALL(y))
 #endif
 #endif  /* CONFIG_LANG_C */
+#ifdef CONFIG_LANG_JAVA
+#define SHR1(x) ((x) >>> 1)
+#define SHR11(x) ((x) >>> 11)
+/* genpl.sh has the 32-bit (slow) and 64-bit (fast) implementations of
+ * EQ0, NE0 and LT.
+ */
+#define EQ0(x) ((x) == 0)
+#define NE0(x) ((x) != 0)
+#define LT(x, y) Lt32(x, y)  /* !! TODO(pts): Faster using local variables or long. */
+#define LTX(x, y) Ltx32(x, y)  /* !! TODO(pts): Faster using local variables or long. */
+#endif  /* CONFIG_LANG_JAVA */
 #ifdef CONFIG_LANG_PERL
 #define LTX(x, y) LTX[x],[y]
 #define SHR1(x) (((x) >> 1) & 0x7fffffff)
@@ -276,7 +356,12 @@ static void DumpVars(void);
 #define ASSERT_IS_5BIT(x) (x)
 #endif  /* !CONFIG_DEBUG */
 #endif  /* CONFIG_LANG_C */
-
+#ifdef CONFIG_LANG_JAVA
+#define ASSERT_IS_SMALL(x) (x)
+#define ASSERT_IS_5BIT(x) (x)
+#define DEBUGF(...)
+#define ASSERT(CONDITION)
+#endif  /* CONFIG_LANG_JAVA */
 #ifdef CONFIG_LANG_PERL
 #define ASSERT_IS_SMALL(x) (x)
 #define ASSERT_IS_5BIT(x) (x)
@@ -608,6 +693,37 @@ struct LzmaAsserts {
 };
 #endif  /* CONFIG_LANG_C */
 
+#ifdef CONFIG_LANG_JAVA
+public class muaxzcat {
+public static final boolean Lt32(int x, int y) {
+  return (x < 0 ? y >= 0 : y < 0) ? y < 0 : x < y;
+}
+public static final boolean Ltx32(int x, int y) {
+  return x < y && x >= 0;
+}
+#endif  /* CONFIG_LANG_JAVA */
+
+#ifdef CONFIG_LANG_JAVA
+public static void EnsureDicSize() {
+  int newCapacity = dic8.length;
+  while (newCapacity > 0 && LT_SMALL(newCapacity, GLOBAL_VAR(dicBufSize))) {
+    newCapacity <<= 1;
+  }
+  if (newCapacity < 0 || LT_SMALL(DIC_ARRAY_SIZE, newCapacity)) {
+    newCapacity = DIC_ARRAY_SIZE;
+  }
+  if (LT_SMALL(dic8.length, newCapacity)) {
+    final byte newDic[] = new byte[newCapacity];
+    System.arraycopy(dic8, 0, newDic, 0, GLOBAL_VAR(dicPos));
+    dic8 = newDic;
+  }
+}
+#define ENSURE_DIC_SIZE() if (LT_SMALL(dic8.length, GLOBAL_VAR(dicBufSize))) EnsureDicSize()
+#else
+#define ENSURE_DIC_SIZE()
+#endif  /* !CONFIG_LANG_JAVA */
+
+
 GLOBALS
   GLOBAL(UInt32, bufCur);
   GLOBAL(UInt32, dicSize);  /* Configured in prop byte. */
@@ -757,7 +873,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, drDicLimit, const UInt32, drB
         }
         SET_ARY8(dic, GLOBAL_VAR(dicPos)++, LOCAL_VAR(drSymbol));
         GLOBAL_VAR(processedPos)++;
-        goto continue_do2;  /* CONTINUE; */
+        DEFAULT_CONTINUE_TO(continue_do2);
       } else {
         SET_GLOBAL(range, 71, -=) (LOCAL_VAR(drBound)) ; SET_GLOBAL(code, 73, -=) (LOCAL_VAR(drBound)) ; SET_ARY16(probs, LOCAL_VAR(drProbIdx), LOCAL_VAR(drTtt) - SHR_SMALLX(LOCAL_VAR(drTtt), 5));
         SET_LOCALB(drProbIdx, 75, =, IsRep + GLOBAL_VAR(state)) ;
@@ -785,7 +901,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, drDicLimit, const UInt32, drB
               GLOBAL_VAR(dicPos)++;
               GLOBAL_VAR(processedPos)++;
               SET_GLOBAL(state, 14, =) LT_SMALL(GLOBAL_VAR(state), kNumLitStates) ? 9 : 11;
-              goto continue_do2;  /* CONTINUE; */
+              DEFAULT_CONTINUE_TO(continue_do2);
             }
             SET_GLOBAL(range, 117, -=) (LOCAL_VAR(drBound)) ; SET_GLOBAL(code, 119, -=) (LOCAL_VAR(drBound)) ; SET_ARY16(probs, LOCAL_VAR(drProbIdx), LOCAL_VAR(drTtt) - SHR_SMALLX(LOCAL_VAR(drTtt), 5));
           } else {
@@ -884,7 +1000,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, drDicLimit, const UInt32, drB
                 if (LTX(GLOBAL_VAR(range), kTopValue)) { SET_GLOBAL(range, 291, <<=) (8) ; SET_GLOBAL(code, 293, =) ((GLOBAL_VAR(code) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; }
                 /* Here GLOBAL_VAR(range) can be non-small, so we can't use SHR_SMALLX instead of SHR1. */
                 SET_GLOBAL(range, 2951, =) (SHR1(GLOBAL_VAR(range)));
-                if ((GLOBAL_VAR(code) - GLOBAL_VAR(range)) & 0x80000000) {
+                if (TO_BOOL((GLOBAL_VAR(code) - GLOBAL_VAR(range)) & 0x80000000)) {
                   SET_LOCALB(distance, 297, <<=, 1);
                 } else {
                   SET_GLOBAL(code, 295, -=) (GLOBAL_VAR(range));
@@ -904,7 +1020,7 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, drDicLimit, const UInt32, drB
               if (EQ0(~LOCAL_VAR(distance))) {
                 SET_GLOBAL(remainLen, 387, +=) (kMatchSpecLenStart) ;
                 SET_GLOBAL(state, 26, -=) kNumStates;
-                goto break_do2;  /* BREAK; */
+                DEFAULT_BREAK_TO(break_do2);
               }
             }
           }
@@ -954,9 +1070,9 @@ FUNC_ARG2(SRes, LzmaDec_DecodeReal2, const UInt32, drDicLimit, const UInt32, drB
           }
         }
       }
-     continue_do2: ;
+     DEFAULT_LABEL(continue_do2)
     } while (LT_SMALL(GLOBAL_VAR(dicPos), LOCAL_VAR(drDicLimit2)) && LT_SMALL(GLOBAL_VAR(bufCur), LOCAL_VAR(drBufLimit)));
-    break_do2: ;
+    DEFAULT_LABEL(break_do2)
     if (LTX(GLOBAL_VAR(range), kTopValue)) { SET_GLOBAL(range, 395, <<=) (8) ; SET_GLOBAL(code, 397, =) ((GLOBAL_VAR(code) << 8) | (GET_ARY8(readBuf, GLOBAL_VAR(bufCur)++))) ; }
     if (GE_SMALL(GLOBAL_VAR(processedPos), GLOBAL_VAR(dicSize))) {
       SET_GLOBAL(checkDicSize, 46, =) GLOBAL_VAR(dicSize);
@@ -1112,7 +1228,7 @@ FUNC_ARG2(Byte, LzmaDec_TryDummy, UInt32, tdCur, const UInt32, tdBufLimit)
           do {
             if (LTX(LOCAL_VAR(tdRange), kTopValue)) { if (GE_SMALL(LOCAL_VAR(tdCur), LOCAL_VAR(tdBufLimit))) { return DUMMY_ERROR; } SET_LOCALB(tdRange, 663, <<=, 8) ; SET_LOCALB(tdCode, 665, =, (LOCAL_VAR(tdCode) << 8) | (GET_ARY8(readBuf, LOCAL_VAR(tdCur)++))) ; }
             SET_LOCALB(tdRange, 6651, =, SHR1(LOCAL_VAR(tdRange)));
-            if (!((LOCAL_VAR(tdCode) - LOCAL_VAR(tdRange)) & 0x80000000)) {
+            if (TO_BOOL_NEG((LOCAL_VAR(tdCode) - LOCAL_VAR(tdRange)) & 0x80000000)) {
               SET_LOCALB(tdCode, 667, -=, LOCAL_VAR(tdRange));
             }
           } while (NE_SMALL(--LOCAL_VAR(tdDirectBitCount), 0));
@@ -1139,12 +1255,12 @@ FUNC_ARG2(void, LzmaDec_InitDicAndState, const Bool, idInitDic, const Bool, idIn
   SET_GLOBAL(remainLen, 52, =) 0;
   SET_GLOBAL(tempBufSize, 54, =) 0;
 
-  if (LOCAL_VAR(idInitDic)) {
+  if (TO_BOOL(LOCAL_VAR(idInitDic))) {
     SET_GLOBAL(processedPos, 56, =) 0;
     SET_GLOBAL(checkDicSize, 58, =) 0;
     SET_GLOBAL(needInitLzma, 60, =) TRUE;
   }
-  if (LOCAL_VAR(idInitState)) {
+  if (TO_BOOL(LOCAL_VAR(idInitState))) {
     SET_GLOBAL(needInitLzma, 62, =) TRUE;
   }
 ENDFUNC
@@ -1162,8 +1278,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
   LzmaDec_WriteRem(GLOBAL_VAR(dicBufSize));
 
   while (NE_SMALL(GLOBAL_VAR(remainLen), kMatchSpecLenStart)) {
-
-    if (GLOBAL_VAR(needFlush)) {
+    if (TO_BOOL(GLOBAL_VAR(needFlush))) {
       /* Read 5 bytes (RC_INIT_SIZE) to tempBuf, first of which must be
        * 0, initialize the range coder with the 4 bytes after the 0 byte.
        */
@@ -1171,9 +1286,11 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
         SET_ARY8(readBuf, READBUF_SIZE + GLOBAL_VAR(tempBufSize)++, GET_ARY8(readBuf, GLOBAL_VAR(readCur)++));
       }
       if (LT_SMALL(GLOBAL_VAR(tempBufSize), RC_INIT_SIZE)) {
+#ifdef HAS_GOTO
        on_needs_more_input:
         if (NE_SMALL(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
         return SZ_ERROR_NEEDS_MORE_INPUT;
+#endif
       }
       if (NE_SMALL(GET_ARY8(readBuf, READBUF_SIZE), 0)) {
         return SZ_ERROR_DATA;
@@ -1196,7 +1313,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
       SET_LOCALB(checkEndMarkNow, 697, =, TRUE) ;
     }
 
-    if (GLOBAL_VAR(needInitLzma)) {
+    if (TO_BOOL(GLOBAL_VAR(needInitLzma))) {
       LOCAL_INIT(UInt32, numProbs, Literal + (ENSURE_32BIT(LZMA_LIT_SIZE) << (GLOBAL_VAR(lc) + GLOBAL_VAR(lp))));
       LOCAL(UInt32, ddProbIdx);
       for (LOCAL_VAR(ddProbIdx) = 0; LT_SMALL(LOCAL_VAR(ddProbIdx), LOCAL_VAR(numProbs)); LOCAL_VAR(ddProbIdx)++) {
@@ -1209,7 +1326,7 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
 
     if (EQ_SMALL(GLOBAL_VAR(tempBufSize), 0)) {
       LOCAL(UInt32, bufLimit);
-      if (LT_SMALL(LOCAL_VAR(decodeLimit) - GLOBAL_VAR(readCur), LZMA_REQUIRED_INPUT_MAX) || LOCAL_VAR(checkEndMarkNow)) {
+      if (LT_SMALL(LOCAL_VAR(decodeLimit) - GLOBAL_VAR(readCur), LZMA_REQUIRED_INPUT_MAX) || TO_BOOL(LOCAL_VAR(checkEndMarkNow))) {
         SET_LOCALB(dummyRes, 699, =, LzmaDec_TryDummy(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) ;
         if (EQ_SMALL(LOCAL_VAR(dummyRes), DUMMY_ERROR)) {
           /* This line can be triggered by passing LOCAL_VAR(ddSrcLen)=1 to LzmaDec_DecodeToDic. */
@@ -1217,9 +1334,14 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
           while (NE_SMALL(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) {
             SET_ARY8(readBuf, READBUF_SIZE + GLOBAL_VAR(tempBufSize)++, GET_ARY8(readBuf, GLOBAL_VAR(readCur)++));
           }
+#ifdef HAS_GOTO
           goto on_needs_more_input;
+#else
+          if (NE_SMALL(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
+          return SZ_ERROR_NEEDS_MORE_INPUT;
+#endif
         }
-        if (LOCAL_VAR(checkEndMarkNow) && NE_SMALL(LOCAL_VAR(dummyRes), DUMMY_MATCH)) {
+        if (TO_BOOL(LOCAL_VAR(checkEndMarkNow)) && NE_SMALL(LOCAL_VAR(dummyRes), DUMMY_MATCH)) {
           return SZ_ERROR_NOT_FINISHED;
         }
         SET_LOCALB(bufLimit, 701, =, GLOBAL_VAR(readCur)) ;
@@ -1238,13 +1360,18 @@ FUNC_ARG1(SRes, LzmaDec_DecodeToDic, const UInt32, ddSrcLen)
         SET_ARY8(readBuf, READBUF_SIZE + LOCAL_VAR(ddRem)++, GET_ARY8(readBuf, GLOBAL_VAR(readCur) + LOCAL_VAR(lookAhead)++));
       }
       SET_GLOBAL(tempBufSize, 90, =) LOCAL_VAR(ddRem);
-      if (LT_SMALL(LOCAL_VAR(ddRem), LZMA_REQUIRED_INPUT_MAX) || LOCAL_VAR(checkEndMarkNow)) {
+      if (LT_SMALL(LOCAL_VAR(ddRem), LZMA_REQUIRED_INPUT_MAX) || TO_BOOL(LOCAL_VAR(checkEndMarkNow))) {
         SET_LOCALB(dummyRes, 705, =, LzmaDec_TryDummy(READBUF_SIZE, READBUF_SIZE + LOCAL_VAR(ddRem))) ;
         if (EQ_SMALL(LOCAL_VAR(dummyRes), DUMMY_ERROR)) {
           SET_GLOBAL(readCur, 92, +=) LOCAL_VAR(lookAhead);
+#ifdef HAS_GOTO
           goto on_needs_more_input;
+#else
+          if (NE_SMALL(GLOBAL_VAR(readCur), LOCAL_VAR(decodeLimit))) { return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL; }
+          return SZ_ERROR_NEEDS_MORE_INPUT;
+#endif
         }
-        if (LOCAL_VAR(checkEndMarkNow) && NE_SMALL(LOCAL_VAR(dummyRes), DUMMY_MATCH)) {
+        if (TO_BOOL(LOCAL_VAR(checkEndMarkNow)) && NE_SMALL(LOCAL_VAR(dummyRes), DUMMY_MATCH)) {
           return SZ_ERROR_NOT_FINISHED;
         }
       }
@@ -1273,6 +1400,9 @@ ENDFUNC
  * Maximum allowed prereadSize is READBUF_SIZE (< 66000).
  */
 FUNC_ARG1(UInt32, Preread, const UInt32, prSize)
+#ifdef CONFIG_LANG_JAVA
+  try {
+#endif  /* CONFIG_LANG_JAVA */
   LOCAL_INIT(UInt32, prPos, GLOBAL_VAR(readEnd) - GLOBAL_VAR(readCur));
   LOCAL(UInt32, prGot);
   NOTICE_LOCAL_RANGE(prSize);
@@ -1299,6 +1429,11 @@ FUNC_ARG1(UInt32, Preread, const UInt32, prSize)
   }
   DEBUGF("PREREAD r=%d p=%d\n", ENSURE_32BIT(LOCAL_VAR(prSize)), ENSURE_32BIT(LOCAL_VAR(prPos)));
   return LOCAL_VAR(prPos);
+#ifdef CONFIG_LANG_JAVA
+  } catch (java.io.IOException e) {
+    throw new RuntimeException(e);
+  }
+#endif  /* CONFIG_LANG_JAVA */
 ENDFUNC
 
 FUNC_ARG0(void, IgnoreVarint)
@@ -1349,11 +1484,15 @@ ENDFUNC
 FUNC_ARG1(SRes, WriteFrom, UInt32, wfDicPos)
   NOTICE_LOCAL_RANGE(wfDicPos);
   DEBUGF("WRITE %d dicPos=%d\n", ENSURE_32BIT(GLOBAL_VAR(dicPos) - LOCAL_VAR(wfDicPos)), ENSURE_32BIT(GLOBAL_VAR(dicPos)));
+#ifdef CONFIG_LANG_JAVA
+  WRITE_TO_STDOUT_FROM_ARY8(dic, LOCAL_VAR(wfDicPos), GLOBAL_VAR(dicPos) - LOCAL_VAR(wfDicPos));
+#else
   while (NE_SMALL(LOCAL_VAR(wfDicPos), GLOBAL_VAR(dicPos))) {
     LOCAL_INIT(UInt32, wfGot, WRITE_TO_STDOUT_FROM_ARY8(dic, LOCAL_VAR(wfDicPos), GLOBAL_VAR(dicPos) - LOCAL_VAR(wfDicPos)));
     if (LOCAL_VAR(wfGot) & 0x80000000) { return SZ_ERROR_WRITE; }
     SET_LOCALB(wfDicPos, 713, +=, LOCAL_VAR(wfGot)) ;
   }
+#endif
   return SZ_OK;
 ENDFUNC
 
@@ -1399,8 +1538,10 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
       if (!LTX(LOCAL_VAR(readBufUS), DIC_ARRAY_SIZE + 1)) { return SZ_ERROR_MEM; }
     } else {
       SET_LOCALB(readBufUS, 715, =, LOCAL_VAR(bhf)) ;  /* max UInt32. */
+      /* !! Don't preallocate DIC_BUF_SIZE in Java in ENSURE_DIC_SIZE below. */
       SET_GLOBAL(dicBufSize, 134, =) DIC_ARRAY_SIZE;
     }
+    ENSURE_DIC_SIZE();
     SET_GLOBAL(readCur, 136, +=) 13;  /* Start decompressing the 0 byte. */
     DEBUGF("LZMA dicSize=0x%x us=%d bhf=%d\n", ENSURE_32BIT(GLOBAL_VAR(dicSize)), ENSURE_32BIT(LOCAL_VAR(readBufUS)), ENSURE_32BIT(LOCAL_VAR(bhf)));
     /* TODO(pts): Limit on uncompressed size unless 8 bytes of -1 is
@@ -1519,37 +1660,37 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
         }
         SET_LOCALB(chunkUS, 731, =, (GET_ARY8(readBuf, GLOBAL_VAR(readCur) + 1) << 8) + GET_ARY8(readBuf, GLOBAL_VAR(readCur) + 2) + 1) ;
         if (LT_SMALL(LOCAL_VAR(control), 3)) {  /* Uncompressed chunk. */
-          SET_LOCALB(initDic, 7311, =, EQ_SMALL(LOCAL_VAR(control), 1));
+          SET_LOCALB(initDic, 7311, =, BOOL_TO_INT(EQ_SMALL(LOCAL_VAR(control), 1)));
           SET_LOCALB(chunkCS, 733, =, LOCAL_VAR(chunkUS)) ;
           SET_GLOBAL(readCur, 146, +=) 3;
           /* TODO(pts): Porting: TRUNCATE_TO_8BIT(LOCAL_VAR(blockSizePad)) for Python and other unlimited-integer-range languages. */
           LOCAL_VAR(blockSizePad) -= 3;
-          if (LOCAL_VAR(initDic)) {
+          if (TO_BOOL(LOCAL_VAR(initDic))) {
             SET_GLOBAL(needInitProp, 148, =) SET_GLOBAL(needInitState, 150, =) TRUE;
             SET_GLOBAL(needInitDic, 152, =) FALSE;
-          } ELSE_IF (GLOBAL_VAR(needInitDic)) {
+          } ELSE_IF (TO_BOOL(GLOBAL_VAR(needInitDic))) {
             return SZ_ERROR_DATA;
           }
           LzmaDec_InitDicAndState(LOCAL_VAR(initDic), FALSE);
         } else {  /* LZMA chunk. */
           LOCAL_INIT(const Byte, mode, (SHR_SMALLX((LOCAL_VAR(control)), 5) & 3));
-          LOCAL_INIT(const Bool, initState, NE_SMALL(LOCAL_VAR(mode), 0));
-          LOCAL_INIT(const Bool, isProp, NE_SMALL((LOCAL_VAR(control) & 64), 0));
-          SET_LOCALB(initDic, 7331, =, EQ_SMALL(LOCAL_VAR(mode), 3));
+          LOCAL_INIT(const Bool, initState, BOOL_TO_INT(NE_SMALL(LOCAL_VAR(mode), 0)));
+          LOCAL_INIT(const Bool, isProp, BOOL_TO_INT(NE_SMALL((LOCAL_VAR(control) & 64), 0)));
+          SET_LOCALB(initDic, 7331, =, BOOL_TO_INT(EQ_SMALL(LOCAL_VAR(mode), 3)));
           SET_LOCALB(chunkUS, 735, +=, (LOCAL_VAR(control) & 31) << 16) ;
           SET_LOCALB(chunkCS, 737, =, (GET_ARY8(readBuf, GLOBAL_VAR(readCur) + 3) << 8) + GET_ARY8(readBuf, GLOBAL_VAR(readCur) + 4) + 1) ;
-          if (LOCAL_VAR(isProp)) {
+          if (TO_BOOL(LOCAL_VAR(isProp))) {
             if (NE_SMALL((LOCAL_VAR(dxRes) = InitProp(GET_ARY8(readBuf, GLOBAL_VAR(readCur) + 5))), SZ_OK)) {
               return LOCAL_VAR(dxRes);
             }
             ++GLOBAL_VAR(readCur);
             --LOCAL_VAR(blockSizePad);
           } else {
-            if (GLOBAL_VAR(needInitProp)) { return SZ_ERROR_MISSING_INITPROP; }
+            if (TO_BOOL(GLOBAL_VAR(needInitProp))) { return SZ_ERROR_MISSING_INITPROP; }
           }
           SET_GLOBAL(readCur, 154, +=) 5;
           SET_LOCALB(blockSizePad, 739, -=, 5) ;
-          if ((!LOCAL_VAR(initDic) && GLOBAL_VAR(needInitDic)) || (!LOCAL_VAR(initState) && GLOBAL_VAR(needInitState))) {
+          if ((TO_BOOL_NEG(LOCAL_VAR(initDic)) && TO_BOOL(GLOBAL_VAR(needInitDic))) || (TO_BOOL_NEG(LOCAL_VAR(initState)) && TO_BOOL(GLOBAL_VAR(needInitState)))) {
             return SZ_ERROR_DATA;
           }
           LzmaDec_InitDicAndState(LOCAL_VAR(initDic), LOCAL_VAR(initState));
@@ -1560,6 +1701,7 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
         SET_GLOBAL(dicBufSize, 160, +=) LOCAL_VAR(chunkUS);
         /* Decompressed data too long, won't fit to GLOBAL_VAR(dic). */
         if (GT_SMALL(GLOBAL_VAR(dicBufSize), DIC_ARRAY_SIZE)) { return SZ_ERROR_MEM; }
+        ENSURE_DIC_SIZE();
         /* Read 6 extra bytes to optimize away a read(...) system call in
          * the Prefetch(6) call in the next chunk header.
          */
@@ -1758,9 +1900,19 @@ int main(int argc, char **argv) {
   DUMP_VRMINMAX(wrLen);
   /**/
   mainRes; });
-#endif /* CONFIG_DEBUG_VAR_RANGES */
+#endif  /* CONFIG_DEBUG_VAR_RANGES */
 }
-#endif
+#endif  /* CONFIG_LANG_C */
+
+#ifdef CONFIG_LANG_JAVA
+public static void main(String args[]) {
+  probs16 = new short[LZMA2_MAX_NUM_PROBS];  /* !! TODO(pts): Automatic size. */
+  readBuf8 = new byte[READBUF_SIZE + LZMA_REQUIRED_INPUT_MAX];  /* !! TODO(pts): Automatic size. */
+  dic8 = new byte[65536];
+  System.exit(DecompressXzOrLzma());
+}
+}
+#endif  /* CONFIG_LANG_JAVA */
 
 #ifdef CONFIG_LANG_PERL
 FUNC_ARG0(SRes, Decompress)
@@ -1776,5 +1928,4 @@ FUNC_ARG0(SRes, Decompress)
   CLEAR_ARY8(dic);
   return LOCAL_VAR(deRes);
 ENDFUNC
-
 #endif  /* CONFIG_LANG_PERL */
