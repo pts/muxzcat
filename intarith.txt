@@ -77,7 +77,7 @@ Solution:
   Special handling:
 
   * a fu>> b := b ? (a >> b) & (0x7fffffff >> (b - 1)) : a.
-  * a fu< b := (a < 0 ? b >= 0 : b < 0) ? b < 0 : a < b.
+  * a fu< b := (a - 0x80000000 < b - 0x80000000).
   * a fu> b := b fu< a.
   * a fu<= b := !(b fu< a).
   * a fu>= b := !(a fu< b).

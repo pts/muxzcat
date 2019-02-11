@@ -127,7 +127,7 @@ muxzcatj11.jar needs JRE 1.1 (Java 1.1) released on 1997-02. It Also works
 with any more recent Java, e.g. Java 8.
 
 Based on decompression speed measurements of the ~100 MiB
-linux-4.20.5.tar.xz, size-optimized muxzcat.c (on Linux i386) is about 1.485
+linux-4.20.5.tar.xz, size-optimized muxzcat.c (on Linux i386) is about 1.439
 times faster than muxzcat.java (with java 1.8 compiled for Linux amd64).
 The C and Java implementations are derived from the same codebase
 (muxzcat.c, itself derived from the sources files in 7z922.tar.bz2).

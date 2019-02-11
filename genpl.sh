@@ -43,10 +43,8 @@ $_ = <<'\''ENDEVAL'\'';
     s@(#.*)|[ \t]+;@ defined($1) ? $1 : ";" @ge;
     s@^[ \t]*GLOBAL @@mg' &&
 echo 'ENDEVAL
-my $lta; my $ltb;
 if ((1 << 31) < 0) {  # 32-bit Perl.
-  s@\bLT\[([^\]]+)\],\[([^\]]+)\]@(\$lta = ($1) & 0xffffffff, \$ltb = ($2) & 0xffffffff, (\$lta < 0 ? \$ltb >= 0 : \$ltb < 0) ? \$ltb < 0 : \$lta < \$ltb)@g;
-  s@\bLTX\[([^\]]+)\],\[([^\]]+)\]@(\$lta = ($1) & 0xffffffff, \$lta < ($2) && \$lta >= 0)@g;
+  s@\bLTX?\[([^\]]+)\],\[([^\]]+)\]@(($1) - 0x80000000 < ($2) - 0x80000000)@g;
   s@\bEQ0\[([^\]]+)\]@!($1)@g;
   s@\bNE0\[([^\]]+)\]@(($1) != 0)@g;
 } else {  # At least 33-bit Perl, typically 64-bit.

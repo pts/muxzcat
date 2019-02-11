@@ -305,8 +305,8 @@ struct IntegerTypeAsserts {
  */
 #define EQ0(x) ((x) == 0)
 #define NE0(x) ((x) != 0)
-#define LT(x, y) Lt32(x, y)  /* !! TODO(pts): Faster using local variables or long. */
-#define LTX(x, y) Ltx32(x, y)  /* !! TODO(pts): Faster using local variables or long. */
+#define LT(x, y) ((x) - 0x80000000 < (y) - 0x80000000)
+#define LTX(x, y) ((x) - 0x80000000 < (y) - 0x80000000)
 #endif  /* CONFIG_LANG_JAVA */
 #ifdef CONFIG_LANG_PERL
 #define LTX(x, y) LTX[x],[y]
@@ -695,12 +695,6 @@ struct LzmaAsserts {
 
 #ifdef CONFIG_LANG_JAVA
 public class muaxzcat {
-public static final boolean Lt32(int x, int y) {
-  return (x < 0 ? y >= 0 : y < 0) ? y < 0 : x < y;
-}
-public static final boolean Ltx32(int x, int y) {
-  return x < y && x >= 0;
-}
 #endif  /* CONFIG_LANG_JAVA */
 
 #ifdef CONFIG_LANG_JAVA
