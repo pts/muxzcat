@@ -12,7 +12,6 @@
   */
 /* The code doesn't have overflowing / /= % %=, so we don't create macros for these. */
 /* These work only if IS_SMALL(x) and 0 <= y <= 31. */
-
 /* These work only if IS_SMALL(x) && IS_SMALL(y). */
 /* genpl.sh has the 32-bit (slow) and 64-bit (fast) implementations of
  * EQ0, NE0 and LT.
@@ -34,9 +33,6 @@
  */
 /*#define LzmaProps_GetNumProbs(p) TRUNCATE_TO_32BIT(LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp))) */
 public class muxzcat {
-
-
-
 public static void EnsureDicSize() {
   int newCapacity = dic8.length;
   while (newCapacity > 0 && ((newCapacity) < (GLOBAL_dicBufSize))) {
@@ -51,13 +47,6 @@ public static void EnsureDicSize() {
     dic8 = newDic;
   }
 }
-
-
-
-
-
-
-
   static int GLOBAL_bufCur;
   static int GLOBAL_dicSize; /* Configured in prop byte. */
   static int GLOBAL_range;
@@ -108,9 +97,7 @@ public static void EnsureDicSize() {
    * from other processes.
    */
   static byte dic8[];
-
 /* --- */
-
 static final void LzmaDec_WriteRem(int LOCAL_wrDicLimit) {
   if (((GLOBAL_remainLen) != (0)) && ((GLOBAL_remainLen) < (274))) {
     int LOCAL_wrLen = GLOBAL_remainLen;
@@ -129,7 +116,6 @@ static final void LzmaDec_WriteRem(int LOCAL_wrDicLimit) {
     }
   }
 }
-
 /* Modifies GLOBAL_VAR(bufCur) etc. */
 static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit) {
   int LOCAL_pbMask = ((1) << (GLOBAL_pb)) - 1;
@@ -144,7 +130,6 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
       int LOCAL_drTtt; /* 0 <= LOCAL_VAR(drTtt) <= kBitModelTotal. */
       int LOCAL_distance;
       int LOCAL_drPosState = GLOBAL_processedPos & LOCAL_pbMask;
-
       LOCAL_drProbIdx = 0 + (GLOBAL_state << (4)) + LOCAL_drPosState ;
       LOCAL_drTtt = (probs16[LOCAL_drProbIdx] & 0xffff) ; if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; } LOCAL_drBound = ((GLOBAL_range) >>> 11) * LOCAL_drTtt ;
       if (((GLOBAL_code) - 0x80000000 < (LOCAL_drBound) - 0x80000000)) {
@@ -267,7 +252,6 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
           }
           GLOBAL_remainLen += (LOCAL_drOffset) ;
         }
-
         if (((GLOBAL_state) >= (12))) {
           LOCAL_drProbIdx = 432 + ((((GLOBAL_remainLen) < (4)) ? GLOBAL_remainLen : 4 - 1) << (6)) ;
           {
@@ -338,9 +322,7 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
           }
           GLOBAL_state = ((GLOBAL_state) < (12 + 7)) ? 7 : 7 + 3;
         }
-
         GLOBAL_remainLen += (2) ;
-
         if (((LOCAL_drDicLimit2) == (GLOBAL_dicPos))) {
           return 1;
         }
@@ -348,9 +330,7 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
           int LOCAL_drRem = LOCAL_drDicLimit2 - GLOBAL_dicPos;
           int LOCAL_curLen = (((LOCAL_drRem) < (GLOBAL_remainLen)) ? LOCAL_drRem : GLOBAL_remainLen);
           int LOCAL_pos = (GLOBAL_dicPos - GLOBAL_rep0) + (((GLOBAL_dicPos) < (GLOBAL_rep0)) ? GLOBAL_dicBufSize : 0);
-
           GLOBAL_processedPos += LOCAL_curLen;
-
           GLOBAL_remainLen -= (LOCAL_curLen) ;
           if (((LOCAL_pos + LOCAL_curLen) <= (GLOBAL_dicBufSize))) {
             do {
@@ -365,22 +345,18 @@ static final int LzmaDec_DecodeReal2(int LOCAL_drDicLimit, int LOCAL_drBufLimit)
           }
         }
       }
-    
     } while (((GLOBAL_dicPos) < (LOCAL_drDicLimit2)) && ((GLOBAL_bufCur) < (LOCAL_drBufLimit)));
-   
     if (((GLOBAL_range) - 0x80000000 < (16777216) - 0x80000000)) { GLOBAL_range <<= (8) ; GLOBAL_code = ((GLOBAL_code << 8) | ((readBuf8[GLOBAL_bufCur++] & 0xff))) ; }
     if (((GLOBAL_processedPos) >= (GLOBAL_dicSize))) {
       GLOBAL_checkDicSize = GLOBAL_dicSize;
     }
     LzmaDec_WriteRem(LOCAL_drDicLimit);
   } while (((GLOBAL_dicPos) < (LOCAL_drDicLimit)) && ((GLOBAL_bufCur) < (LOCAL_drBufLimit)) && ((GLOBAL_remainLen) < (274)));
-
   if (((GLOBAL_remainLen) > (274))) {
     GLOBAL_remainLen = 274;
   }
   return 0;
 }
-
 static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
   int LOCAL_tdRange = GLOBAL_range;
   int LOCAL_tdCode = GLOBAL_code;
@@ -399,7 +375,6 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
     if (((GLOBAL_checkDicSize) != (0)) || ((GLOBAL_processedPos) != (0))) {
       LOCAL_tdProbIdx += (768 * ((((GLOBAL_processedPos) & ((1 << (GLOBAL_lp)) - 1)) << GLOBAL_lc) + (((dic8[(((GLOBAL_dicPos) == (0)) ? GLOBAL_dicBufSize : GLOBAL_dicPos) - 1] & 0xff)) >> (GLOBAL_lcm8)))) ;
     }
-
     if (((LOCAL_tdState) < (7))) {
       do {
         LOCAL_tdTtt = (probs16[LOCAL_tdProbIdx + LOCAL_tdSymbol] & 0xffff) ; if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; } LOCAL_tdBound = ((LOCAL_tdRange) >>> 11) * LOCAL_tdTtt ; if (((LOCAL_tdCode) - 0x80000000 < (LOCAL_tdBound) - 0x80000000)) { LOCAL_tdRange = LOCAL_tdBound ; LOCAL_tdSymbol = (LOCAL_tdSymbol + LOCAL_tdSymbol); } else { LOCAL_tdRange -= LOCAL_tdBound ; LOCAL_tdCode -= LOCAL_tdBound ; LOCAL_tdSymbol = (LOCAL_tdSymbol + LOCAL_tdSymbol) + 1; }
@@ -498,7 +473,6 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
       }
       LOCAL_tdLen += LOCAL_tdOffset ;
     }
-
     if (((LOCAL_tdState) < (4))) {
       int LOCAL_tdPosSlot;
       LOCAL_tdProbIdx = 432 + ((((LOCAL_tdLen) < (4)) ? LOCAL_tdLen : 4 - 1) << (6)) ;
@@ -538,12 +512,10 @@ static final int LzmaDec_TryDummy(int LOCAL_tdCur, int LOCAL_tdBufLimit) {
   if (((LOCAL_tdRange) - 0x80000000 < (16777216) - 0x80000000)) { if (((LOCAL_tdCur) >= (LOCAL_tdBufLimit))) { return 0; } LOCAL_tdRange <<= 8 ; LOCAL_tdCode = (LOCAL_tdCode << 8) | ((readBuf8[LOCAL_tdCur++] & 0xff)) ; }
   return LOCAL_tdRes;
 }
-
 static final void LzmaDec_InitDicAndState(int LOCAL_idInitDic, int LOCAL_idInitState) {
   GLOBAL_needFlush = 1;
   GLOBAL_remainLen = 0;
   GLOBAL_tempBufSize = 0;
-
   if (((LOCAL_idInitDic) != 0)) {
     GLOBAL_processedPos = 0;
     GLOBAL_checkDicSize = 0;
@@ -553,7 +525,6 @@ static final void LzmaDec_InitDicAndState(int LOCAL_idInitDic, int LOCAL_idInitS
     GLOBAL_needInitLzma = 1;
   }
 }
-
 /* Decompress LZMA stream in
  * readBuf8[GLOBAL_VAR(readCur) : GLOBAL_VAR(readCur) + LOCAL_VAR(ddSrcLen)].
  * On success (and on some errors as well), adds LOCAL_VAR(ddSrcLen) to GLOBAL_VAR(readCur).
@@ -564,7 +535,6 @@ static final int LzmaDec_DecodeToDic(int LOCAL_ddSrcLen) {
   int LOCAL_checkEndMarkNow;
   int LOCAL_dummyRes;
   LzmaDec_WriteRem(GLOBAL_dicBufSize);
-
   while (((GLOBAL_remainLen) != (274))) {
     if (((GLOBAL_needFlush) != 0)) {
       /* Read 5 bytes (RC_INIT_SIZE) to tempBuf, first of which must be
@@ -574,11 +544,6 @@ static final int LzmaDec_DecodeToDic(int LOCAL_ddSrcLen) {
         readBuf8[(6 + 65536 + 6) + GLOBAL_tempBufSize++] = (byte)((readBuf8[GLOBAL_readCur++] & 0xff));
       }
       if (((GLOBAL_tempBufSize) < (5))) {
-
-
-
-
-
       }
       if ((((readBuf8[(6 + 65536 + 6)] & 0xff)) != (0))) {
         return 1;
@@ -588,7 +553,6 @@ static final int LzmaDec_DecodeToDic(int LOCAL_ddSrcLen) {
       GLOBAL_needFlush = 0;
       GLOBAL_tempBufSize = 0;
     }
-
     LOCAL_checkEndMarkNow = 0 ;
     if (((GLOBAL_dicPos) >= (GLOBAL_dicBufSize))) {
       if (((GLOBAL_remainLen) == (0)) && ((GLOBAL_code) == 0)) {
@@ -600,7 +564,6 @@ static final int LzmaDec_DecodeToDic(int LOCAL_ddSrcLen) {
       }
       LOCAL_checkEndMarkNow = 1 ;
     }
-
     if (((GLOBAL_needInitLzma) != 0)) {
       int LOCAL_numProbs = 1846 + ((768) << (GLOBAL_lc + GLOBAL_lp));
       int LOCAL_ddProbIdx;
@@ -611,7 +574,6 @@ static final int LzmaDec_DecodeToDic(int LOCAL_ddSrcLen) {
       GLOBAL_state = 0;
       GLOBAL_needInitLzma = 0;
     }
-
     if (((GLOBAL_tempBufSize) == (0))) {
       int LOCAL_bufLimit;
       if (((LOCAL_decodeLimit - GLOBAL_readCur) < (20)) || ((LOCAL_checkEndMarkNow) != 0)) {
@@ -622,12 +584,8 @@ static final int LzmaDec_DecodeToDic(int LOCAL_ddSrcLen) {
           while (((GLOBAL_readCur) != (LOCAL_decodeLimit))) {
             readBuf8[(6 + 65536 + 6) + GLOBAL_tempBufSize++] = (byte)((readBuf8[GLOBAL_readCur++] & 0xff));
           }
-
-
-
           if (((GLOBAL_readCur) != (LOCAL_decodeLimit))) { return 17; }
           return 17;
-
         }
         if (((LOCAL_checkEndMarkNow) != 0) && ((LOCAL_dummyRes) != (2))) {
           return 16;
@@ -652,12 +610,8 @@ static final int LzmaDec_DecodeToDic(int LOCAL_ddSrcLen) {
         LOCAL_dummyRes = LzmaDec_TryDummy((6 + 65536 + 6), (6 + 65536 + 6) + LOCAL_ddRem) ;
         if (((LOCAL_dummyRes) == (0))) {
           GLOBAL_readCur += LOCAL_lookAhead;
-
-
-
           if (((GLOBAL_readCur) != (LOCAL_decodeLimit))) { return 17; }
           return 17;
-
         }
         if (((LOCAL_checkEndMarkNow) != 0) && ((LOCAL_dummyRes) != (2))) {
           return 16;
@@ -676,7 +630,6 @@ static final int LzmaDec_DecodeToDic(int LOCAL_ddSrcLen) {
   if (((GLOBAL_code) != 0)) { return 1; }
   return 15;
 }
-
 /* Tries to preread r bytes to the read buffer. Returns the number of bytes
  * available in the read buffer. If smaller than r, that indicates EOF.
  *
@@ -688,9 +641,7 @@ static final int LzmaDec_DecodeToDic(int LOCAL_ddSrcLen) {
  * Maximum allowed prereadSize is READBUF_SIZE (< 66000).
  */
 static final int Preread(int LOCAL_prSize) {
-
   try {
-
   int LOCAL_prPos = GLOBAL_readEnd - GLOBAL_readCur;
   int LOCAL_prGot;
   if (((LOCAL_prPos) < (LOCAL_prSize))) { /* Not enough pending available. */
@@ -712,17 +663,13 @@ static final int Preread(int LOCAL_prSize) {
     }
   }
   return LOCAL_prPos;
-
   } catch (java.io.IOException e) {
     return 8;
   }
-
 }
-
 static final void IgnoreVarint() {
   while ((((readBuf8[GLOBAL_readCur++] & 0xff)) >= (0x80))) {}
 }
-
 static final int IgnoreZeroBytes(int LOCAL_izCount) {
   for (; ((LOCAL_izCount) != (0)); --LOCAL_izCount) {
     if ((((readBuf8[GLOBAL_readCur++] & 0xff)) != (0))) {
@@ -731,11 +678,9 @@ static final int IgnoreZeroBytes(int LOCAL_izCount) {
   }
   return 0;
 }
-
 static final int GetLE4(int LOCAL_glPos) {
   return (readBuf8[LOCAL_glPos] & 0xff) | (readBuf8[LOCAL_glPos + 1] & 0xff) << 8 | (readBuf8[LOCAL_glPos + 2] & 0xff) << 16 | (readBuf8[LOCAL_glPos + 3] & 0xff) << 24;
 }
-
 /* Expects GLOBAL_VAR(dicSize) be set already. Can be called before or after InitProp. */
 static final void InitDecode() {
   /* needInitProp will initialize it */
@@ -747,7 +692,6 @@ static final void InitDecode() {
   GLOBAL_dicPos = 0;
   LzmaDec_InitDicAndState(1, 1);
 }
-
 static final int InitProp(int LOCAL_ipByte) {
   if (((LOCAL_ipByte) >= (9 * 5 * 5))) { return 68; }
   GLOBAL_lc = LOCAL_ipByte % 9;
@@ -759,21 +703,11 @@ static final int InitProp(int LOCAL_ipByte) {
   GLOBAL_needInitProp = 0;
   return 0;
 }
-
 /* Writes uncompressed data dic[LOCAL_VAR(fromDicPos) : GLOBAL_VAR(dicPos)] to stdout. */
 static final int WriteFrom(int LOCAL_wfDicPos) {
-
   System.out.write(dic8, LOCAL_wfDicPos, GLOBAL_dicPos - LOCAL_wfDicPos);
-
-
-
-
-
-
-
   return 0;
 }
-
 /* Reads .xz or .lzma data from stdin, writes uncompressed bytes to stdout,
  * uses GLOBAL_VAR(dic). It verifies some aspects of the file format (so it
  * can't be tricked to an infinite loop etc.), itdoesn't verify checksums
@@ -783,7 +717,6 @@ static final int DecompressXzOrLzma() {
   int LOCAL_checksumSize;
   int LOCAL_bhf; /* Block header flags */
   int LOCAL_dxRes;
-
   /* 12 for the stream header + 12 for the first block header + 6 for the
    * first chunk header. empty.xz is 32 bytes.
    */
@@ -830,11 +763,11 @@ static final int DecompressXzOrLzma() {
     while ((((LOCAL_srcLen = Preread((6 + 65536 + 6)))) != (0))) {
       LOCAL_fromDicPos = GLOBAL_dicPos ;
       LOCAL_dxRes = LzmaDec_DecodeToDic(LOCAL_srcLen) ;
-      if (((GLOBAL_dicPos) > (LOCAL_readBufUS))) { GLOBAL_dicPos = LOCAL_readBufUS; }
+      if (((LOCAL_readBufUS) - 0x80000000 < (GLOBAL_dicPos) - 0x80000000)) { GLOBAL_dicPos = LOCAL_readBufUS; }
       if ((((LOCAL_dxRes = WriteFrom(LOCAL_fromDicPos))) != (0))) { return LOCAL_dxRes; }
       if (((LOCAL_dxRes) == (15))) { break; }
       if (((LOCAL_dxRes) != (17)) && ((LOCAL_dxRes) != (0))) { return LOCAL_dxRes; }
-      if (((GLOBAL_dicPos) == (LOCAL_readBufUS))) { break; }
+      if (((GLOBAL_dicPos - LOCAL_readBufUS) == 0)) { break; }
     }
     return 0;
   } else {
@@ -906,7 +839,6 @@ static final int DecompressXzOrLzma() {
       int LOCAL_chunkCS; /* Compressed chunk size. */
       int LOCAL_initDic;
       InitDecode();
-
       for (;;) {
         int LOCAL_control;
         /* Actually 2 bytes is enough to get to the index if everything is
