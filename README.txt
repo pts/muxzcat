@@ -1,17 +1,37 @@
-muxzcat: tiny .xz and .lzma decompression filter
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+muxzcat: tiny and portable .xz and .lzma decompression filter
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 muxzcat is decompression filter for .xz and .lzma compressed files
-implemented in C (also works in C++), Perl 5 and Java. muxzcat.c is platform
-independent, but it's size-optimized for Linux i386. muxzcat.c is
-self-contained: it uses only the standard C library.
+implemented in C (also works in C++), Perl 5 and Java. muxzcat.c is
+portable, platform-independent and backwards-compatible with old (pre-2000)
+versions of Perl, Java, C, Linux and Windows. The C version is
+size-optimized for Linux i386 and is self-contained: it uses only system
+calls: read(2) and write(2) from the standard C library.
 
-muxzcat.c is size-optimized for Linux i386 (also runs on amd64) with `xtiny
-gcc': the final statically linked executable is 7376 bytes, and with upxbc
-(`upxbc --elftiny -f -o muxzcat.upx muxzcat') it can be compressed to 4678
-bytes. (Compare it with xzcat-only busybox on Linux i386, which is >20 KiB.)
+The following binaries are released on https://github.com/pts/muxzcat/releases :
 
-See the beginning of muxzcat.c for compilation instructions. After
-compiling, run it with any of:
+* muxzcat: Linux i386 executable (also runs on Linux amd64)
+* muxzcat.upx: Linux i386 executable, compressed with upxbc
+* muxzcat.exe: Windows i386 Win32 executable using kernel32.dll only
+* muxzcat.pl: Perl script which works on Perl 5.004_04 or later
+* muxzcat.class: Java command-line application which works on Java 1.0.2 or
+  later
+* muxzcatj12.jar: Java-with-lib command-line application which works on
+  Java 1.2 or later
+
+muxzcat.c is size-optimized for Linux i386 (also runs on Linux amd64) with
+`xtiny gcc': the final statically linked executable is 7376 bytes, and with
+upxbc (`upxbc --elftiny -f -o muxzcat.upx muxzcat') it can be compressed to
+4678 bytes. (Compare it with xzcat-only busybox on Linux i386, which is >20
+KiB.)
+
+muxzcat.c is size-optimized for Windows i386 (also runs on Windows amd64)
+with gcc-mingw32 and some command-line flags (see genwin32.sh): the final
+muxzcat.exe is 10240 bytes.
+
+To use the C implementation (muxzcat.c), either download the binary
+executable from https://github.com/pts/muxzcat/releases or compile it from
+source (see the beginning of muxzcat.c for compilation instructions), and
+then run it with any of:
 
   $ ./muxzcat <input.xz >output.bin
   $ ./muxzcat <input.lzma >output.bin
@@ -105,7 +125,7 @@ Which Java program to use: muxzcat.java or muxzcatj12.jar?
   muxzcat.java should be used.
 
 Based on decompression speed measurements of linux-4.20.5.tar.xz,
-size-optimized muxzcat.c (on Linux i386) is about 7% slower than
+size-optimized muxzcat.c (on Linux i386) is about 1.07 times slower than
 speed-optimized xzcat (on Linux amd64).
 
 Based on decompression speed measurements of a ~2 MiB .tar.xz file and of
