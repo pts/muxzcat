@@ -66,8 +66,6 @@
 
 #ifdef __TINYC__  /* tcc https://bellard.org/tcc/ , pts-tcc https://github.com/pts/pts-tcc */
 
-typedef unsigned size_t;  /* TODO(pts): Support 64-bit tcc */
-typedef int ssize_t;  /* TODO(pts): Support 64-bit tcc */
 typedef int int32_t;
 typedef unsigned uint32_t;
 typedef short int16_t;
@@ -85,18 +83,29 @@ ssize_t write(int fd, const void *buf, size_t count);
 #include <xtiny.h>
 
 #else  /* Not __XTINY__. */
+#ifdef __KERNEL32TINY__  /* _WIN32 with kernel32.dll only. */
+
+#include <windows.h>
+
+#define memcmp MyMemcmp
+
+typedef int int32_t;
+typedef unsigned uint32_t;
+typedef short int16_t;
+typedef unsigned short uint16_t;
+typedef unsigned char uint8_t;
+
+#else  /* Not _WIN32. */
 
 #include <string.h>  /* memcpy(), memmove() */
 #include <unistd.h>  /* read(), write() */
-#ifdef _WIN32
-#  include <windows.h>
-#endif
 #if defined(MSDOS) || defined(_WIN32)
 #  include <fcntl.h>  /* setmode() */
 #endif
 #include <stdint.h>
-#endif  /* __XTINY__ */
-#endif  /* __TINYC__ */
+#endif  /* Not _WIN32 */
+#endif  /* Not __XTINY__ */
+#endif  /* Not __TINYC__ */
 
 typedef int32_t  Int32;
 typedef uint32_t UInt32;
@@ -134,6 +143,9 @@ struct IntegerTypeAsserts {
 #define ASSERT(condition) do {} while (0 && (condition))
 #endif
 
+/* TODO(pts): Use__attribute__((sysv_abi, regparm(1))) for muxzcat.upx only. */
+#define STATIC static /*__attribute__((sysv_abi, regparm(3)))*/
+
 #if 0  /* __i386 is is always defined, just playing it safe. */
 static __inline__ void MemmoveOverlap(void *dest, void *src, UInt32 n) {
   __asm__ __volatile__ ("rep movsb\n\t"
@@ -146,7 +158,7 @@ static __inline__ void MemmoveOverlap(void *dest, void *src, UInt32 n) {
  * implementation, there is no size difference. In fact, it generates
  * better code with this than the inline assembly.
  */
-static void MemmoveOverlap(void *dest, const void *src, UInt32 n) {
+STATIC void MemmoveOverlap(void *dest, const void *src, UInt32 n) {
   char *destCp = (char*)dest;
   char *srcCp = (char*)src;
   for (; n > 0; --n) {
@@ -362,7 +374,7 @@ static CLzmaDec global;
 
 #define LZMA_DIC_MIN (1 << 12)
 
-static SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
+STATIC SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
 {
   CLzmaProb *probs = global.probs;
 
@@ -656,7 +668,7 @@ static SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
   return SZ_OK;
 }
 
-static void LzmaDec_WriteRem(UInt32 limit)
+STATIC void LzmaDec_WriteRem(UInt32 limit)
 {
   if (global.remainLen != 0 && global.remainLen < kMatchSpecLenStart)
   {
@@ -683,7 +695,7 @@ static void LzmaDec_WriteRem(UInt32 limit)
   }
 }
 
-static SRes LzmaDec_DecodeReal2(UInt32 limit, const Byte *bufLimit)
+STATIC SRes LzmaDec_DecodeReal2(UInt32 limit, const Byte *bufLimit)
 {
   do
   {
@@ -716,7 +728,7 @@ typedef enum
   DUMMY_REP
 } ELzmaDummy;
 
-static ELzmaDummy LzmaDec_TryDummy(const Byte *buf, UInt32 inSize)
+STATIC ELzmaDummy LzmaDec_TryDummy(const Byte *buf, UInt32 inSize)
 {
   UInt32 range = global.range;
   UInt32 code = global.code;
@@ -907,14 +919,14 @@ static ELzmaDummy LzmaDec_TryDummy(const Byte *buf, UInt32 inSize)
 }
 
 
-static void LzmaDec_InitRc(const Byte *data)
+STATIC void LzmaDec_InitRc(const Byte *data)
 {
   global.code = ((UInt32)data[1] << 24) | ((UInt32)data[2] << 16) | ((UInt32)data[3] << 8) | ((UInt32)data[4]);
   global.range = 0xFFFFFFFF;
   global.needFlush = False;
 }
 
-static void LzmaDec_InitDicAndState(Bool initDic, Bool initState)
+STATIC void LzmaDec_InitDicAndState(Bool initDic, Bool initState)
 {
   global.needFlush = True;
   global.remainLen = 0;
@@ -930,7 +942,7 @@ static void LzmaDec_InitDicAndState(Bool initDic, Bool initState)
     global.needInitLzma = True;
 }
 
-static void LzmaDec_InitStateReal(void)
+STATIC void LzmaDec_InitStateReal(void)
 {
   UInt32 numProbs = Literal + ((UInt32)LZMA_LIT_SIZE << (global.lc + global.lp));
   UInt32 i;
@@ -942,7 +954,7 @@ static void LzmaDec_InitStateReal(void)
   global.needInitLzma = False;
 }
 
-static SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
+STATIC SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
   const UInt32 dicLimit = global.dicBufSize;
   const UInt32 srcLen0 = srcLen;
   UInt32 inSize = srcLen;
@@ -1062,6 +1074,19 @@ static Byte readBuf[65536 + 12], *readCur = readBuf, *readEnd = readBuf;
 static long long readFileOfs = 0;
 #endif
 
+#ifdef __KERNEL32TINY__
+static HANDLE hstdin, hstdout;
+
+/* TODO(pts): Optimize this for equality; optimize for 7 bytes. */
+STATIC Int32 MyMemcmp(const void *s1, const void *s2, UInt32 n) {
+  while (n-- != 0) {
+    const Int32 d = *(unsigned char*)s1++ - *(unsigned char*)s2++;
+    if (d != 0) return d;
+  }
+  return 0;
+}
+#endif  /* __KERNEL32TINY__ */
+
 /* Tries to preread r bytes to the read buffer. Returns the number of bytes
  * available in the read buffer. If smaller than r, that indicates EOF.
  *
@@ -1070,7 +1095,7 @@ static long long readFileOfs = 0;
  *
  * Works only if r <= sizeof(readBuf).
  */
-static UInt32 Preread(UInt32 r) {
+STATIC UInt32 Preread(UInt32 r) {
   UInt32 p = readEnd - readCur;
   ASSERT(r <= sizeof(readBuf));
   if (p < r) {  /* Not enough pending available. */
@@ -1086,10 +1111,18 @@ static UInt32 Preread(UInt32 r) {
        * readEnd) to read as much as the buffer has room for.
        */
       DEBUGF("READ size=%d\n", r - p);
-      const Int32 got = read(0, readEnd, r - p);
-      if (got <= 0) break;  /* EOF on input. */
-      readEnd += got;
-      p += got;
+      {
+#ifdef __KERNEL32TINY__
+        DWORD got;
+        /* EOF or error on input. */
+        if (!ReadFile(hstdin, readEnd, r - p, &got, 0) || got == 0) break;
+#else
+        const Int32 got = read(0, readEnd, r - p);
+        if (got <= 0) break;  /* EOF or error on input. */
+#endif  /* Not __KERNEL32TINY__. */
+        readEnd += got;
+        p += got;
+      }
 #ifdef CONFIG_DEBUG
       readFileOfs += got;
 #endif
@@ -1101,7 +1134,7 @@ static UInt32 Preread(UInt32 r) {
 
 #ifdef CONFIG_DEBUG
 /* Returns the number of bytes read from stdin. */
-static long long GetReadPosForDebug(void) {
+STATIC long long GetReadPosForDebug(void) {
   return readFileOfs - (readEnd - readCur);
 }
 #endif
@@ -1124,11 +1157,11 @@ static long long GetReadPosForDebug(void) {
 #define SZ_ERROR_MISSING_INITPROP 67
 #define SZ_ERROR_BAD_LCLPPB_PROP 68
 
-static void IgnoreVarint(void) {
+STATIC void IgnoreVarint(void) {
   while (*readCur++ >= 0x80) {}
 }
 
-static SRes IgnoreZeroBytes(UInt32 c) {
+STATIC SRes IgnoreZeroBytes(UInt32 c) {
   for (; c > 0; --c) {
     if (*readCur++ != 0) return SZ_ERROR_BAD_PADDING;
   }
@@ -1137,17 +1170,17 @@ static SRes IgnoreZeroBytes(UInt32 c) {
 
 #if defined(__i386) || defined(_M_IX86) || defined(__i386__) || defined(__amd64) || defined(_M_X64) || defined(_M_AMD64) || defined(__x86_64__)
 /* Shortcut for little endian CPU supporting unaligned access. */
-static __inline__ UInt32 GetLE4(const Byte *p) {
+STATIC __inline__ UInt32 GetLE4(const Byte *p) {
   return *(const UInt32*)(char*)p;
 }
 #else
-static UInt32 GetLE4(Byte *p) {
+STATIC UInt32 GetLE4(Byte *p) {
   return p[0] | p[1] << 8 | p[2] << 16 | p[3] << 24;
 }
 #endif
 
 /* Expects global.dicSize be set already. Can be called before or after InitProp. */
-static void InitDecode(void) {
+STATIC void InitDecode(void) {
   /* global.lc = global.pb = global.lp = 0; */  /* needinitprop will initialize it */
   global.dicBufSize = 0;  /* We'll increment it later. */
   global.needInitDic = True;
@@ -1157,7 +1190,7 @@ static void InitDecode(void) {
   LzmaDec_InitDicAndState(True, True);
 }
 
-static SRes InitProp(Byte b) {
+STATIC SRes InitProp(Byte b) {
   UInt32 lc, lp;
   if (b >= (9 * 5 * 5)) return SZ_ERROR_BAD_LCLPPB_PROP;
   lc = b % 9;
@@ -1171,26 +1204,34 @@ static SRes InitProp(Byte b) {
   return SZ_OK;
 }
 
-#define FILTER_ID_LZMA2 0x21
-
 /* Writes uncompressed data (global.dic[oldDicPos : global.dicPos] to stdout. */
-static SRes WriteFrom(UInt32 oldDicPos) {
+STATIC SRes WriteFrom(UInt32 oldDicPos) {
   const Byte *q = global.dic + global.dicPos, *p = global.dic + oldDicPos;
   DEBUGF("WRITE %d dicPos=%d\n", (int)(q - p), global.dicPos);
   while (p != q) {
+#ifdef __KERNEL32TINY__
+    DWORD got;
+    /* EOF or error on input. */
+    if (!WriteFile(hstdout, p, q - p, &got, 0) || got == 0) {
+      return SZ_ERROR_WRITE;
+    }
+#else
     const Int32 got = write(1, p, q - p);
     if (got <= 0) return SZ_ERROR_WRITE;
+#endif  /* Not __KERNEL32TINY__. */
     p += got;
   }
   return SZ_OK;
 }
+
+#define FILTER_ID_LZMA2 0x21
 
 /* Reads .xz or .lzma data from stdin, writes uncompressed bytes to stdout,
  * uses CLzmaDec.dic. It verifies some aspects of the file format (so it
  * can't be tricked to an infinite loop etc.), itdoesn't verify checksums
  * (e.g. CRC32).
  */
-static SRes DecompressXzOrLzma(void) {
+STATIC SRes DecompressXzOrLzma(void) {
   Byte checksumSize;
   UInt32 bhf;  /* Block header flags */
   /* 12 for the stream header + 12 for the first block header + 6 for the
@@ -1409,6 +1450,13 @@ static SRes DecompressXzOrLzma(void) {
   return SZ_OK;
 }
 
+#ifdef __KERNEL32TINY__
+void __cdecl mainCRTStartup(void) {
+  hstdin = GetStdHandle(STD_INPUT_HANDLE);
+  hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
+  ExitProcess(DecompressXzOrLzma());
+}
+#else
 int main(int argc, char **argv) {
   (void)argc; (void)argv;
 #if defined(MSDOS) || defined(_WIN32)  /* Also MinGW. Good. */
@@ -1417,3 +1465,4 @@ int main(int argc, char **argv) {
 #endif
   return DecompressXzOrLzma();
 }
+#endif  /* Not __KERNEL32TINY__. */
