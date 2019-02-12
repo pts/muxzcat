@@ -12,6 +12,8 @@ The following binaries are released on https://github.com/pts/muxzcat/releases :
 * muxzcat: Linux i386 executable (also runs on Linux amd64)
 * muxzcat.upx: Linux i386 executable, compressed with upxbc
 * muxzcat.exe: Windows i386 Win32 executable using kernel32.dll only
+* muxzcat.darwinc32: macOS i386 executable
+* muxzcat.darwinc64: macOS amd64 (x86_64) executable
 * muxzcat.pl: Perl script which works on Perl 5.004_04 or later
 * muxzcat.class: Java command-line application which works on Java 1.0.2 or
   later
@@ -119,7 +121,10 @@ Limitations of Java-with-lib muxzcatj12.jar:
 muxzcat is portable because:
 
 * It works with old (pre-2000) C and C++ compilers.
-* It works on old (pre-2000) systems: Linux 2.6, Windows 95.
+* It works on old (pre-2000) Linux systems: Linux 2.6 and later.
+* It works on old (pre-2000) Windows systems: Windows 95 and later.
+* It works on old macOS systems: Mac OS X 10.04 (released on 2005-04-29, the
+  first release which supports Intel CPUs: i386 and amd64) and later.
 * It has good library compatibility by not using any libraries on Linux
   (not even libc.so.6) and using only 4 functions in kernel32.dll on
   Windows.
