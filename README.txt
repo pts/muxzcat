@@ -95,6 +95,15 @@ Limitations of Java-with-lib muxzcatj12.jar:
 * Its memory usage is constant + 100 KiB + dictionary size, so it doesn't
   keep the entire uncompressed data in memory.
 
+Which Java program to use: muxzcat.java or muxzcatj12.jar?
+
+* Most users should use muxzcatj12.jar, because it needs less memory, it is
+  faster than muxzcat.java, and it also verifies checksums.
+* On very old systems where Java >=1.0.2 is available, but Java >=1.2 isn't,
+  muxzcat.java should be used.
+* If maximum compatibility with muxzcat.c and muzcat.pl is desired, then
+  muxzcat.java should be used.
+
 Based on decompression speed measurements of linux-4.20.5.tar.xz,
 size-optimized muxzcat.c (on Linux i386) is about 7% slower than
 speed-optimized xzcat (on Linux amd64).
