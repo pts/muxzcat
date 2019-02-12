@@ -69,7 +69,7 @@ Here is how to use the Java-with-lib implementation:
 
   It ignores command-line flags, so you can specify e.g. `-cd'.
 
-muzxcat is a drop-in replacement for the following commands:
+muxzcat is a drop-in replacement for the following commands:
 
   $ xz -cd              <input.xz >output.bin
   $ unxz -cd            <input.xz >output.bin
@@ -115,6 +115,18 @@ Limitations of Java-with-lib muxzcatj12.jar:
 * It doesn't work with Avian 0.6 (it uses some classes not available there).
 * Its memory usage is constant + 100 KiB + dictionary size, so it doesn't
   keep the entire uncompressed data in memory.
+
+muxzcat is portable because:
+
+* It works with old (pre-2000) C and C++ compilers.
+* It works on old (pre-2000) systems: Linux 2.6, Windows 95.
+* It has good library compatibility by not using any libraries on Linux
+  (not even libc.so.6) and using only 4 functions in kernel32.dll on
+  Windows.
+* It works with old (pre-2000) versions of Java: the minimum is Java 1.0.2
+  (released on 1995-09-16).
+* It works with old (pre-2000) versions of Perl: the minimum is
+  Perl 5.004_04 (released on 1997-10-15).
 
 Which Java program to use: muxzcat.java or muxzcatj12.jar?
 
@@ -165,7 +177,7 @@ times faster than muxzcat.java (with java 1.8 compiled for Linux amd64).
 The C and Java implementations are derived from the same codebase
 (muxzcat.c, itself derived from the sources files in 7z922.tar.bz2).
 
-muzxcat.java needs Java 1.0.2 (released on 1995-09-16) or any more recent
+muxzcat.java needs Java 1.0.2 (released on 1995-09-16) or any more recent
 Java, e.g. Java 8.
 
 If you need a tiny decompressor for .gz, .zip and Flate compressed
