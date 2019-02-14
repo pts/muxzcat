@@ -78,11 +78,14 @@ void *memcpy(void *dest, const void *src, size_t n);
 int memcmp(const void *s1, const void *s2, size_t n);
 ssize_t read(int fd, void *buf, size_t count);
 ssize_t write(int fd, const void *buf, size_t count);
+void *malloc(size_t size);
 
 #else
 #ifdef __XTINY__  /* xtiny https://github.com/pts/pts-xtiny */
 
 #include <xtiny.h>
+
+#define malloc(n) ({ void *p = mmap2(0, (n), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); (ssize_t)p == -1 ? 0 : p; })
 
 #else  /* Not __XTINY__. */
 #ifdef __KERNEL32TINY__  /* _WIN32 with kernel32.dll only. */
@@ -97,6 +100,8 @@ typedef short int16_t;
 typedef unsigned short uint16_t;
 typedef unsigned char uint8_t;
 
+#define malloc(n) VirtualAlloc(NULL, (n), MEM_COMMIT, PAGE_READWRITE)
+
 #else  /* Not _WIN32. */
 
 #include <string.h>  /* memcpy(), memmove() */
@@ -105,6 +110,8 @@ typedef unsigned char uint8_t;
 #  include <fcntl.h>  /* setmode() */
 #endif
 #include <stdint.h>
+#include <stdlib.h>  /* malloc() */
+
 #endif  /* Not _WIN32 */
 #endif  /* Not __XTINY__ */
 #endif  /* Not __TINYC__ */
@@ -215,6 +222,19 @@ typedef Byte Bool;
 #define LZMA_LIT_SIZE 768
 #define LZMA2_LCLP_MAX 4
 
+/* !! TODO(pts): Remove DIC_ARRAY_SIZE. */
+#ifdef _WIN32  /* Wine allows 768 MiB, but not 1 GiB VirtualAlloc. */
+#define MAX_DIC_SIZE_PROP 35
+#define DIC_ARRAY_SIZE 805306368
+#if 0
+#define MAX_DIC_SIZE_PROP 36
+#define DIC_ARRAY_SIZE 1073741824
+#endif
+#else
+#define MAX_DIC_SIZE_PROP 37
+#define DIC_ARRAY_SIZE 1610612736
+#endif
+
 /* For LZMA streams, lc + lp <= 8 + 4 <= 12.
  * For LZMA2 streams, lc + lp <= 4.
  * Minimum value: 1846.
@@ -240,7 +260,7 @@ typedef struct {
    */
   UInt32 lc, lp, pb; /* Configured in prop byte. */
   /* Configured in dicSizeProp byte. Maximum LZMA and LZMA2 supports is 0xffffffff,
-   * maximum we support is sizeof(global.dic) == 1610612736.
+   * maximum we support is DIC_ARRAY_SIZE == 1610612736.
    */
   UInt32 dicSize;
   const Byte *buf;
@@ -266,7 +286,7 @@ typedef struct {
    * small files, then the operating system won't take the entire array away
    * from other processes.
    */
-  Byte dic[1610612736];
+  Byte *dic;
 } CLzmaDec;
 
 static CLzmaDec global;
@@ -423,7 +443,7 @@ STATIC SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
       }
       else
       {
-        UInt32 matchByte = global.dic[(dicPos - rep0) + ((dicPos < rep0) ? dicBufSize : 0)];
+        UInt32 matchByte = dic[(dicPos - rep0) + ((dicPos < rep0) ? dicBufSize : 0)];
         UInt32 offs = 0x100;
         state -= (state < 10) ? 3 : 6;
         symbol = 1;
@@ -1246,12 +1266,12 @@ STATIC SRes DecompressXzOrLzma(void) {
         /* High 4 bytes of uncompressed size. */
         ((bhf = GetLE4(readCur + 9)) == 0 || bhf == ~(UInt32)0) &&
         (global.dicSize = GetLE4(readCur + 1)) >= LZMA_DIC_MIN &&
-        global.dicSize <= sizeof(global.dic)) {
+        global.dicSize <= DIC_ARRAY_SIZE) {
     /* Based on https://svn.python.org/projects/external/xz-5.0.3/doc/lzma-file-format.txt */
     UInt32 us = bhf == 0 ? GetLE4(readCur + 5) : bhf /* max UInt32 */;
     UInt32 srcLen;
     UInt32 oldDicPos;
-    /* TODO(pts): return SZ_ERROR_MEM if us is larger than sizeof(global.dic). */
+    /* TODO(pts): return SZ_ERROR_MEM if us is larger than DIC_ARRAY_SIZE. */
     InitDecode();
     /* LZMA restricts lc + lp <= 4. LZMA requires lc + lp <= 12.
      * We apply the LZMA2 restriction here (to save memory in
@@ -1260,7 +1280,8 @@ STATIC SRes DecompressXzOrLzma(void) {
      */
     RINOK(InitProp(readCur[0]));
     readCur += 13;  /* Start decompressing the 0 byte. */
-    global.dicBufSize = sizeof(global.dic);
+    if (!(global.dic = malloc(DIC_ARRAY_SIZE))) return SZ_ERROR_MEM;
+    global.dicBufSize = DIC_ARRAY_SIZE;
     DEBUGF("LZMA dicSize=0x%x us=%d\n", global.dicSize, us);
     /* Any Preread(...) amount starting from 1 works here, but higher values
      * are faster.
@@ -1335,8 +1356,10 @@ STATIC SRes DecompressXzOrLzma(void) {
     /* LZMA2 and .xz support it, we don't (for simpler memory management on
      * 32-bit systems).
      */
-    if (dicSizeProp > 37) return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE;
+    if (dicSizeProp > MAX_DIC_SIZE_PROP) return SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE;
     global.dicSize = LZMA2_DIC_SIZE_FROM_SMALL_PROP(dicSizeProp);
+    /* TODO(pts): free() it when done. */
+    if (!(global.dic = malloc(DIC_ARRAY_SIZE))) return SZ_ERROR_MEM;
     ASSERT(global.dicSize >= LZMA_DIC_MIN);
     DEBUGF("dicSize39=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(39));
     DEBUGF("dicSize38=%u\n", LZMA2_DIC_SIZE_FROM_SMALL_PROP(38));
@@ -1409,7 +1432,7 @@ STATIC SRes DecompressXzOrLzma(void) {
         ASSERT(global.dicPos == global.dicBufSize);
         global.dicBufSize += us;
         /* Decompressed data too long, won't fit to CLzmaDec.dic. */
-        if (global.dicBufSize > sizeof(global.dic)) return SZ_ERROR_MEM;
+        if (global.dicBufSize > DIC_ARRAY_SIZE) return SZ_ERROR_MEM;
         /* Read 6 extra bytes to optimize away a read(...) system call in
          * the Prefetch(6) call in the next chunk header.
          */
