@@ -71,6 +71,8 @@ typedef unsigned uint32_t;
 typedef short int16_t;
 typedef unsigned short uint16_t;
 typedef unsigned char uint8_t;
+typedef int size_t;
+typedef unsigned ssize_t;
 
 void *memcpy(void *dest, const void *src, size_t n);
 int memcmp(const void *s1, const void *s2, size_t n);
