@@ -420,7 +420,6 @@ sub DumpVars();
 #define SZ_ERROR_BAD_DICTIONARY_SIZE 61
 #define SZ_ERROR_UNSUPPORTED_DICTIONARY_SIZE 62
 #define SZ_ERROR_FEED_CHUNK 63
-#define SZ_ERROR_NOT_FINISHED_WITH_MARK 64
 #define SZ_ERROR_BAD_DICPOS 65
 #define SZ_ERROR_MISSING_INITPROP 67
 #define SZ_ERROR_BAD_LCLPPB_PROP 68
@@ -725,7 +724,7 @@ GLOBALS
   GLOBAL(UInt32, code);
   GLOBAL(UInt32, dicPos);
   GLOBAL(UInt32, dicBufSize);
-  GLOBAL(UInt32, processedPos);
+  GLOBAL(UInt32, processedPos);  /* !! Handle !IS_SMALL(processedPos). */
   GLOBAL(UInt32, checkDicSize);
   GLOBAL(UInt32, state);
   GLOBAL(UInt32, rep0);

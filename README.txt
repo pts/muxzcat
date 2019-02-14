@@ -92,7 +92,21 @@ muxzcat is a drop-in replacement for the following commands:
 
 muxzcat is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
 
-Limitations of muxzcat.c, muxzcat.pl and muxzcat.java:
+Memory requirements of muxzcat.c:
+
+* dictionary: as much as needed by the input file, between 4 KiB and
+  1610612736 bytes (`xz -8' emits 32 MiB, `xz -9e' emits 64 MiB)
+* readBuf: about 64 KiB
+* CLzmaDec.prob: about 28 KiB
+* constant overhead: less than 36 KiB
+
+Limitations of muxzcat.c:
+
+* It doesn't support dictionary size larger than 1610612736 (~1.61 GB).
+  This is not a problem in practice, because
+  `xz -8' emits 32 MiB, `xz -9e' emits 64 MiB.
+
+Limitations of muxzcat.pl and muxzcat.java:
 
 * It keeps uncompressed data in memory, and it needs 130 KiB of
   memory on top of it: readBuf is about 64 KiB, CLzmaDec.prob is about
@@ -100,15 +114,18 @@ Limitations of muxzcat.c, muxzcat.pl and muxzcat.java:
   data) and a small constant overhead.
 * It doesn't support uncompressed data larger than 1610612736 (~1.61 GB).
   FYI linux-4.20.5.tar is about half as much, 854855680 bytes.
+
+Limitations of muxzcat.c, muxzcat.pl and muxzcat.java:
+
 * For .xz it supports only LZMA2 (no other filters such as BCJ).
 * For .lzma it doesn't work with files with 5 <= lc + lp <= 8.
 * It doesn't verify checksums (e.g. CRC-32 or CRC-64).
 * It extracts the first stream only, and it ignores the index.
-* It doesn't support dictionary sizes larger than 1610612736 bytes (~1.61 GB).
-  (This is not a problem in practice, because even the ouput of `xz -9e'
-  uses only 64 MiB dictionary size.)
-* muxzcat.java doesn't work with Avian 0.6 (OutOfMemoryError).
-* muxzcat.java uses the maximum amount of memory (~1.61 GB) for some .lzma
+
+Limitations of muxzcat.java:
+
+* It doesn't work with Avian 0.6 (OutOfMemoryError).
+* It uses the maximum amount of memory (~1.61 GB) for some .lzma
   files which don't have their uncompressed size specified. This includes
   files created by `xz --format=lzma'.
 
