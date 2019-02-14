@@ -1268,7 +1268,7 @@ STATIC SRes DecompressXzOrLzma(void) {
         (global.dicSize = GetLE4(readCur + 1)) >= LZMA_DIC_MIN &&
         global.dicSize <= DIC_ARRAY_SIZE) {
     /* Based on https://svn.python.org/projects/external/xz-5.0.3/doc/lzma-file-format.txt */
-    UInt32 us = bhf == 0 ? GetLE4(readCur + 5) : bhf /* max UInt32 */;
+    const UInt32 us = bhf == 0 ? GetLE4(readCur + 5) : bhf /* max UInt32 */;
     UInt32 srcLen;
     UInt32 oldDicPos;
     /* TODO(pts): return SZ_ERROR_MEM if us is larger than DIC_ARRAY_SIZE. */
@@ -1286,8 +1286,12 @@ STATIC SRes DecompressXzOrLzma(void) {
     /* Any Preread(...) amount starting from 1 works here, but higher values
      * are faster.
      */
-    while ((srcLen = Preread(sizeof(readBuf))) > 0) {
+    while (us != global.dicPos) {
       SRes res;
+      if ((srcLen = Preread(sizeof(readBuf))) == 0) {
+        if (us != 0xffffffff) return SZ_ERROR_INPUT_EOF;
+        break;
+      }
       oldDicPos = global.dicPos;
       res = LzmaDec_DecodeToDic(readCur, srcLen);
       DEBUGF("LZMADEC res=%d\n", res);
@@ -1296,7 +1300,6 @@ STATIC SRes DecompressXzOrLzma(void) {
       RINOK(WriteFrom(oldDicPos));
       if (res == SZ_ERROR_FINISHED_WITH_MARK) break;
       if (res != SZ_ERROR_NEEDS_MORE_INPUT && res != SZ_OK) return res;
-      if (global.dicPos == us) break;
     }
     return SZ_OK;
   } else {
