@@ -406,6 +406,7 @@ STATIC SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
   UInt32 range = global.range;
   UInt32 code = global.code;
 
+  DEBUGF("HI1 dicPos=%d limit=%d\n", dicPos, limit);
   do
   {
     CLzmaProb *prob;
@@ -413,6 +414,7 @@ STATIC SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
     UInt32 ttt;
     UInt32 posState = processedPos & pbMask;
 
+    /*DEBUGF("HI2 dicPos=%d limit=%d\n", dicPos, limit);*/
     prob = probs + IsMatch + (state << kNumPosBitsMax) + posState;
     IF_BIT_0(prob)
     {
@@ -464,6 +466,7 @@ STATIC SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
       {
         UPDATE_1(prob);
         if (checkDicSize == 0 && processedPos == 0) {
+          DEBUGF("ED1\n");
           return SZ_ERROR_DATA;
         }
         prob = probs + IsRepG0 + state;
@@ -623,10 +626,12 @@ STATIC SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
         if (checkDicSize == 0)
         {
           if (distance >= processedPos) {
+            DEBUGF("ED2\n");
             return SZ_ERROR_DATA;
           }
         }
         else if (distance >= checkDicSize) {
+          DEBUGF("ED3 distance=%d\n", distance);
           return SZ_ERROR_DATA;
         }
         state = (state < kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3;
@@ -635,6 +640,8 @@ STATIC SRes LzmaDec_DecodeReal(UInt32 limit, const Byte *bufLimit)
       len += kMatchMinLen;
 
       if (limit == dicPos) {
+        DEBUGF("ED4 rep0=%d\n", rep0);
+        global.dicPos = dicPos;
         return SZ_ERROR_DATA;
       }
       {
@@ -710,15 +717,17 @@ STATIC void LzmaDec_WriteRem(UInt32 limit)
 
 STATIC SRes LzmaDec_DecodeReal2(UInt32 limit, const Byte *bufLimit)
 {
+  DEBUGF("DR1 dicPos=%d limit=%d\n", global.dicPos, limit);
   do
   {
     UInt32 limit2 = limit;
     if (global.checkDicSize == 0)
     {
-      UInt32 rem = global.dicSize - global.processedPos;
+      UInt32 rem = global.dicSize - global.processedPos;  /* !!! What if processedPos becomes too large? Do we need to check this? */
       if (limit - global.dicPos > rem)
         limit2 = global.dicPos + rem;
     }
+    DEBUGF("DR2 dicPos=%d limit=%d limit2=%d\n", global.dicPos, limit, limit2);
     RINOK(LzmaDec_DecodeReal(limit2, bufLimit));
     if (global.processedPos >= global.dicSize)
       global.checkDicSize = global.dicSize;
@@ -988,8 +997,10 @@ STATIC SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
           if (srcLen != srcLen0) return SZ_ERROR_NEEDS_MORE_INPUT_PARTIAL;
           return SZ_ERROR_NEEDS_MORE_INPUT;
         }
-        if (global.tempBuf[0] != 0)
+        if (global.tempBuf[0] != 0) {
+          DEBUGF("ED5\n");
           return SZ_ERROR_DATA;
+        }
 
         LzmaDec_InitRc(global.tempBuf);
         global.tempBufSize = 0;
@@ -1006,6 +1017,7 @@ STATIC SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
         if (global.remainLen != 0)
         {
           global.srcAfterDecode = src;
+          DEBUGF("NF1 dicPos=%d dicLimi=%d\n", global.dicPos, dicLimit);
           return SZ_ERROR_NOT_FINISHED;
         }
         checkEndMarkNow = True;
@@ -1032,6 +1044,7 @@ STATIC SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
           if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
           {
             global.srcAfterDecode = src;
+            DEBUGF("NF2\n");
             return SZ_ERROR_NOT_FINISHED;
           }
           bufLimit = src;
@@ -1039,13 +1052,22 @@ STATIC SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
         else
           bufLimit = src + inSize - LZMA_REQUIRED_INPUT_MAX;
         global.buf = src;
+        DEBUGF("DRC dicPos=%d dicLimit=%d\n", global.dicPos, dicLimit);
         if (LzmaDec_DecodeReal2(dicLimit, bufLimit) != 0) {
+          DEBUGF("ED6\n");
           return SZ_ERROR_DATA;
         }
         processed = (UInt32)(global.buf - src);
         srcLen += processed;
         src += processed;
         inSize -= processed;
+        DEBUGF("DRD dicPos=%d dicLimit=%d remainLen=%d\n", global.dicPos, dicLimit, global.remainLen);
+        if (global.dicPos == dicLimit) {  /* !!! BUGFIX only for ta4k.tar.lzma */
+          global.remainLen = 0;  /* !!! breaks with or without it */
+          global.srcAfterDecode = src;
+          DEBUGF("NF3 dicPos=%d dicLimi=%d\n", global.dicPos, dicLimit);
+          return SZ_ERROR_NOT_FINISHED;
+        }
       }
       else
       {
@@ -1064,12 +1086,15 @@ STATIC SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
           if (checkEndMarkNow && dummyRes != DUMMY_MATCH)
           {
             global.srcAfterDecode = src;
+            DEBUGF("NF4\n");
             return SZ_ERROR_NOT_FINISHED;
           }
         }
         global.buf = global.tempBuf;
-        if (LzmaDec_DecodeReal2(dicLimit, global.buf) != 0)
+        if (LzmaDec_DecodeReal2(dicLimit, global.buf) != 0) {
+          DEBUGF("ED7\n");
           return SZ_ERROR_DATA;
+        }
         lookAhead -= (rem - (UInt32)(global.buf - global.tempBuf));
         srcLen += lookAhead;
         src += lookAhead;
@@ -1077,7 +1102,10 @@ STATIC SRes LzmaDec_DecodeToDic(const Byte *src, UInt32 srcLen) {
         global.tempBufSize = 0;
       }
   }
-  if (global.code != 0) return SZ_ERROR_DATA;
+  if (global.code != 0) {
+    DEBUGF("ED8\n");
+    return SZ_ERROR_DATA;
+  }
   return SZ_ERROR_FINISHED_WITH_MARK;
 }
 
@@ -1283,7 +1311,7 @@ STATIC SRes DecompressXzOrLzma(void) {
       }
       oldDicPos = global.dicPos;
       res = LzmaDec_DecodeToDic(readCur, srcLen);
-      DEBUGF("LZMADEC res=%d oldDicPos=%d dicPos=%d processed=%d\n", res, oldDicPos, global.dicPos, (res == SZ_ERROR_NOT_FINISHED) ? (UInt32)(global.srcAfterDecode - readCur) : srcLen);
+      DEBUGF("LZMADEC res=%d oldDicPos=%d dicPos=%d processed=%d srcLen=%d\n", res, oldDicPos, global.dicPos, (res == SZ_ERROR_NOT_FINISHED) ? (UInt32)(global.srcAfterDecode - readCur) : srcLen, srcLen);
       while (res == SZ_ERROR_NOT_FINISHED) {
         if (global.dicPos != global.dicSize) return res;
         if (global.dicPos - oldDicPos > us) {
@@ -1297,8 +1325,11 @@ STATIC SRes DecompressXzOrLzma(void) {
         oldDicPos = 0;
         srcLen -= global.srcAfterDecode - readCur;
         readCur = (Byte*)global.srcAfterDecode;
+        DEBUGF("readCur=%d srcLen=%d\n", (int)(readCur - readBuf), srcLen);
+        ASSERT(readCur >= readBuf);
+        ASSERT(readCur <= readEnd);
         res = LzmaDec_DecodeToDic(readCur, srcLen);
-        DEBUGF("LZMADECCONT res=%d oldDicPos=%d dicPos=%d processed=%d\n", res, oldDicPos, global.dicPos, (res == SZ_ERROR_NOT_FINISHED) ? (UInt32)(global.srcAfterDecode - readCur) : srcLen);
+        DEBUGF("LZMADECCONT res=%d oldDicPos=%d dicPos=%d processed=%d srcLen=%d\n", res, oldDicPos, global.dicPos, (res == SZ_ERROR_NOT_FINISHED) ? (UInt32)(global.srcAfterDecode - readCur) : srcLen, srcLen);
       }
       if (global.dicPos - oldDicPos > us) global.dicPos = oldDicPos + us;
       RINOK(WriteFrom(oldDicPos));
@@ -1467,7 +1498,7 @@ STATIC SRes DecompressXzOrLzma(void) {
         } else {  /* Compressed chunk. */
           SRes res;
           UInt32 oldDicPos = global.dicPos;
-          DEBUGF("DECODE call\n");
+          DEBUGF("DECODE call readCur=%d cs=%d\n", (int)(readCur - readBuf), cs);
           /* This call doesn't change global.dicBufSize. */
           res = LzmaDec_DecodeToDic(readCur, cs);
           DEBUGF("DECODE res=%d oldDicPos=%d dicPos=%d processed=%d dicBufSize=%d\n", res, oldDicPos, global.dicPos, (res == SZ_ERROR_NOT_FINISHED) ? (UInt32)(global.srcAfterDecode - readCur) : cs, global.dicBufSize);
@@ -1479,6 +1510,7 @@ STATIC SRes DecompressXzOrLzma(void) {
             blockSizePad -= global.srcAfterDecode - readCur;  /* !!! TODO(pts): Less code. */
             cs -= global.srcAfterDecode - readCur;
             readCur = (Byte*)global.srcAfterDecode;
+            DEBUGF("DECODECONT call readCur=%d cs=%d dicPos=%d\n", (int)(readCur - readBuf), cs, global.dicPos);
             res = LzmaDec_DecodeToDic(readCur, cs);
             DEBUGF("DECODECONT res=%d oldDicPos=%d dicPos=%d processed=%d\n", res, oldDicPos, global.dicPos, (res == SZ_ERROR_NOT_FINISHED) ? (UInt32)(global.srcAfterDecode - readCur) : cs);
           }
