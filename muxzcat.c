@@ -235,7 +235,7 @@ typedef Byte Bool;
 #define DIC_ARRAY_SIZE 1610612736
 #endif
 
-/* For LZMA streams, lc + lp <= 8 + 4 <= 12.
+/* For LZMA streams, lc <= 8, lp <= 4, lc + lp <= 8 + 4 == 12.
  * For LZMA2 streams, lc + lp <= 4.
  * Minimum value: 1846.
  * Maximum value for LZMA streams: 1846 + (768 << (8 + 4)) == 3147574.
@@ -252,11 +252,11 @@ typedef struct {
    * Constraints:
    *
    * * (0 <= lc <= 8) by LZMA.
-   * * 0 <= lc <= 4 by LZMA2 and muxzcat.
+   * * 0 <= lc <= 4 by LZMA2 and muxzcat-LZMA and muzxcat-LZMA2.
    * * 0 <= lp <= 4.
    * * 0 <= pb <= 4.
    * * (0 <= lc + lp == 8 + 4 <= 12) by LZMA.
-   * * 0 <= lc + lp <= 4 by LZMA2 and muxzcat.
+   * * 0 <= lc + lp <= 4 by LZMA2 and muxzcat-LZMA and muxzcat-LZMA2.
    */
   UInt32 lc, lp, pb; /* Configured in prop byte. */
   /* Configured in dicSizeProp byte. Maximum LZMA and LZMA2 supports is 0xffffffff,
@@ -1273,7 +1273,7 @@ STATIC SRes DecompressXzOrLzma(void) {
     UInt32 oldDicPos;
     /* TODO(pts): return SZ_ERROR_MEM if us is larger than DIC_ARRAY_SIZE. */
     InitDecode();
-    /* LZMA restricts lc + lp <= 4. LZMA requires lc + lp <= 12.
+    /* LZMA2 restricts lc + lp <= 4. LZMA requires lc + lp <= 12.
      * We apply the LZMA2 restriction here (to save memory in
      * CLzmaDec.probs), thus we are not able to extract some legitimate
      * .lzma files.

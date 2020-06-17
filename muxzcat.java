@@ -24,8 +24,8 @@
  * 6 is maximum LZMA chunk header size for the next chunk.
  */
 /* --- */
-/* For LZMA streams, LE_SMALL(lc + lp, 8 + 4), LE 12.
- * For LZMA2 streams, LE_SMALL(lc + lp, 4).
+/* For LZMA streams, lc <= 8, lp <= 4, lc + lp <= 8 + 4 == 12.
+ * For LZMA2 streams, lc + lp <= 4.
  * Minimum value: 1846.
  * Maximum value for LZMA streams: 1846 + (768 << (8 + 4)) == 3147574.
  * Maximum value for LZMA2 streams: 1846 + (768 << 4) == 14134.
@@ -33,6 +33,7 @@
  */
 /*#define LzmaProps_GetNumProbs(p) TRUNCATE_TO_32BIT(LZMA_BASE_SIZE + (LZMA_LIT_SIZE << ((p)->lc + (p)->lp))) */
 public class muxzcat {
+/* Makes dic8.length >= GLOBAL_dicBufSize. */
 public static void EnsureDicSize() {
   int newCapacity = dic8.length;
   while (newCapacity > 0 && ((newCapacity) < (GLOBAL_dicBufSize))) {
@@ -74,11 +75,11 @@ public static void EnsureDicSize() {
    * Constraints:
    *
    * * (0 <= lc <= 8) by LZMA.
-   * * 0 <= lc <= 4 by LZMA2 and muxzcat.
+   * * 0 <= lc <= 4 by LZMA2 and muxzcat-LZMA and muzxcat-LZMA2.
    * * 0 <= lp <= 4.
    * * 0 <= pb <= 4.
    * * (0 <= lc + lp == 8 + 4 <= 12) by LZMA.
-   * * 0 <= lc + lp <= 4 by LZMA2 and muxzcat.
+   * * 0 <= lc + lp <= 4 by LZMA2 and muxzcat-LZMA and muxzcat-LZMA2.
    */
   static int GLOBAL_lc; /* Configured in prop byte. */
   static int GLOBAL_lp; /* Configured in prop byte. */
@@ -736,8 +737,8 @@ static final int DecompressXzOrLzma() {
     int LOCAL_srcLen;
     int LOCAL_fromDicPos;
     InitDecode();
-    /* LZMA restricts LE_SMALL(lc + lp, 4). LZMA requires LE_SMALL(lc + lp,
-     * 12). We apply the LZMA2 restriction here (to save memory in
+    /* LZMA2 restricts lc + lp <= 4. LZMA requires lc + lp <= 12.
+     * We apply the LZMA2 restriction here (to save memory in
      * GLOBAL_VAR(probs)), thus we are not able to extract some legitimate
      * .lzma files.
      */

@@ -677,8 +677,8 @@ DECLARE_VRMINMAX(deRes);
 #endif /* CONFIG_DEBUG_VAR_RANGES */
 #endif /* CONFIG_LANG_C */
 
-/* For LZMA streams, LE_SMALL(lc + lp, 8 + 4), LE 12.
- * For LZMA2 streams, LE_SMALL(lc + lp, 4).
+/* For LZMA streams, lc <= 8, lp <= 4, lc + lp <= 8 + 4 == 12.
+ * For LZMA2 streams, lc + lp <= 4.
  * Minimum value: 1846.
  * Maximum value for LZMA streams: 1846 + (768 << (8 + 4)) == 3147574.
  * Maximum value for LZMA2 streams: 1846 + (768 << 4) == 14134.
@@ -698,6 +698,7 @@ public class muaxzcat {
 #endif  /* CONFIG_LANG_JAVA */
 
 #ifdef CONFIG_LANG_JAVA
+/* Makes dic8.length >= GLOBAL_dicBufSize. */
 public static void EnsureDicSize() {
   int newCapacity = dic8.length;
   while (newCapacity > 0 && LT_SMALL(newCapacity, GLOBAL_VAR(dicBufSize))) {
@@ -746,11 +747,11 @@ GLOBALS
    * Constraints:
    *
    * * (0 <= lc <= 8) by LZMA.
-   * * 0 <= lc <= 4 by LZMA2 and muxzcat.
+   * * 0 <= lc <= 4 by LZMA2 and muxzcat-LZMA and muzxcat-LZMA2.
    * * 0 <= lp <= 4.
    * * 0 <= pb <= 4.
    * * (0 <= lc + lp == 8 + 4 <= 12) by LZMA.
-   * * 0 <= lc + lp <= 4 by LZMA2 and muxzcat.
+   * * 0 <= lc + lp <= 4 by LZMA2 and muxzcat-LZMA and muxzcat-LZMA2.
    */
   GLOBAL(Byte, lc);  /* Configured in prop byte. */
   GLOBAL(Byte, lp);  /* Configured in prop byte. */
@@ -1519,8 +1520,8 @@ FUNC_ARG0(SRes, DecompressXzOrLzma)
     LOCAL(UInt32, srcLen);
     LOCAL(UInt32, fromDicPos);
     InitDecode();
-    /* LZMA restricts LE_SMALL(lc + lp, 4). LZMA requires LE_SMALL(lc + lp,
-     * 12). We apply the LZMA2 restriction here (to save memory in
+    /* LZMA2 restricts lc + lp <= 4. LZMA requires lc + lp <= 12.
+     * We apply the LZMA2 restriction here (to save memory in
      * GLOBAL_VAR(probs)), thus we are not able to extract some legitimate
      * .lzma files.
      */
