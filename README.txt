@@ -27,9 +27,10 @@ upxbc (`upxbc --elftiny -f -o muxzcat.upx muxzcat') it can be compressed to
 KiB.)
 
 muxzcat.c is size-optimized for Windows i386 (also runs on Windows amd64)
-with gcc-mingw32 and some command-line flags (see genwin32.sh): the final
-muxzcat.exe is 10240 bytes. (Compare it with xzdec.exe in
-https://fossies.org/windows/misc/xz-5.2.4-windows.zip/ , which is >71 kB.)
+with gcc-mingw32 and some command-line flags (see muxzcat.exe in the
+Makefile): the final muxzcat.exe is 10240 bytes. (Compare it with xzdec.exe
+in https://fossies.org/windows/misc/xz-5.2.4-windows.zip/ , which is >71
+kB.)
 
 To use the C implementation (muxzcat.c), either download the binary
 executable from https://github.com/pts/muxzcat/releases or compile it from
