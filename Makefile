@@ -1,4 +1,5 @@
 CC = gcc
+TCC = pts-tcc
 CFLAGS =
 .PHONY: all clean generate
 all: muxzcat #muaxzcat
@@ -8,6 +9,10 @@ muxzcat: muxzcat.c
 
 muaxzcat: muaxzcat.c
 	$(CC) -ansi -O2 -W -Wall -Wextra $(CFLAGS) -o $@ $<
+
+
+muxzcat.tcc: muxzcat.c
+	$(TCC) -s -O2 -W -Wall -Wextra $(CFLAGS) -o $@ $<
 
 
 # `-Wl,-n' would cause segfault when run with wine-4.0.
