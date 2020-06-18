@@ -1,4 +1,5 @@
 CC = gcc
+CXX = g++
 TCC = pts-tcc
 CFLAGS =
 .PHONY: all clean generate
@@ -9,6 +10,10 @@ muxzcat: muxzcat.c
 
 muaxzcat: muaxzcat.c
 	$(CC) -ansi -O2 -W -Wall -Wextra $(CFLAGS) -o $@ $<
+
+
+muxzcat.xx: muxzcat.c
+	$(CXX) -ansi -O2 -W -Wall -Wextra $(CFLAGS) -o $@ $<
 
 
 muxzcat.tcc: muxzcat.c

@@ -386,7 +386,7 @@ STATIC SRes GrowCapacity(UInt32 newCapacity) {
     DEBUGF("GROWCAPACITY allocCapacity/old=%d newCapacity=%d\n", global.allocCapacity, newCapacity);
     if (newCapacity > MAX_DICF_SIZE) return SZ_ERROR_MEM;
     /* Possible memory leak if realloc fails, returning NULL. */
-    global.dicf = MyRealloc(global.dicf, global.allocCapacity, newCapacity);
+    global.dicf = (Byte*)MyRealloc(global.dicf, global.allocCapacity, newCapacity);
     if (!global.dicf) return SZ_ERROR_MEM;
     global.allocCapacity = newCapacity;
   }
