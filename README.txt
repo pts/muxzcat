@@ -3,14 +3,15 @@ muxzcat: tiny and portable .xz and .lzma decompression filter
 muxzcat is decompression filter for .xz and .lzma compressed files
 implemented in C (also works in C++), Perl 5 and Java. muxzcat.c is
 portable, platform-independent and backwards-compatible with old (pre-2000)
-versions of Perl, Java, C, Linux and Windows. The C version is
-size-optimized for Linux i386 and is self-contained: it uses only system
-calls: read(2) and write(2) from the standard C library.
+versions of Perl, Java, C, Linux and Windows. The C version can be compiled
+statically linked, self-contained and size-optimized for Linux i386: it uses
+only system calls: read(2), write(2), _exit(2), mmap(2) and mremap(2), and
+it doesn't use the standard C library (libc).
 
 The following binaries are released on https://github.com/pts/muxzcat/releases :
 
-* muxzcat: Linux i386 executable (also runs on Linux amd64)
-* muxzcat.upx: Linux i386 executable, compressed with upxbc
+* muxzcat.xtiny: tiny Linux i386 executable (also runs on Linux amd64)
+* muxzcat.upx: tiny Linux i386 executable, compressed with upxbc
 * muxzcat.exe: Windows i386 Win32 executable using kernel32.dll only
 * muxzcat.darwinc32: macOS i386 executable
 * muxzcat.darwinc64: macOS amd64 (x86_64) executable
@@ -21,16 +22,16 @@ The following binaries are released on https://github.com/pts/muxzcat/releases :
   Java 1.2 or later
 
 muxzcat.c is size-optimized for Linux i386 (also runs on Linux amd64) with
-`xtiny gcc': the final statically linked executable is 7376 bytes, and with
+`xtiny gcc': the final statically linked executable is 8136 bytes, and with
 upxbc (`upxbc --elftiny -f -o muxzcat.upx muxzcat') it can be compressed to
-4678 bytes. (Compare it with xzcat-only busybox on Linux i386, which is >20
+5123 bytes. (Compare it with xzcat-only busybox on Linux i386, which is >20
 KiB.)
 
 muxzcat.c is size-optimized for Windows i386 (also runs on Windows amd64)
 with gcc-mingw32 and some command-line flags (see muxzcat.exe in the
-Makefile): the final muxzcat.exe is 10240 bytes. (Compare it with xzdec.exe
-in https://fossies.org/windows/misc/xz-5.2.4-windows.zip/ , which is >71
-kB.)
+Makefile): the final muxzcat.exe is 10752 bytes. (Compare it with xzdec.exe
+in https://fossies.org/windows/misc/xz-5.2.4-windows.zip/ , which is >70
+KiB.)
 
 To use the C implementation (muxzcat.c), either download the binary
 executable from https://github.com/pts/muxzcat/releases or compile it from
@@ -131,7 +132,7 @@ muxzcat is portable because:
 * It works on old macOS systems: Mac OS X 10.04 (released on 2005-04-29, the
   first release which supports Intel CPUs: i386 and amd64) and later.
 * It has good library compatibility by not using any libraries on Linux
-  (not even libc.so.6) and using only 4 functions in kernel32.dll on
+  (not even libc.so.6) and using only 6 functions in kernel32.dll on
   Windows.
 * It works with old (pre-2000) versions of Java: the minimum is Java 1.0.2
   (released on 1995-09-16).
