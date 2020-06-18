@@ -58,10 +58,17 @@ muaxzcat.pl: muaxzcat.c genpl.sh
 muaxzcat.java: muaxzcat.c genjava.sh
 	./genjava.sh
 
+# javac in openjdk-11-jdk doesn't support `-target 1.1 -source 1.2'.
+JAVAC = /usr/lib/jvm/java-8-openjdk-amd64/bin/javac
+
+muaxzcat.class: muaxzcat.java java102rt.jar
+	$(JAVAC) -Xlint:-options -target 1.1 -source 1.2 -bootclasspath java102rt.jar muaxzcat.java
+
 # Regenerates muxzcat.pl and muxzcat.java.
-generate: muaxzcat.pl muaxzcat.java
+generate: muaxzcat.pl muaxzcat.java muaxzcat.java
 	cp -a muaxzcat.pl muxzcat.pl
 	perl -pe "s@^public class muaxzcat @public class muxzcat @" <muaxzcat.java >muxzcat.java
+	$(JAVAC) -Xlint:-options -target 1.1 -source 1.2 -bootclasspath java102rt.jar muxzcat.java  # Creates muxzcat.class
 
 clean:
 	rm -f muxzcat muaxzcat
