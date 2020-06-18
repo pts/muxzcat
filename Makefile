@@ -39,6 +39,19 @@ muxzcat.upx: muxzcat.xtiny upxbc upx.pts
 	./upxbc --upx=./upx.pts --elftiny -f -o muxzcat.upx muxzcat.xtiny
 
 
+# The minimum value is -mmacosx-version-min=10.4 for
+# multiarch/crossbuild@sha256:84a53371f554a3b3d321c9d1dfd485b8748ad6f378ab1ebed603fe1ff01f7b4d .
+DARWIN_CFLAGS='-mmacosx-version-min=10.4 -DCONFIG_SIZE_OPT -DCONFIG_PROB32 -Os -W -Wall -Wextra -Werror=implicit-function-declaration -fno-pic -fno-stack-protector -fomit-frame-pointer -fno-ident -fno-unwind-tables -fno-asynchronous-unwind-tables'
+
+muxzcat.darwinc32: muxzcat.c
+	docker run -v "$$PWD:/workdir" -u "$(id -u):$$(id -g)" --rm -it multiarch/crossbuild /usr/osxcross/bin/o32-clang $(DARWIN_CFLAGS) -o $@ $< -lSystem -nodefaultlibs
+	docker run -v "$$PWD:/workdir" -u "$(id -u):$$(id -g)" --rm -it multiarch/crossbuild /usr/osxcross/bin/i386-apple-darwin14-strip     $@
+
+muxzcat.darwinc64: muxzcat.c
+	docker run -v "$$PWD:/workdir" -u "$$(id -u):$$(id -g)" --rm -it multiarch/crossbuild /usr/osxcross/bin/o64-clang $(DARWIN_CFLAGS) -o $@ $< -lSystem -nodefaultlibs
+	docker run -v "$$PWD:/workdir" -u "$$(id -u):$$(id -g)" --rm -it multiarch/crossbuild /usr/osxcross/bin/x86_64-apple-darwin14-strip   $@
+
+
 muaxzcat.pl: muaxzcat.c genpl.sh
 	./genpl.sh
 
