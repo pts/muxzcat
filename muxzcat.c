@@ -259,15 +259,20 @@ typedef struct {
    * * 0 <= lc + lp <= 4 by LZMA2 and muxzcat-LZMA and muxzcat-LZMA2.
    */
   UInt32 lc, lp, pb; /* Configured in prop byte. */
-  /* Configured in dicSizeProp byte. Maximum LZMA and LZMA2 supports is 0xffffffff,
-   * maximum we support is DIC_ARRAY_SIZE == 1610612736.
+  /* Maximum lookback delta.
+   * More optimized implementations (but not this version of muxzcat) need
+   * that many bytes of storage for the dictionary. muxzcat uses more,
+   * because it keeps the entire decompression output in memory, for
+   * the simplicity of the implementation.
+   * Configured in dicSizeProp byte. Maximum LZMA and LZMA2 supports is 0xffffffff,
+   * maximum we support is MAX_DIC_SIZE == 1610612736.
    */
   UInt32 dicSize;
   const Byte *buf;
   UInt32 range, code;
-  UInt32 dicPos;
-  UInt32 dicBufSize;
-  UInt32 processedPos;
+  UInt32 dicPos;  /* The next decompression output byte will be written to dic + dicPos. */
+  UInt32 dicBufSize;  /* At least the number of bytes allocated in dic. */
+  UInt32 processedPos;  /* Decompression output byte count since the last call to LzmaDec_InitDicAndState(True, ...); */
   UInt32 checkDicSize;
   UInt32 state;
   UInt32 reps[4];
@@ -280,11 +285,8 @@ typedef struct {
   Bool needInitState;
   Bool needInitProp;
   Byte tempBuf[LZMA_REQUIRED_INPUT_MAX];
-  /* Contains the uncompressed data.
-   *
-   * We rely on virtual memory so that if we don't use the end of array for
-   * small files, then the operating system won't take the entire array away
-   * from other processes.
+  /* Contains the decompresison output, and used as the lookback dictionary.
+   * At least dicBufSize bytes are allocated.
    */
   Byte *dic;
 } CLzmaDec;
