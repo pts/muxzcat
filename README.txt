@@ -95,19 +95,23 @@ muxzcat is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
 
 Limitations of muxzcat.c, muxzcat.pl and muxzcat.java:
 
-* It keeps uncompressed data in memory, and it needs 130 KiB of
-  memory on top of it: readBuf is about 64 KiB, CLzmaDec.prob is about
-  28 KiB, the rest is decompressBuf (containing the entire uncompressed
-  data) and a small constant overhead.
-* It doesn't support uncompressed data larger than 1610612736 (~1.61 GB).
-  FYI linux-4.20.5.tar is about half as much, 854855680 bytes.
-* For .xz it supports only LZMA2 (no other filters such as BCJ).
-* For .lzma it doesn't work with files with 5 <= lc + lp <= 8.
-* It doesn't verify checksums (e.g. CRC-32 or CRC-64).
-* It extracts the first stream only, and it ignores the index.
-* It doesn't support dictionary sizes larger than 1610612736 bytes (~1.61 GB).
+* In worst case it keeps 2 times the compression dictionary size in
+  dynamic memory (also multiply it by 3 for realloc overhead), and it
+  needs 130 KiB of memory on top of it: readBuf is about 64 KiB,
+  CLzmaDec.prob is about 28 KiB, the rest is decompressBuf (containing
+  the entire uncompressed data) and a small constant overhead.
+* It doesn't support dictionary sizes larger than 1610612736 (~1.61 GB).
+  The default for xz (-6) is 8 MiB.
   (This is not a problem in practice, because even the ouput of `xz -9e'
   uses only 64 MiB dictionary size.)
+* It doesn't support uncompressed data larger than 1610612736 (~1.61 GB).
+* For .xz it supports only LZMA2 (no other filters such as BCJ).
+* For .lzma it doesn't work with files with 5 <= lc + lp <= 12.
+* It doesn't verify checksums (e.g. CRC-32 or CRC-64).
+* It extracts the first stream only, and it ignores the index.
+* muaxzcat.c, muxzcat.java and muxzcat.pl keep the entire uncompressed
+  output data in memory, and they have a limit of 1610612736 (~1.61 GB).
+  FYI linux-4.20.5.tar is about half as much, 854855680 bytes.
 * muxzcat.java doesn't work with Avian 0.6 (OutOfMemoryError).
 * muxzcat.java uses the maximum amount of memory (~1.61 GB) for some .lzma
   files which don't have their uncompressed size specified. This includes
@@ -140,8 +144,8 @@ Which Java program to use: muxzcat.java or muxzcatj12.jar?
   faster than muxzcat.java, and it also verifies checksums.
 * On very old systems where Java >=1.0.2 is available, but Java >=1.2 isn't,
   muxzcat.java should be used.
-* If maximum compatibility with muxzcat.c and muzcat.pl is desired, then
-  muxzcat.java should be used.
+* If maximum compatibility with muaxzcat.c (also muxzcat.c) and muzcat.pl is
+  desired, then muxzcat.java should be used.
 
 Based on decompression speed measurements of linux-4.20.5.tar.xz,
 size-optimized muxzcat.c (on Linux i386) is about 1.07 times slower than
